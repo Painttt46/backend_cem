@@ -18,6 +18,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust proxy - Required for express-rate-limit when behind proxy/load balancer
+app.set('trust proxy', 1);
+
 // Security: Helmet - Set security HTTP headers
 app.use(helmet());
 
