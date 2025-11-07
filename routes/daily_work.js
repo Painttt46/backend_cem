@@ -408,11 +408,11 @@ router.post('/check-missing', async (req, res) => {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     console.log('Checking missing work for date:', today);
 
-    // Get all active users
+    // Get all active users (include NULL as active)
     const activeUsersResult = await pool.query(`
       SELECT id, firstname || ' ' || lastname as name, position, department 
       FROM users 
-      WHERE is_active = true
+      WHERE is_active IS NULL OR is_active = true
     `);
     console.log('Active users found:', activeUsersResult.rows.length);
 

@@ -123,7 +123,20 @@ function createCarBookingMessage(type, data) {
         ['ทะเบียนรถ', data.license || 'ไม่ระบุ'],
         ['วันที่จอง', data.selected_date ? new Date(data.selected_date).toLocaleDateString('th-TH') : 'ไม่ระบุ'],
         ['เวลาจอง', data.time || 'ไม่ระบุ'],
-        ['เหตุผล', 'ถูกยกเลิกอัตโนมัติเนื่องจากยังมีการใช้รถอยู่']
+        ['เหตุผล', data.reason || 'ถูกยกเลิกอัตโนมัติเนื่องจากยังมีการใช้รถอยู่']
+      ];
+      break;
+    case 'auto_cancel_duplicate':
+      title = '🚫 ยกเลิกการจองล่วงหน้าอัตโนมัติ';
+      color = 'Attention';
+      tableData = [
+        ['Ticket ID', data.id.toString()],
+        ['ผู้จอง', data.name || 'ไม่ระบุ'],
+        ['โครงการ', data.project || 'ไม่ระบุ'],
+        ['ทะเบียนรถ', data.license || 'ไม่ระบุ'],
+        ['วันที่จอง', data.selected_date ? new Date(data.selected_date).toLocaleDateString('th-TH') : 'ไม่ระบุ'],
+        ['เวลาจอง', data.time || 'ไม่ระบุ'],
+        ['เหตุผล', data.reason || 'มีการใช้รถจริงในวันเดียวกัน']
       ];
       break;
     default:
@@ -253,13 +266,49 @@ router.get('/', async (req, res) => {
             // No active booking, can activate this one
             await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
             record.status = 'active';
+            
+            // Get and delete any other pending bookings for the same date and license
+            const conflictingBookings = await pool.query(`
+              SELECT 
+                c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
+                c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
+                c.return_time, c.return_date, c.status, c.user_id,
+                u.firstname || ' ' || u.lastname as name
+              FROM car_bookings c
+              LEFT JOIN users u ON c.user_id = u.id
+              WHERE c.id != $1 
+              AND c.license = $2 
+              AND c.selected_date = $3 
+              AND c.status = 'pending'
+            `, [record.id, record.license, record.selected_date]);
+            
+            // Delete conflicting bookings
+            if (conflictingBookings.rows.length > 0) {
+              await pool.query(`
+                DELETE FROM car_bookings 
+                WHERE id != $1 
+                AND license = $2 
+                AND selected_date = $3 
+                AND status = 'pending'
+              `, [record.id, record.license, record.selected_date]);
+              
+              // Send notification for each cancelled booking
+              for (const cancelled of conflictingBookings.rows) {
+                await sendTeamsNotification('auto_cancel_duplicate', {
+                  ...cancelled,
+                  reason: `มีการใช้รถจริงในวันเดียวกัน (Ticket ID: ${record.id})`
+                });
+              }
+            }
+            
           } else {
             // Check if active booking conflicts with this pending booking
             const activeBorrowDate = new Date(activeBooking.selected_date);
+            activeBorrowDate.setHours(0, 0, 0, 0);
             const activeReturnDate = activeBooking.return_date ? new Date(activeBooking.return_date) : null;
             
-            // If active booking has no return date or return date is after pending booking date
-            const hasConflict = !activeReturnDate || activeReturnDate >= borrowDate;
+            // If active booking has no return date or return date is after/equal to pending booking date
+            const hasConflict = !activeReturnDate || (activeReturnDate >= borrowDate);
             
             if (hasConflict) {
               // Get booking data before deletion for Teams notification
@@ -279,7 +328,10 @@ router.get('/', async (req, res) => {
               
               // Send auto-cancel notification
               if (cancelledBooking.rows.length > 0) {
-                await sendTeamsNotification('auto_cancel', cancelledBooking.rows[0]);
+                await sendTeamsNotification('auto_cancel', {
+                  ...cancelledBooking.rows[0],
+                  reason: `มีรถกำลังใช้งานอยู่ (Ticket ID: ${activeBooking.id}) จนถึงวันที่จอง`
+                });
               }
               
               console.log(`Booking ${record.id} cancelled due to active booking conflict (active until ${activeReturnDate || 'unknown'})`);
@@ -287,6 +339,40 @@ router.get('/', async (req, res) => {
               // No conflict, can activate this booking
               await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
               record.status = 'active';
+              
+              // Get and delete any other pending bookings for the same date and license
+              const conflictingBookings = await pool.query(`
+                SELECT 
+                  c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
+                  c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
+                  c.return_time, c.return_date, c.status, c.user_id,
+                  u.firstname || ' ' || u.lastname as name
+                FROM car_bookings c
+                LEFT JOIN users u ON c.user_id = u.id
+                WHERE c.id != $1 
+                AND c.license = $2 
+                AND c.selected_date = $3 
+                AND c.status = 'pending'
+              `, [record.id, record.license, record.selected_date]);
+              
+              // Delete conflicting bookings
+              if (conflictingBookings.rows.length > 0) {
+                await pool.query(`
+                  DELETE FROM car_bookings 
+                  WHERE id != $1 
+                  AND license = $2 
+                  AND selected_date = $3 
+                  AND status = 'pending'
+                `, [record.id, record.license, record.selected_date]);
+                
+                // Send notification for each cancelled booking
+                for (const cancelled of conflictingBookings.rows) {
+                  await sendTeamsNotification('auto_cancel_duplicate', {
+                    ...cancelled,
+                    reason: `มีการใช้รถจริงในวันเดียวกัน (Ticket ID: ${record.id})`
+                  });
+                }
+              }
             }
             continue; // Skip adding to results
           }

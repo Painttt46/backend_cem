@@ -41,12 +41,42 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Required fields missing' });
     }
     
+    // Hash password before saving
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
     const result = await pool.query(
       'INSERT INTO users (username, password, firstname, lastname, role, email, employee_id, position, department) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, username, firstname, lastname, role, email, employee_id, position, department',
-      [username, password, firstname, lastname, role || 'user', email, employee_id, position, department]
+      [username, hashedPassword, firstname, lastname, role || 'user', email, employee_id, position, department]
     );
     
-    res.status(201).json(result.rows[0]);
+    const newUser = result.rows[0];
+    
+    // Initialize leave quotas for new user
+    const currentYear = new Date().getFullYear();
+    const leaveTypesResult = await pool.query(`
+      SELECT DISTINCT leave_type, annual_quota 
+      FROM user_leave_quotas 
+      WHERE year = $1 
+      GROUP BY leave_type, annual_quota
+    `, [currentYear]);
+    
+    // Get the most common quota for each leave type
+    const quotaMap = {};
+    for (const row of leaveTypesResult.rows) {
+      if (!quotaMap[row.leave_type]) {
+        quotaMap[row.leave_type] = row.annual_quota;
+      }
+    }
+    
+    // Insert quotas for new user
+    for (const [leaveType, quota] of Object.entries(quotaMap)) {
+      await pool.query(`
+        INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year)
+        VALUES ($1, $2, $3, $4)
+      `, [newUser.id, leaveType, quota, currentYear]);
+    }
+    
+    res.status(201).json(newUser);
   } catch (error) {
     console.error('Error creating user:', error);
     if (error.code === '23505') {

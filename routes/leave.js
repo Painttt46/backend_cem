@@ -514,17 +514,120 @@ router.put('/quota/:userId/:leaveType', async (req, res) => {
 router.get('/quota/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    const currentYear = new Date().getFullYear();
     
-    const leaveTypes = ['sick', 'personal', 'vacation', 'maternity', 'other'];
+    // Get all leave types for this user from database
+    const result = await pool.query(`
+      SELECT DISTINCT leave_type 
+      FROM user_leave_quotas 
+      WHERE user_id = $1 AND year = $2
+    `, [userId, currentYear]);
+    
     const quotaData = {};
     
-    for (const leaveType of leaveTypes) {
-      quotaData[leaveType] = await calculateRemainingLeave(userId, leaveType);
+    for (const row of result.rows) {
+      quotaData[row.leave_type] = await calculateRemainingLeave(userId, row.leave_type);
     }
     
     res.json(quotaData);
   } catch (error) {
     console.error('Error getting leave quota:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all leave types
+router.get('/leave-types', async (req, res) => {
+  try {
+    const currentYear = new Date().getFullYear();
+    
+    // Get distinct leave types from user_leave_quotas
+    const result = await pool.query(`
+      SELECT DISTINCT leave_type 
+      FROM user_leave_quotas 
+      WHERE year = $1
+      ORDER BY leave_type
+    `, [currentYear]);
+    
+    // Map to label format
+    const leaveTypeLabels = {
+      'sick': 'ลาป่วย',
+      'personal': 'ลากิจ',
+      'vacation': 'ลาพักร้อน',
+      'maternity': 'ลาคลอด',
+      'other': 'ลาอื่นๆ'
+    };
+    
+    const leaveTypes = result.rows.map(row => ({
+      value: row.leave_type,
+      label: leaveTypeLabels[row.leave_type] || row.leave_type
+    }));
+    
+    res.json(leaveTypes);
+  } catch (error) {
+    console.error('Error getting leave types:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create new leave type
+router.post('/leave-types', async (req, res) => {
+  try {
+    const { name, default_quota } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'กรุณาระบุชื่อประเภทการลา' });
+    }
+    
+    // Generate value from name (convert Thai to English-like code)
+    const value = name.toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_]/g, '');
+    
+    const currentYear = new Date().getFullYear();
+    const quota = default_quota || 0;
+    
+    // Add quota for all users
+    const usersResult = await pool.query('SELECT id FROM users');
+    
+    for (const user of usersResult.rows) {
+      await pool.query(`
+        INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (user_id, leave_type, year) DO NOTHING
+      `, [user.id, value, quota, currentYear]);
+    }
+    
+    res.json({ 
+      message: 'เพิ่มประเภทการลาสำเร็จ',
+      leave_type: { name, value, default_quota: quota },
+      users_updated: usersResult.rows.length
+    });
+  } catch (error) {
+    console.error('Error creating leave type:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete leave type
+router.delete('/leave-types/:leaveType', async (req, res) => {
+  try {
+    const { leaveType } = req.params;
+    const currentYear = new Date().getFullYear();
+    
+    // Delete all quota records for this leave type
+    const result = await pool.query(`
+      DELETE FROM user_leave_quotas 
+      WHERE leave_type = $1 AND year = $2
+      RETURNING *
+    `, [leaveType, currentYear]);
+    
+    res.json({ 
+      message: 'ลบประเภทการลาสำเร็จ',
+      deleted_records: result.rows.length
+    });
+  } catch (error) {
+    console.error('Error deleting leave type:', error);
     res.status(500).json({ error: error.message });
   }
 });
