@@ -542,8 +542,14 @@ router.get('/leave-types', async (req, res) => {
     const currentYear = new Date().getFullYear();
     
     // Get distinct leave types from user_leave_quotas
+    // Add color column if not exists
+    await pool.query(`
+      ALTER TABLE user_leave_quotas 
+      ADD COLUMN IF NOT EXISTS color VARCHAR(20)
+    `);
+    
     const result = await pool.query(`
-      SELECT DISTINCT leave_type 
+      SELECT DISTINCT leave_type, color
       FROM user_leave_quotas 
       WHERE year = $1
       ORDER BY leave_type
@@ -558,9 +564,18 @@ router.get('/leave-types', async (req, res) => {
       'other': 'ลาอื่นๆ'
     };
     
+    const leaveTypeColors = {
+      'sick': '#ef4444',
+      'personal': '#f59e0b',
+      'vacation': '#10b981',
+      'maternity': '#ec4899',
+      'other': '#6366f1'
+    };
+    
     const leaveTypes = result.rows.map(row => ({
       value: row.leave_type,
-      label: leaveTypeLabels[row.leave_type] || row.leave_type
+      label: leaveTypeLabels[row.leave_type] || row.leave_type,
+      color: row.color || leaveTypeColors[row.leave_type] || '#6c757d'
     }));
     
     res.json(leaveTypes);
@@ -579,28 +594,30 @@ router.post('/leave-types', async (req, res) => {
       return res.status(400).json({ error: 'กรุณาระบุชื่อประเภทการลา' });
     }
     
-    // Generate value from name (convert Thai to English-like code)
-    const value = name.toLowerCase()
-      .replace(/\s+/g, '_')
-      .replace(/[^a-z0-9_]/g, '');
+    // Use name directly as value (support Thai characters)
+    const value = name.trim();
     
     const currentYear = new Date().getFullYear();
     const quota = default_quota || 0;
+    
+    // Generate random color
+    const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+    const color = colors[Math.floor(Math.random() * colors.length)];
     
     // Add quota for all users
     const usersResult = await pool.query('SELECT id FROM users');
     
     for (const user of usersResult.rows) {
       await pool.query(`
-        INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (user_id, leave_type, year) DO NOTHING
-      `, [user.id, value, quota, currentYear]);
+        INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year, color)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (user_id, leave_type, year) DO UPDATE SET color = $5
+      `, [user.id, value, quota, currentYear, color]);
     }
     
     res.json({ 
       message: 'เพิ่มประเภทการลาสำเร็จ',
-      leave_type: { name, value, default_quota: quota },
+      leave_type: { name, value, default_quota: quota, color },
       users_updated: usersResult.rows.length
     });
   } catch (error) {
@@ -612,7 +629,7 @@ router.post('/leave-types', async (req, res) => {
 // Delete leave type
 router.delete('/leave-types/:leaveType', async (req, res) => {
   try {
-    const { leaveType } = req.params;
+    const leaveType = decodeURIComponent(req.params.leaveType);
     const currentYear = new Date().getFullYear();
     
     // Delete all quota records for this leave type

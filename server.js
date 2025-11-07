@@ -12,6 +12,7 @@ import tasksRoutes from './routes/tasks.js';
 import usersRoutes from './routes/users.js';
 import carBookingRoutes from './routes/car_booking.js';
 import rolePermissionsRoutes from './routes/role_permissions.js';
+import settingsRoutes from './routes/settings.js';
 
 dotenv.config();
 
@@ -92,6 +93,7 @@ app.use('/api/tasks', tasksRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/car-booking', carBookingRoutes);
 app.use('/api/role-permissions', rolePermissionsRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {

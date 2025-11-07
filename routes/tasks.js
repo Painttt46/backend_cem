@@ -20,7 +20,11 @@ router.get('/', async (req, res) => {
       SELECT 
         t.id, t.task_name, t.so_number, t.contract_number, t.sale_owner, 
         t.description, t.files, t.project_start_date, t.project_end_date, t.created_at, t.category,
-        COALESCE(t.status, 'pending') as status
+        CASE
+          WHEN (SELECT MAX(dwr.created_at) FROM daily_work_records dwr WHERE dwr.task_id = t.id) > t.updated_at
+          THEN (SELECT dwr.work_status FROM daily_work_records dwr WHERE dwr.task_id = t.id ORDER BY dwr.work_date DESC, dwr.created_at DESC LIMIT 1)
+          ELSE COALESCE(t.status, 'pending')
+        END as status
       FROM tasks t
       ORDER BY t.created_at DESC
     `);
@@ -35,8 +39,6 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category, files } = req.body;
-    
-    console.log('Creating task with files:', files);
     
     const result = await pool.query(`
       INSERT INTO tasks (task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category, files)
@@ -55,7 +57,17 @@ router.post('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('SELECT * FROM tasks WHERE id = $1', [id]);
+    const result = await pool.query(`
+      SELECT 
+        t.*,
+        CASE
+          WHEN (SELECT MAX(dwr.created_at) FROM daily_work_records dwr WHERE dwr.task_id = t.id) > t.updated_at
+          THEN (SELECT dwr.work_status FROM daily_work_records dwr WHERE dwr.task_id = t.id ORDER BY dwr.work_date DESC, dwr.created_at DESC LIMIT 1)
+          ELSE COALESCE(t.status, 'pending')
+        END as status
+      FROM tasks t 
+      WHERE t.id = $1
+    `, [id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });

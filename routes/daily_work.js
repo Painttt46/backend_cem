@@ -467,7 +467,7 @@ router.post('/check-missing', async (req, res) => {
 //Get all daily work records with task details
 router.get('/', async (req, res) => {
   try {
-    const { date } = req.query;
+    const { date, task_id } = req.query;
 
     let query = `
       SELECT 
@@ -488,10 +488,20 @@ router.get('/', async (req, res) => {
     `;
 
     const params = [];
+    const conditions = [];
 
     if (date) {
-      query += ` WHERE dwr.work_date = $1`;
+      conditions.push(`dwr.work_date = $${params.length + 1}`);
       params.push(date);
+    }
+
+    if (task_id) {
+      conditions.push(`dwr.task_id = $${params.length + 1}`);
+      params.push(task_id);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(' AND ');
     }
 
     query += ` ORDER BY dwr.work_date DESC, dwr.created_at DESC`;
