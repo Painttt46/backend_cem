@@ -1,11 +1,12 @@
 import express from 'express';
 import pool from '../config/database.js';
 import bcrypt from 'bcrypt';
+import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Get distinct roles from users
-router.get('/roles', async (req, res) => {
+router.get('/roles', verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT DISTINCT role FROM users WHERE role IS NOT NULL ORDER BY role'
@@ -19,7 +20,7 @@ router.get('/roles', async (req, res) => {
 });
 
 // Get all users
-router.get('/', async (req, res) => {
+router.get('/', verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT id, username, firstname, lastname, role, email, employee_id, position, department, is_active FROM users ORDER BY firstname, lastname'

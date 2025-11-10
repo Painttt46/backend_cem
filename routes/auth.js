@@ -1,7 +1,9 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import { sendForgotPasswordEmail } from '../services/emailService.js';
+import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -33,13 +35,30 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
     
-    // Generate simple token
-    const token = `token_${user.id}_${Date.now()}`;
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: user.id,
+        username: user.username,
+        role: user.role
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
+    );
+    
+    // Set HttpOnly Cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 8 * 60 * 60 * 1000
+    });
     
     // Remove password from response
     delete user.password;
     
     res.json({
+      success: true,
       access_token: token,
       user: user.id,
       username: user.username,
@@ -59,24 +78,15 @@ router.post('/login', async (req, res) => {
 });
 
 // Get current user info
-router.get('/me', async (req, res) => {
+router.get('/me', verifyToken, async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-    
-    // Extract user ID from token
-    const userId = token.split('_')[1];
-    
     const result = await pool.query(
       'SELECT id, username, firstname, lastname, role, email, employee_id, position, department FROM users WHERE id = $1 AND is_active = true',
-      [userId]
+      [req.user.id]
     );
     
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid token' });
+      return res.status(401).json({ error: 'User not found' });
     }
     
     res.json(result.rows[0]);
@@ -87,46 +97,69 @@ router.get('/me', async (req, res) => {
   }
 });
 
-// Hash password utility for creating new users
+// Refresh token endpoint
+router.post('/refresh', verifyToken, async (req, res) => {
+  try {
+    const newToken = jwt.sign(
+      { 
+        userId: req.user.id,
+        username: req.user.username,
+        role: req.user.role
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
+    );
+    
+    res.cookie('token', newToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 8 * 60 * 60 * 1000
+    });
+    
+    res.json({
+      success: true,
+      access_token: newToken
+    });
+    
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Logout endpoint
+router.post('/logout', (req, res) => {
+  res.clearCookie('token');
+  res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Hash password utility
 export const hashPassword = async (password) => {
   return await bcrypt.hash(password, 10);
 };
 
-// Forgot password - send credentials via email
+// Forgot password
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
-    
-    console.log('Forgot password request for email:', email);
     
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
     }
     
-    // Find user by email
     const result = await pool.query('SELECT id, username, firstname, lastname, email FROM users WHERE email = $1', [email]);
-    
-    console.log('Query result for email', email, ':', result.rows);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'ไม่พบอีเมลในระบบ' });
     }
     
     const user = result.rows[0];
-    
-    // Generate new temporary password
     const passwordToSend = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
+    const hashedPassword = await bcrypt.hash(passwordToSend, 10);
     
-    // Hash and update password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(passwordToSend, saltRounds);
-    
-    // Update password in database
     await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, user.id]);
     
-    console.log(`Generated new password for user ${user.username}: ${passwordToSend}`);
-    
-    // Try to send email
     try {
       const emailResult = await sendForgotPasswordEmail(email, {
         ...user,
@@ -134,7 +167,6 @@ router.post('/forgot-password', async (req, res) => {
       });
       
       if (emailResult.success) {
-        console.log(`Email sent successfully to ${email} with message ID: ${emailResult.messageId}`);
         return res.json({ 
           message: 'ส่งข้อมูลการเข้าสู่ระบบไปยังอีเมลของคุณเรียบร้อยแล้ว',
           success: true
@@ -143,9 +175,6 @@ router.post('/forgot-password', async (req, res) => {
         throw new Error(emailResult.error);
       }
     } catch (emailError) {
-      console.error('Email sending failed:', emailError.message);
-      
-      // Fallback: Return user info directly
       return res.json({
         message: 'ไม่สามารถส่งอีเมลได้ แต่พบข้อมูลผู้ใช้',
         success: true,

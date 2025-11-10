@@ -3,7 +3,9 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import pool from './config/database.js';
+import { verifyToken } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import leaveRoutes from './routes/leave.js';
 import fileRoutes from './routes/files.js';
@@ -24,6 +26,9 @@ app.set('trust proxy', 1);
 
 // Security: Helmet - Set security HTTP headers
 app.use(helmet());
+
+// Cookie parser
+app.use(cookieParser());
 
 // Security: Rate limiting
 const limiter = rateLimit({
@@ -84,16 +89,18 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'API is working!', timestamp: new Date().toISOString() });
 });
 
-// Routes
+// Routes - Auth routes ไม่ต้องใช้ middleware (เพราะเป็น login)
 app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/leave', leaveRoutes);
-app.use('/api/files', fileRoutes);
-app.use('/api/daily-work', dailyWorkRoutes);
-app.use('/api/tasks', tasksRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/car-booking', carBookingRoutes);
-app.use('/api/role-permissions', rolePermissionsRoutes);
-app.use('/api/settings', settingsRoutes);
+
+// Protected routes - ใช้ verifyToken middleware ทั้งหมด
+app.use('/api/leave', verifyToken, leaveRoutes);
+app.use('/api/files', verifyToken, fileRoutes);
+app.use('/api/daily-work', verifyToken, dailyWorkRoutes);
+app.use('/api/tasks', verifyToken, tasksRoutes);
+app.use('/api/users', verifyToken, usersRoutes);
+app.use('/api/car-booking', verifyToken, carBookingRoutes);
+app.use('/api/role-permissions', verifyToken, rolePermissionsRoutes);
+app.use('/api/settings', verifyToken, settingsRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {
