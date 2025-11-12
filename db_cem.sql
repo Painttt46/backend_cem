@@ -2,12 +2,12 @@
 -- PostgreSQL database dump
 --
 
-\restrict IF99pb97gIlYc6HZ4m0oiOPTCgwk3Q8wrey3G72YsL6GzQ16Xw6XD3UIL6d83h2
+\restrict P05YJuZmMqyg41kdzWhUt1tmYa5gjqjjnWH2cuZKSTviFWfrQF6h3vN3V3X8Vhy
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
 
--- Started on 2025-11-11 11:13:19
+-- Started on 2025-11-10 13:34:13
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -90,7 +90,7 @@ CREATE SEQUENCE public.car_bookings_id_seq
 ALTER SEQUENCE public.car_bookings_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5163 (class 0 OID 0)
+-- TOC entry 5162 (class 0 OID 0)
 -- Dependencies: 221
 -- Name: car_bookings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -144,7 +144,7 @@ CREATE SEQUENCE public.daily_work_records_id_seq
 ALTER SEQUENCE public.daily_work_records_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5164 (class 0 OID 0)
+-- TOC entry 5163 (class 0 OID 0)
 -- Dependencies: 223
 -- Name: daily_work_records_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -214,7 +214,7 @@ CREATE SEQUENCE public.leave_requests_id_seq
 ALTER SEQUENCE public.leave_requests_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5165 (class 0 OID 0)
+-- TOC entry 5164 (class 0 OID 0)
 -- Dependencies: 219
 -- Name: leave_requests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -258,7 +258,7 @@ CREATE SEQUENCE public.role_permissions_id_seq
 ALTER SEQUENCE public.role_permissions_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5166 (class 0 OID 0)
+-- TOC entry 5165 (class 0 OID 0)
 -- Dependencies: 232
 -- Name: role_permissions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -302,7 +302,7 @@ CREATE SEQUENCE public.task_categories_id_seq
 ALTER SEQUENCE public.task_categories_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5167 (class 0 OID 0)
+-- TOC entry 5166 (class 0 OID 0)
 -- Dependencies: 234
 -- Name: task_categories_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -353,7 +353,7 @@ CREATE SEQUENCE public.tasks_id_seq
 ALTER SEQUENCE public.tasks_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5168 (class 0 OID 0)
+-- TOC entry 5167 (class 0 OID 0)
 -- Dependencies: 225
 -- Name: tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -372,8 +372,7 @@ CREATE TABLE public.user_leave_quotas (
     leave_type character varying(50) NOT NULL,
     annual_quota integer NOT NULL,
     year integer NOT NULL,
-    color character varying(20),
-    used_days integer DEFAULT 0
+    color character varying(20)
 );
 
 
@@ -396,7 +395,7 @@ CREATE SEQUENCE public.user_leave_quotas_id_seq
 ALTER SEQUENCE public.user_leave_quotas_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5169 (class 0 OID 0)
+-- TOC entry 5168 (class 0 OID 0)
 -- Dependencies: 230
 -- Name: user_leave_quotas_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -445,7 +444,7 @@ CREATE SEQUENCE public.users_id_seq
 ALTER SEQUENCE public.users_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5170 (class 0 OID 0)
+-- TOC entry 5169 (class 0 OID 0)
 -- Dependencies: 227
 -- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -489,7 +488,7 @@ CREATE SEQUENCE public.work_statuses_id_seq
 ALTER SEQUENCE public.work_statuses_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5171 (class 0 OID 0)
+-- TOC entry 5170 (class 0 OID 0)
 -- Dependencies: 236
 -- Name: work_statuses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -522,7 +521,7 @@ ALTER TABLE ONLY public.leave_requests ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
--- TOC entry 4928 (class 2604 OID 16757)
+-- TOC entry 4927 (class 2604 OID 16757)
 -- Name: role_permissions id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -530,7 +529,7 @@ ALTER TABLE ONLY public.role_permissions ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
--- TOC entry 4933 (class 2604 OID 16778)
+-- TOC entry 4932 (class 2604 OID 16778)
 -- Name: task_categories id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -562,7 +561,7 @@ ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_
 
 
 --
--- TOC entry 4937 (class 2604 OID 16795)
+-- TOC entry 4936 (class 2604 OID 16795)
 -- Name: work_statuses id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -570,13 +569,14 @@ ALTER TABLE ONLY public.work_statuses ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
--- TOC entry 5142 (class 0 OID 16443)
+-- TOC entry 5141 (class 0 OID 16443)
 -- Dependencies: 222
 -- Data for Name: car_bookings; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.car_bookings (id, type, location, project, selected_date, "time", license, images, created_at, updated_at, return_name, return_location, return_time, return_date, colleagues, user_id, status, discription) FROM stdin;
 19	borrow	asdasd	ไขเจียวปู	2025-11-03	10:11	FXAG-2032	[]	2025-11-03 10:10:59.766747	2025-11-03 10:11:52.664097	ผู้ดูแลDDR ระบบS	asdasd	10:11	2025-11-03	[]	1	returned	
+48	borrow	asdasd	BBBBBBBBBBBBBBBBB	2025-11-08	17:05	FXAG-2032	[]	2025-11-07 17:01:33.245692	2025-11-07 17:01:33.245692	\N	\N	\N	\N	[{"name": "tessertop lopflopto", "position": "test", "department": "pre-test"}]	1	pending	
 21	borrow	ฟหกฟก	ไขเจียวปู	2025-11-03	10:12	FXAG-2032	[]	2025-11-03 10:12:24.389161	2025-11-03 10:13:46.968411	ผู้ดูแลDDR ระบบS	asd	10:13	2025-11-03	[]	1	returned	
 22	borrow	asdasd	ไขเจียวปู	2025-11-03	10:13	FXAG-2032	[]	2025-11-03 10:13:58.292655	2025-11-03 10:26:59.193015	ผู้ดูแลDDR ระบบS	ฟหกฟหก	10:26	2025-11-03	[]	1	returned	
 23	borrow	asdasd	ไขเจียวปู	2025-11-03	10:27	FXAG-2032	[]	2025-11-03 10:27:10.36007	2025-11-03 10:34:39.610397	ผู้ดูแลDDR ระบบS	asdasd	10:34	2025-11-03	[]	1	returned	
@@ -587,7 +587,7 @@ COPY public.car_bookings (id, type, location, project, selected_date, "time", li
 
 
 --
--- TOC entry 5144 (class 0 OID 16477)
+-- TOC entry 5143 (class 0 OID 16477)
 -- Dependencies: 224
 -- Data for Name: daily_work_records; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -625,7 +625,7 @@ COPY public.daily_work_records (id, task_name, so_number, contract_number, sale_
 
 
 --
--- TOC entry 5140 (class 0 OID 16399)
+-- TOC entry 5139 (class 0 OID 16399)
 -- Dependencies: 220
 -- Data for Name: leave_requests; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -649,16 +649,12 @@ COPY public.leave_requests (id, leave_type, start_datetime, end_datetime, total_
 16	sick	2025-11-08 03:45:41	2025-11-09 03:45:41	2.0	ADADA	f	\N	\N	\N	\N	[]	approved	ผู้ดูแลDDR ระบบS (System Administrator)	2025-11-03 10:45:56.399659	2025-11-03 10:46:00.958095	\N	1	\N
 17	maternity	2025-11-21 03:47:46	2025-11-30 03:47:46	10.0	G@G@	f	\N	\N	\N	\N	[]	approved	ผู้ดูแลDDR ระบบS (System Administrator)	2025-11-03 10:48:14.741295	2025-11-03 10:48:45.917697	\N	1	\N
 18	yop_jub	2025-11-07 10:03:58	2025-11-08 10:03:58	2.0	asdsa	f	\N	\N	\N	\N	[]	approved	ผู้ดูแลDDRpo ระบบS (System Administrator)	2025-11-07 17:04:10.49109	2025-11-07 17:04:15.378177	\N	1	\N
-20	maternity	2025-11-11 04:00:17	2025-11-13 04:00:22	3.0	sSD	f	\N	\N	\N	\N	[]	approved	ผู้ดูแลDDRpo ระบบS (System Administrator)	2025-11-11 11:00:32.015594	2025-11-11 11:00:36.960683	\N	1	\N
-21	maternity	2025-11-11 04:02:23	2025-11-13 04:02:27	3.0	ฏฏฏ	f	\N	\N	\N	\N	[]	approved	ผู้ดูแลDDRpo ระบบS (System Administrator)	2025-11-11 11:02:32.948297	2025-11-11 11:03:31.109127	\N	1	\N
-19	บูลาล่า	2025-11-06 10:19:00	2025-11-06 10:19:06	1.0	SSSS	f	\N	\N	\N	\N	[]	rejected	ผู้ดูแลDDRpo ระบบS (System Administrator)	2025-11-07 17:19:10.663266	2025-11-11 11:03:34.98356	\N	1	\N
-22	other	2025-11-11 04:06:19	2025-11-13 04:06:28	3.0	asdasd	f	\N	\N	\N	\N	[]	approved	ผู้ดูแลDDRpo ระบบS (System Administrator)	2025-11-11 11:06:37.382304	2025-11-11 11:06:43.340238	\N	1	\N
-23	maternity	2025-11-11 04:06:50	2025-11-13 04:06:57	3.0	ggg	f	\N	\N	\N	\N	[]	approved	ผู้ดูแลDDRpo ระบบS (System Administrator)	2025-11-11 11:07:05.474071	2025-11-11 11:07:08.144354	\N	1	\N
+19	บูลาล่า	2025-11-06 10:19:00	2025-11-06 10:19:06	1.0	SSSS	f	\N	\N	\N	\N	[]	pending	\N	2025-11-07 17:19:10.663266	2025-11-07 17:19:10.663266	\N	1	\N
 \.
 
 
 --
--- TOC entry 5153 (class 0 OID 16754)
+-- TOC entry 5152 (class 0 OID 16754)
 -- Dependencies: 233
 -- Data for Name: role_permissions; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -672,6 +668,10 @@ COPY public.role_permissions (id, role, page_path, page_name, has_access, create
 193	admin	/management/users	จัดการผู้ใช้งาน	t	2025-11-04 15:09:59.340158	2025-11-04 15:09:59.340158	pi pi-users
 194	admin	/management/tasks	จัดการงาน	t	2025-11-04 15:09:59.340158	2025-11-04 15:09:59.340158	pi pi-briefcase
 197	admin	/management/settings	ตั้งค่าระบบ	t	2025-11-04 15:09:59.340158	2025-11-04 15:09:59.340158	pi pi-cog
+363	ggps	/daily_work	งานรายวัน	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-home
+364	ggps	/projects	โครงการ	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-briefcase
+365	ggps	/profile	โปรไฟล์	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-user
+366	ggps	/car_booking	จองรถ	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-car
 263	admin	/management/leave	Leaves	t	2025-11-04 17:28:55.769298	2025-11-04 17:28:55.769298	pi pi-circle
 198	admin	/management/settings/role-permissions	จัดการสิทธิ์	t	2025-11-04 15:09:59.340158	2025-11-04 15:09:59.340158	pi pi-shield
 54	user	/management/settings	ตั้งค่าระบบ	t	2025-11-04 14:08:10.231978	2025-11-04 14:08:10.231978	pi pi-cog
@@ -697,9 +697,16 @@ COPY public.role_permissions (id, role, page_path, page_name, has_access, create
 356	test	/leave_work	ลางาน	t	2025-11-07 13:21:27.086313	2025-11-07 13:21:27.086313	pi pi-calendar-times
 357	test	/leave_work/approve	อนุมัติลางาน	f	2025-11-07 13:21:27.086313	2025-11-07 13:21:27.086313	pi pi-check-circle
 358	test	/management	ระบบจัดการ	f	2025-11-07 13:21:27.086313	2025-11-07 13:21:27.086313	pi pi-cog
+367	ggps	/leave_work	ลางาน	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-calendar-times
+368	ggps	/leave_work/approve	อนุมัติลางาน	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-check-circle
+369	ggps	/management	ระบบจัดการ	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-cog
+370	ggps	/management/users	จัดการผู้ใช้งาน	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-users
+371	ggps	/management/tasks	จัดการงาน	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-briefcase
+372	ggps	/management/settings	ตั้งค่าระบบ	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-cog
 45	user	/daily_work	งานรายวัน	t	2025-11-04 14:08:10.231978	2025-11-04 14:08:10.231978	pi pi-home
 188	admin	/daily_work	งานรายวัน	t	2025-11-04 15:09:59.340158	2025-11-04 15:09:59.340158	pi pi-home
 226	admin	/projects	โครงการ	t	2025-11-04 15:14:56.871389	2025-11-04 15:14:56.871389	pi pi-briefcase
+373	ggps	/management/settings/role-permissions	จัดการสิทธิ์	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-shield
 320	user	/projects	โครงการ	f	2025-11-06 15:50:20.71095	2025-11-06 15:50:20.71095	pi pi-briefcase
 46	user	/profile	โปรไฟล์	t	2025-11-04 14:08:10.231978	2025-11-04 14:08:10.231978	pi pi-user
 47	user	/car_booking	จองรถ	t	2025-11-04 14:08:10.231978	2025-11-04 14:08:10.231978	pi pi-car
@@ -714,23 +721,12 @@ COPY public.role_permissions (id, role, page_path, page_name, has_access, create
 360	test	/management/tasks	จัดการงาน	f	2025-11-07 13:21:27.086313	2025-11-07 13:21:27.086313	pi pi-briefcase
 361	test	/management/settings	ตั้งค่าระบบ	f	2025-11-07 13:21:27.086313	2025-11-07 13:21:27.086313	pi pi-cog
 362	test	/management/settings/role-permissions	จัดการสิทธิ์	f	2025-11-07 13:21:27.086313	2025-11-07 13:21:27.086313	pi pi-shield
-363	ggps	/daily_work	งานรายวัน	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-home
-364	ggps	/projects	โครงการ	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-briefcase
-365	ggps	/profile	โปรไฟล์	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-user
-366	ggps	/car_booking	จองรถ	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-car
-367	ggps	/leave_work	ลางาน	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-calendar-times
 250	admin	/project	Project	t	2025-11-04 15:15:19.063372	2025-11-04 15:15:19.063372	pi pi-circle
-368	ggps	/leave_work/approve	อนุมัติลางาน	t	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-check-circle
-369	ggps	/management	ระบบจัดการ	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-cog
-370	ggps	/management/users	จัดการผู้ใช้งาน	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-users
-371	ggps	/management/tasks	จัดการงาน	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-briefcase
-372	ggps	/management/settings	ตั้งค่าระบบ	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-cog
-373	ggps	/management/settings/role-permissions	จัดการสิทธิ์	f	2025-11-07 13:30:38.26202	2025-11-07 13:30:38.26202	pi pi-shield
 \.
 
 
 --
--- TOC entry 5155 (class 0 OID 16775)
+-- TOC entry 5154 (class 0 OID 16775)
 -- Dependencies: 235
 -- Data for Name: task_categories; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -745,7 +741,7 @@ COPY public.task_categories (id, label, value, icon, sort_order, created_at, upd
 
 
 --
--- TOC entry 5146 (class 0 OID 16507)
+-- TOC entry 5145 (class 0 OID 16507)
 -- Dependencies: 226
 -- Data for Name: tasks; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -754,48 +750,47 @@ COPY public.tasks (id, task_name, so_number, contract_number, sale_owner, descri
 3	KASD	opop	A23123	BBBBBBBBBBb	GASDASD	2025-10-20 16:53:08.777485	2025-11-07 16:18:04.351935	[]	completed	\N	\N	2025-10-16	2028-10-13	vxza
 2	ไขเจียวปู	1029203	A23123	เจ๋ติ๋ม	กินอะไรดีวันนี้กินกฟกฟหกฟหกก	2025-10-15 15:53:37.850325	2025-11-07 16:18:08.956118	["1760518417755-816124194-Screenshot 2025-07-12 113844.png", "1760518417762-563557390-Screenshot 2025-07-12 130748.png", "1760518417770-296084529-Screenshot 2025-07-12 130816.png"]	masopazo	\N	\N	\N	\N	sagg
 1	หิวข้าวจัง	892012	GH2893D	Babeeegone	หิวเมื่อไร่ก็ ... ไปนอนซะ	2025-10-15 14:50:29.035766	2025-11-07 16:18:14.732451	["1760514628917-504012494-Screenshot 2024-11-20 150358.png", "1760514628919-534568500-Screenshot 2024-11-20 150553.png"]	completed	\N	\N	\N	\N	v
-4	BBBBBBBBBBBBBBBBB	111123	FG2323211	opop	HASD	2025-11-03 16:00:14.469064	2025-11-10 14:11:04.100558	[]	completed	\N	\N	2025-11-02	2028-03-01	a
+4	BBBBBBBBBBBBBBBBB	111123	FG2323211	opop	HASD	2025-11-03 16:00:14.469064	2025-11-07 16:51:38.287245	[]	masopazo	\N	\N	2025-11-02	2028-03-01	a
 \.
 
 
 --
--- TOC entry 5151 (class 0 OID 16734)
+-- TOC entry 5150 (class 0 OID 16734)
 -- Dependencies: 231
 -- Data for Name: user_leave_quotas; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.user_leave_quotas (id, user_id, leave_type, annual_quota, year, color, used_days) FROM stdin;
-1	4	sick	30	2025	\N	0
-2	4	personal	6	2025	\N	0
-3	4	vacation	6	2025	\N	0
-5	4	other	3	2025	\N	0
-6	5	sick	30	2025	\N	0
-7	5	personal	6	2025	\N	0
-8	5	vacation	6	2025	\N	0
-10	5	other	3	2025	\N	0
-11	6	sick	30	2025	\N	0
-12	6	personal	6	2025	\N	0
-13	6	vacation	6	2025	\N	0
-15	6	other	3	2025	\N	0
-16	1	sick	30	2025	\N	0
-17	1	personal	6	2025	\N	0
-18	1	vacation	6	2025	\N	0
-148	5	บูลาล่า	10	2025	#84cc16	0
-149	4	บูลาล่า	10	2025	#84cc16	0
-150	1	บูลาล่า	10	2025	#84cc16	0
-151	10	บูลาล่า	10	2025	#84cc16	0
-152	6	บูลาล่า	10	2025	#84cc16	0
-153	10	maternity	7	2025	\N	6
-20	1	other	3	2025	\N	3
-92	1	maternity	98	2025	\N	90
-103	5	maternity	98	2025	\N	0
-104	4	maternity	98	2025	\N	0
-105	6	maternity	98	2025	\N	0
+COPY public.user_leave_quotas (id, user_id, leave_type, annual_quota, year, color) FROM stdin;
+1	4	sick	30	2025	\N
+2	4	personal	6	2025	\N
+3	4	vacation	6	2025	\N
+5	4	other	3	2025	\N
+6	5	sick	30	2025	\N
+7	5	personal	6	2025	\N
+8	5	vacation	6	2025	\N
+10	5	other	3	2025	\N
+11	6	sick	30	2025	\N
+12	6	personal	6	2025	\N
+13	6	vacation	6	2025	\N
+15	6	other	3	2025	\N
+16	1	sick	30	2025	\N
+17	1	personal	6	2025	\N
+18	1	vacation	6	2025	\N
+20	1	other	3	2025	\N
+148	5	บูลาล่า	10	2025	#84cc16
+149	4	บูลาล่า	10	2025	#84cc16
+150	1	บูลาล่า	10	2025	#84cc16
+151	10	บูลาล่า	10	2025	#84cc16
+152	6	บูลาล่า	10	2025	#84cc16
+92	1	maternity	98	2025	\N
+103	5	maternity	98	2025	\N
+104	4	maternity	98	2025	\N
+105	6	maternity	98	2025	\N
 \.
 
 
 --
--- TOC entry 5148 (class 0 OID 16566)
+-- TOC entry 5147 (class 0 OID 16566)
 -- Dependencies: 228
 -- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -810,7 +805,7 @@ COPY public.users (id, username, password, firstname, lastname, role, email, is_
 
 
 --
--- TOC entry 5157 (class 0 OID 16792)
+-- TOC entry 5156 (class 0 OID 16792)
 -- Dependencies: 237
 -- Data for Name: work_statuses; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -825,7 +820,7 @@ COPY public.work_statuses (id, label, value, icon, sort_order, created_at, updat
 
 
 --
--- TOC entry 5172 (class 0 OID 0)
+-- TOC entry 5171 (class 0 OID 0)
 -- Dependencies: 221
 -- Name: car_bookings_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -834,7 +829,7 @@ SELECT pg_catalog.setval('public.car_bookings_id_seq', 48, true);
 
 
 --
--- TOC entry 5173 (class 0 OID 0)
+-- TOC entry 5172 (class 0 OID 0)
 -- Dependencies: 223
 -- Name: daily_work_records_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -843,7 +838,7 @@ SELECT pg_catalog.setval('public.daily_work_records_id_seq', 28, true);
 
 
 --
--- TOC entry 5174 (class 0 OID 0)
+-- TOC entry 5173 (class 0 OID 0)
 -- Dependencies: 229
 -- Name: employee_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -852,25 +847,25 @@ SELECT pg_catalog.setval('public.employee_id_seq', 10, true);
 
 
 --
--- TOC entry 5175 (class 0 OID 0)
+-- TOC entry 5174 (class 0 OID 0)
 -- Dependencies: 219
 -- Name: leave_requests_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.leave_requests_id_seq', 23, true);
+SELECT pg_catalog.setval('public.leave_requests_id_seq', 19, true);
 
 
 --
--- TOC entry 5176 (class 0 OID 0)
+-- TOC entry 5175 (class 0 OID 0)
 -- Dependencies: 232
 -- Name: role_permissions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.role_permissions_id_seq', 384, true);
+SELECT pg_catalog.setval('public.role_permissions_id_seq', 373, true);
 
 
 --
--- TOC entry 5177 (class 0 OID 0)
+-- TOC entry 5176 (class 0 OID 0)
 -- Dependencies: 234
 -- Name: task_categories_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -879,7 +874,7 @@ SELECT pg_catalog.setval('public.task_categories_id_seq', 9, true);
 
 
 --
--- TOC entry 5178 (class 0 OID 0)
+-- TOC entry 5177 (class 0 OID 0)
 -- Dependencies: 225
 -- Name: tasks_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -888,16 +883,16 @@ SELECT pg_catalog.setval('public.tasks_id_seq', 4, true);
 
 
 --
--- TOC entry 5179 (class 0 OID 0)
+-- TOC entry 5178 (class 0 OID 0)
 -- Dependencies: 230
 -- Name: user_leave_quotas_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.user_leave_quotas_id_seq', 156, true);
+SELECT pg_catalog.setval('public.user_leave_quotas_id_seq', 152, true);
 
 
 --
--- TOC entry 5180 (class 0 OID 0)
+-- TOC entry 5179 (class 0 OID 0)
 -- Dependencies: 227
 -- Name: users_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -906,7 +901,7 @@ SELECT pg_catalog.setval('public.users_id_seq', 10, true);
 
 
 --
--- TOC entry 5181 (class 0 OID 0)
+-- TOC entry 5180 (class 0 OID 0)
 -- Dependencies: 236
 -- Name: work_statuses_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -915,7 +910,7 @@ SELECT pg_catalog.setval('public.work_statuses_id_seq', 5, true);
 
 
 --
--- TOC entry 4944 (class 2606 OID 16462)
+-- TOC entry 4943 (class 2606 OID 16462)
 -- Name: car_bookings car_bookings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -924,7 +919,7 @@ ALTER TABLE ONLY public.car_bookings
 
 
 --
--- TOC entry 4946 (class 2606 OID 16496)
+-- TOC entry 4945 (class 2606 OID 16496)
 -- Name: daily_work_records daily_work_records_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -933,7 +928,7 @@ ALTER TABLE ONLY public.daily_work_records
 
 
 --
--- TOC entry 4942 (class 2606 OID 16418)
+-- TOC entry 4941 (class 2606 OID 16418)
 -- Name: leave_requests leave_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -942,7 +937,7 @@ ALTER TABLE ONLY public.leave_requests
 
 
 --
--- TOC entry 4973 (class 2606 OID 16768)
+-- TOC entry 4972 (class 2606 OID 16768)
 -- Name: role_permissions role_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -951,7 +946,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- TOC entry 4975 (class 2606 OID 16770)
+-- TOC entry 4974 (class 2606 OID 16770)
 -- Name: role_permissions role_permissions_role_page_path_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -960,7 +955,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- TOC entry 4977 (class 2606 OID 16788)
+-- TOC entry 4976 (class 2606 OID 16788)
 -- Name: task_categories task_categories_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -969,7 +964,7 @@ ALTER TABLE ONLY public.task_categories
 
 
 --
--- TOC entry 4979 (class 2606 OID 16790)
+-- TOC entry 4978 (class 2606 OID 16790)
 -- Name: task_categories task_categories_value_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -978,7 +973,7 @@ ALTER TABLE ONLY public.task_categories
 
 
 --
--- TOC entry 4957 (class 2606 OID 16518)
+-- TOC entry 4956 (class 2606 OID 16518)
 -- Name: tasks tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -987,7 +982,7 @@ ALTER TABLE ONLY public.tasks
 
 
 --
--- TOC entry 4961 (class 2606 OID 16584)
+-- TOC entry 4960 (class 2606 OID 16584)
 -- Name: users unique_employee_id; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -996,7 +991,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 4967 (class 2606 OID 16743)
+-- TOC entry 4966 (class 2606 OID 16743)
 -- Name: user_leave_quotas user_leave_quotas_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1005,7 +1000,7 @@ ALTER TABLE ONLY public.user_leave_quotas
 
 
 --
--- TOC entry 4969 (class 2606 OID 16745)
+-- TOC entry 4968 (class 2606 OID 16745)
 -- Name: user_leave_quotas user_leave_quotas_user_id_leave_type_year_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1014,7 +1009,7 @@ ALTER TABLE ONLY public.user_leave_quotas
 
 
 --
--- TOC entry 4963 (class 2606 OID 16580)
+-- TOC entry 4962 (class 2606 OID 16580)
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1023,7 +1018,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 4965 (class 2606 OID 16582)
+-- TOC entry 4964 (class 2606 OID 16582)
 -- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1032,7 +1027,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 4981 (class 2606 OID 16805)
+-- TOC entry 4980 (class 2606 OID 16805)
 -- Name: work_statuses work_statuses_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1041,7 +1036,7 @@ ALTER TABLE ONLY public.work_statuses
 
 
 --
--- TOC entry 4983 (class 2606 OID 16807)
+-- TOC entry 4982 (class 2606 OID 16807)
 -- Name: work_statuses work_statuses_value_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1050,7 +1045,7 @@ ALTER TABLE ONLY public.work_statuses
 
 
 --
--- TOC entry 4947 (class 1259 OID 16497)
+-- TOC entry 4946 (class 1259 OID 16497)
 -- Name: idx_daily_work_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1058,7 +1053,7 @@ CREATE INDEX idx_daily_work_date ON public.daily_work_records USING btree (work_
 
 
 --
--- TOC entry 4948 (class 1259 OID 16528)
+-- TOC entry 4947 (class 1259 OID 16528)
 -- Name: idx_daily_work_files; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1066,7 +1061,7 @@ CREATE INDEX idx_daily_work_files ON public.daily_work_records USING gin (files)
 
 
 --
--- TOC entry 4949 (class 1259 OID 16498)
+-- TOC entry 4948 (class 1259 OID 16498)
 -- Name: idx_daily_work_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1074,7 +1069,7 @@ CREATE INDEX idx_daily_work_status ON public.daily_work_records USING btree (wor
 
 
 --
--- TOC entry 4950 (class 1259 OID 16525)
+-- TOC entry 4949 (class 1259 OID 16525)
 -- Name: idx_daily_work_task_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1082,7 +1077,7 @@ CREATE INDEX idx_daily_work_task_id ON public.daily_work_records USING btree (ta
 
 
 --
--- TOC entry 4951 (class 1259 OID 16603)
+-- TOC entry 4950 (class 1259 OID 16603)
 -- Name: idx_daily_work_work_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1090,7 +1085,7 @@ CREATE INDEX idx_daily_work_work_date ON public.daily_work_records USING btree (
 
 
 --
--- TOC entry 4970 (class 1259 OID 16772)
+-- TOC entry 4969 (class 1259 OID 16772)
 -- Name: idx_role_permissions_path; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1098,7 +1093,7 @@ CREATE INDEX idx_role_permissions_path ON public.role_permissions USING btree (p
 
 
 --
--- TOC entry 4971 (class 1259 OID 16771)
+-- TOC entry 4970 (class 1259 OID 16771)
 -- Name: idx_role_permissions_role; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1106,7 +1101,7 @@ CREATE INDEX idx_role_permissions_role ON public.role_permissions USING btree (r
 
 
 --
--- TOC entry 4952 (class 1259 OID 16529)
+-- TOC entry 4951 (class 1259 OID 16529)
 -- Name: idx_tasks_files; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1114,7 +1109,7 @@ CREATE INDEX idx_tasks_files ON public.tasks USING gin (files);
 
 
 --
--- TOC entry 4953 (class 1259 OID 16728)
+-- TOC entry 4952 (class 1259 OID 16728)
 -- Name: idx_tasks_project_end_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1122,7 +1117,7 @@ CREATE INDEX idx_tasks_project_end_date ON public.tasks USING btree (project_end
 
 
 --
--- TOC entry 4954 (class 1259 OID 16727)
+-- TOC entry 4953 (class 1259 OID 16727)
 -- Name: idx_tasks_project_start_date; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1130,7 +1125,7 @@ CREATE INDEX idx_tasks_project_start_date ON public.tasks USING btree (project_s
 
 
 --
--- TOC entry 4955 (class 1259 OID 16524)
+-- TOC entry 4954 (class 1259 OID 16524)
 -- Name: idx_tasks_task_name; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1138,7 +1133,7 @@ CREATE INDEX idx_tasks_task_name ON public.tasks USING btree (task_name);
 
 
 --
--- TOC entry 4958 (class 1259 OID 16586)
+-- TOC entry 4957 (class 1259 OID 16586)
 -- Name: idx_users_department; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1146,7 +1141,7 @@ CREATE INDEX idx_users_department ON public.users USING btree (department);
 
 
 --
--- TOC entry 4959 (class 1259 OID 16585)
+-- TOC entry 4958 (class 1259 OID 16585)
 -- Name: idx_users_employee_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1154,7 +1149,7 @@ CREATE INDEX idx_users_employee_id ON public.users USING btree (employee_id);
 
 
 --
--- TOC entry 4991 (class 2620 OID 16589)
+-- TOC entry 4990 (class 2620 OID 16589)
 -- Name: users trigger_generate_employee_id; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -1162,7 +1157,7 @@ CREATE TRIGGER trigger_generate_employee_id BEFORE INSERT ON public.users FOR EA
 
 
 --
--- TOC entry 4986 (class 2606 OID 16519)
+-- TOC entry 4985 (class 2606 OID 16519)
 -- Name: daily_work_records daily_work_records_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1171,7 +1166,7 @@ ALTER TABLE ONLY public.daily_work_records
 
 
 --
--- TOC entry 4985 (class 2606 OID 16669)
+-- TOC entry 4984 (class 2606 OID 16669)
 -- Name: car_bookings fk_car_booking_user; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1180,7 +1175,7 @@ ALTER TABLE ONLY public.car_bookings
 
 
 --
--- TOC entry 4987 (class 2606 OID 16679)
+-- TOC entry 4986 (class 2606 OID 16679)
 -- Name: daily_work_records fk_daily_work_user; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1189,7 +1184,7 @@ ALTER TABLE ONLY public.daily_work_records
 
 
 --
--- TOC entry 4984 (class 2606 OID 16674)
+-- TOC entry 4983 (class 2606 OID 16674)
 -- Name: leave_requests fk_leave_request_user; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1198,7 +1193,7 @@ ALTER TABLE ONLY public.leave_requests
 
 
 --
--- TOC entry 4988 (class 2606 OID 16684)
+-- TOC entry 4987 (class 2606 OID 16684)
 -- Name: tasks fk_task_assigned_user; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1207,7 +1202,7 @@ ALTER TABLE ONLY public.tasks
 
 
 --
--- TOC entry 4989 (class 2606 OID 16689)
+-- TOC entry 4988 (class 2606 OID 16689)
 -- Name: tasks fk_task_created_user; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1216,7 +1211,7 @@ ALTER TABLE ONLY public.tasks
 
 
 --
--- TOC entry 4990 (class 2606 OID 16746)
+-- TOC entry 4989 (class 2606 OID 16746)
 -- Name: user_leave_quotas user_leave_quotas_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1224,11 +1219,11 @@ ALTER TABLE ONLY public.user_leave_quotas
     ADD CONSTRAINT user_leave_quotas_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 
--- Completed on 2025-11-11 11:13:19
+-- Completed on 2025-11-10 13:34:13
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict IF99pb97gIlYc6HZ4m0oiOPTCgwk3Q8wrey3G72YsL6GzQ16Xw6XD3UIL6d83h2
+\unrestrict P05YJuZmMqyg41kdzWhUt1tmYa5gjqjjnWH2cuZKSTviFWfrQF6h3vN3V3X8Vhy
 
