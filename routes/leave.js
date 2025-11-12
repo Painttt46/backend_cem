@@ -60,9 +60,10 @@ async function resetLeaveQuotasForNewYear() {
     for (const user of usersResult.rows) {
       for (const quota of defaultQuotas) {
         await pool.query(`
-          INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year)
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT (user_id, leave_type, year) DO NOTHING
+          INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, used_days, year)
+          VALUES ($1, $2, $3, 0, $4)
+          ON CONFLICT (user_id, leave_type, year) 
+          DO UPDATE SET annual_quota = $3, used_days = 0
         `, [user.id, quota.leave_type, quota.annual_quota, currentYear]);
       }
     }
@@ -131,19 +132,35 @@ async function getLeaveQuotaFromDB(userId, leaveType) {
 // Calculate remaining leave days for user (updated to use database)
 async function calculateRemainingLeave(userId, leaveType) {
   const currentYear = new Date().getFullYear();
-  const quota = await getLeaveQuotaFromDB(userId, leaveType);
   
-  // Get total used days for this leave type in current year
-  const usedResult = await pool.query(`
-    SELECT COALESCE(SUM(total_days), 0) as used_days
-    FROM leave_requests 
-    WHERE user_id = $1 
-    AND leave_type = $2 
-    AND status = 'approved'
-    AND EXTRACT(YEAR FROM start_datetime) = $3
+  // Get quota and used_days from database
+  const quotaResult = await pool.query(`
+    SELECT annual_quota, used_days
+    FROM user_leave_quotas
+    WHERE user_id = $1 AND leave_type = $2 AND year = $3
   `, [userId, leaveType, currentYear]);
   
-  const usedDays = parseInt(usedResult.rows[0].used_days) || 0;
+  if (quotaResult.rows.length === 0) {
+    return { quota: 0, usedDays: 0, remainingDays: 0 };
+  }
+  
+  const quota = quotaResult.rows[0].annual_quota || 0;
+  let usedDays = quotaResult.rows[0].used_days;
+  
+  // If used_days is null, calculate from approved leave requests
+  if (usedDays === null || usedDays === undefined) {
+    const usedResult = await pool.query(`
+      SELECT COALESCE(SUM(total_days), 0) as used_days
+      FROM leave_requests 
+      WHERE user_id = $1 
+      AND leave_type = $2 
+      AND status = 'approved'
+      AND EXTRACT(YEAR FROM start_datetime) = $3
+    `, [userId, leaveType, currentYear]);
+    
+    usedDays = parseInt(usedResult.rows[0].used_days) || 0;
+  }
+  
   const remainingDays = quota - usedDays;
   
   return {
@@ -493,15 +510,24 @@ router.post('/init-quotas', async (req, res) => {
 router.put('/quota/:userId/:leaveType', async (req, res) => {
   try {
     const { userId, leaveType } = req.params;
-    const { annual_quota } = req.body;
+    const { quota, remaining } = req.body;
     const currentYear = new Date().getFullYear();
     
+    // Add used_days column if not exists
     await pool.query(`
-      INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year)
-      VALUES ($1, $2, $3, $4)
+      ALTER TABLE user_leave_quotas 
+      ADD COLUMN IF NOT EXISTS used_days INTEGER DEFAULT 0
+    `);
+    
+    // Calculate used days from quota and remaining
+    const usedDays = quota - remaining;
+    
+    await pool.query(`
+      INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, used_days, year)
+      VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (user_id, leave_type, year) 
-      DO UPDATE SET annual_quota = $3, updated_at = CURRENT_TIMESTAMP
-    `, [userId, leaveType, annual_quota, currentYear]);
+      DO UPDATE SET annual_quota = $3, used_days = $4
+    `, [userId, leaveType, quota, usedDays, currentYear]);
     
     res.json({ message: 'Quota updated successfully' });
   } catch (error) {
@@ -779,17 +805,39 @@ router.put('/:id/status', async (req, res) => {
     // If approving leave, check and update quota
     if (status === 'approved' && currentStatus !== 'approved') {
       const currentYear = new Date().getFullYear();
+      const days = parseInt(total_days) || 0;
       
       // Check remaining quota
       const quotaCheck = await calculateRemainingLeave(user_id, leave_type);
       
-      if (quotaCheck.remainingDays < total_days) {
+      if (quotaCheck.remainingDays < days) {
         return res.status(400).json({ 
-          error: `ไม่สามารถอนุมัติได้ โควต้าคงเหลือ ${quotaCheck.remainingDays} วัน แต่ขอลา ${total_days} วัน`
+          error: `ไม่สามารถอนุมัติได้ โควต้าคงเหลือ ${quotaCheck.remainingDays} วัน แต่ขอลา ${days} วัน`
         });
       }
       
-      console.log(`Approved leave: User ${user_id}, Type ${leave_type}, Days ${total_days}`);
+      // Update used_days in user_leave_quotas
+      await pool.query(`
+        UPDATE user_leave_quotas
+        SET used_days = COALESCE(used_days, 0) + $1
+        WHERE user_id = $2 AND leave_type = $3 AND year = $4
+      `, [days, user_id, leave_type, currentYear]);
+      
+      console.log(`Approved leave: User ${user_id}, Type ${leave_type}, Days ${days}`);
+    }
+    
+    // If rejecting previously approved leave, decrease used_days
+    if (status === 'rejected' && currentStatus === 'approved') {
+      const currentYear = new Date().getFullYear();
+      const days = parseInt(total_days) || 0;
+      
+      await pool.query(`
+        UPDATE user_leave_quotas
+        SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
+        WHERE user_id = $2 AND leave_type = $3 AND year = $4
+      `, [days, user_id, leave_type, currentYear]);
+      
+      console.log(`Rejected approved leave: User ${user_id}, Type ${leave_type}, Days ${days}`);
     }
     
     // Get updated data with user info for Teams notification
