@@ -420,7 +420,7 @@ router.post('/check-missing', async (req, res) => {
     const submittedUsersResult = await pool.query(`
       SELECT DISTINCT user_id 
       FROM daily_work_records 
-      WHERE work_date = $1
+      WHERE work_date::date = $1::date
     `, [today]);
     console.log('Users who submitted work today:', submittedUsersResult.rows.length);
 
