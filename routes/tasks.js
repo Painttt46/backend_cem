@@ -19,7 +19,10 @@ router.get('/', async (req, res) => {
     const result = await pool.query(`
       SELECT 
         t.id, t.task_name, t.so_number, t.contract_number, t.sale_owner, 
-        t.description, t.files, t.project_start_date, t.project_end_date, t.created_at, t.category,
+        t.description, t.files, 
+        TO_CHAR(t.project_start_date, 'YYYY-MM-DD') as project_start_date,
+        TO_CHAR(t.project_end_date, 'YYYY-MM-DD') as project_end_date,
+        t.created_at, t.category,
         CASE
           WHEN (SELECT MAX(dwr.created_at) FROM daily_work_records dwr WHERE dwr.task_id = t.id) > t.updated_at
           THEN (SELECT dwr.work_status FROM daily_work_records dwr WHERE dwr.task_id = t.id ORDER BY dwr.work_date DESC, dwr.created_at DESC LIMIT 1)
@@ -40,11 +43,30 @@ router.post('/', async (req, res) => {
   try {
     const { task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category, files } = req.body;
     
+    // Get the last status (highest sort_order) as default
+    const statusResult = await pool.query(`
+      SELECT value FROM work_statuses 
+      ORDER BY sort_order DESC 
+      LIMIT 1
+    `);
+    const defaultStatus = statusResult.rows[0]?.value || 'pending';
+    
+    // Get first category as default if not provided
+    let finalCategory = category;
+    if (!finalCategory) {
+      const categoryResult = await pool.query(`
+        SELECT value FROM task_categories 
+        ORDER BY sort_order ASC 
+        LIMIT 1
+      `);
+      finalCategory = categoryResult.rows[0]?.value || 'งานทั่วไป';
+    }
+    
     const result = await pool.query(`
-      INSERT INTO tasks (task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category, files)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+      INSERT INTO tasks (task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category, files, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
       RETURNING *
-    `, [task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category || 'งานทั่วไป', JSON.stringify(files || [])]);
+    `, [task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, finalCategory, JSON.stringify(files || []), defaultStatus]);
     
     res.status(201).json(result.rows[0]);
   } catch (error) {

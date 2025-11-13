@@ -471,9 +471,11 @@ router.get('/', async (req, res) => {
 
     let query = `
       SELECT 
-        dwr.id, dwr.task_id, dwr.work_date, dwr.start_time, dwr.end_time, dwr.total_hours,
+        dwr.id, dwr.task_id, 
+        TO_CHAR(dwr.work_date, 'YYYY-MM-DD') as work_date,
+        dwr.start_time, dwr.end_time, dwr.total_hours,
         dwr.work_status, dwr.location, dwr.work_description, dwr.files, dwr.submitted_at,
-        dwr.created_at, dwr.updated_at,
+        dwr.created_at, dwr.updated_at, dwr.user_id,
         COALESCE(u.firstname || ' ' || u.lastname, 'ไม่ระบุ') as employee_name,
         COALESCE(u.position, 'ไม่ระบุ') as employee_position,
         COALESCE(u.department, 'ไม่ระบุ') as employee_department,
