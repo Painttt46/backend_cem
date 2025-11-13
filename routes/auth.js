@@ -9,6 +9,7 @@ const router = express.Router();
 
 // Login with bcrypt password verification
 router.post('/login', async (req, res) => {
+  const client = await pool.connect();
   try {
     const { username, password } = req.body;
     
@@ -17,21 +18,29 @@ router.post('/login', async (req, res) => {
     }
     
     // Find user by username
-    const result = await pool.query(
-      'SELECT id, username, firstname, lastname, role, email, employee_id, position, department, password FROM users WHERE username = $1 AND is_active = true',
+    const result = await client.query(
+      'SELECT id, username, firstname, lastname, role, email, employee_id, position, department, password, is_active FROM users WHERE username = $1',
       [username]
     );
     
     if (result.rows.length === 0) {
+      console.log(`Login failed: User not found - ${username}`);
       return res.status(401).json({ error: 'Invalid username or password' });
     }
     
     const user = result.rows[0];
     
+    // Check if user is active
+    if (!user.is_active) {
+      console.log(`Login failed: User inactive - ${username}`);
+      return res.status(401).json({ error: 'Account is disabled' });
+    }
+    
     // Check password with bcrypt
     const isValidPassword = await bcrypt.compare(password, user.password);
     
     if (!isValidPassword) {
+      console.log(`Login failed: Invalid password - ${username}`);
       return res.status(401).json({ error: 'Invalid username or password' });
     }
     
@@ -57,6 +66,8 @@ router.post('/login', async (req, res) => {
     // Remove password from response
     delete user.password;
     
+    console.log(`Login successful: ${username} (${user.role})`);
+    
     res.json({
       success: true,
       access_token: token,
@@ -74,6 +85,8 @@ router.post('/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 

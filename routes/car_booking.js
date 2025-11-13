@@ -267,6 +267,9 @@ router.get('/', async (req, res) => {
             await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
             record.status = 'active';
             
+            // Send active notification
+            await sendTeamsNotification('active', record);
+            
             // Get and delete any other pending bookings for the same date and license
             const conflictingBookings = await pool.query(`
               SELECT 
@@ -339,6 +342,9 @@ router.get('/', async (req, res) => {
               // No conflict, can activate this booking
               await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
               record.status = 'active';
+              
+              // Send active notification
+              await sendTeamsNotification('active', record);
               
               // Get and delete any other pending bookings for the same date and license
               const conflictingBookings = await pool.query(`
