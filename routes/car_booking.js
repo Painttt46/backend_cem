@@ -197,25 +197,29 @@ router.get('/', async (req, res) => {
     // Check for pending bookings that should be cancelled due to overdue active bookings
     if (activeBooking) {
       const activeBorrowDate = new Date(activeBooking.selected_date);
+      activeBorrowDate.setHours(0, 0, 0, 0);
       const activeReturnDate = activeBooking.return_date ? new Date(activeBooking.return_date) : null;
-      const today = new Date();
+      const now = new Date();
       
       // Find pending bookings that conflict with active booking
-      const now = new Date();
       const conflictingPending = result.rows.filter(record => {
         if (record.status !== 'pending') return false;
         
         const pendingDate = new Date(record.selected_date);
+        pendingDate.setHours(0, 0, 0, 0);
         const pendingTime = record.time; // Format: "HH:MM"
         const [pendingHour, pendingMin] = pendingTime.split(':').map(Number);
-        const pendingDateTime = new Date(pendingDate);
+        const pendingDateTime = new Date(record.selected_date);
         pendingDateTime.setHours(pendingHour, pendingMin, 0, 0);
         
-        // Cancel only if pending booking time has arrived and active booking is still not returned
+        // Cancel if:
+        // 1. Pending booking time has arrived AND active booking is still not returned
+        // 2. OR pending booking date is same or after active borrow date AND no return date set
         const isPendingTimeArrived = pendingDateTime <= now;
         const isActiveStillUsing = !activeReturnDate;
+        const isPendingDateConflict = pendingDate >= activeBorrowDate && isActiveStillUsing;
         
-        return isPendingTimeArrived && isActiveStillUsing;
+        return (isPendingTimeArrived && isActiveStillUsing) || isPendingDateConflict;
       });
       
       if (conflictingPending.length > 0) {
@@ -338,6 +342,7 @@ router.get('/', async (req, res) => {
               }
               
               console.log(`Booking ${record.id} cancelled due to active booking conflict (active until ${activeReturnDate || 'unknown'})`);
+              continue; // Skip adding deleted record to results
             } else {
               // No conflict, can activate this booking
               await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
