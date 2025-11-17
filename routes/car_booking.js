@@ -4,6 +4,11 @@ import fetch from 'node-fetch';
 
 const router = express.Router();
 
+// Set timezone for PostgreSQL queries
+const setTimezone = async () => {
+  await pool.query("SET timezone = 'Asia/Bangkok'");
+};
+
 // Teams notification function
 async function sendTeamsNotification(type, data) {
   const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4bffff1623c14e5ba6d5247b4aa8f145/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TbXoIRcOZXL2QHHESf0jIDJ-JMr4jvh-XRovQya1_hM';
@@ -176,6 +181,7 @@ function createCarBookingMessage(type, data) {
 // Get all car booking records with status calculation
 router.get('/', async (req, res) => {
   try {
+    await setTimezone();
     const result = await pool.query(`
       SELECT 
         c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
@@ -213,13 +219,14 @@ router.get('/', async (req, res) => {
         pendingDateTime.setHours(pendingHour, pendingMin, 0, 0);
         
         // Cancel if:
-        // 1. Pending booking time has arrived AND active booking is still not returned
-        // 2. OR pending booking date is same or after active borrow date AND no return date set
+        // 1. Pending booking time has arrived (pendingDateTime <= now)
+        // 2. Active booking is still not returned (!activeReturnDate)
+        // 3. Pending booking date is same or after active booking date
         const isPendingTimeArrived = pendingDateTime <= now;
         const isActiveStillUsing = !activeReturnDate;
-        const isPendingDateConflict = pendingDate >= activeBorrowDate && isActiveStillUsing;
+        const isPendingAfterOrSameAsActive = pendingDate >= activeBorrowDate;
         
-        return (isPendingTimeArrived && isActiveStillUsing) || isPendingDateConflict;
+        return isPendingTimeArrived && isActiveStillUsing && isPendingAfterOrSameAsActive;
       });
       
       if (conflictingPending.length > 0) {
@@ -312,10 +319,15 @@ router.get('/', async (req, res) => {
             // Check if active booking conflicts with this pending booking
             const activeBorrowDate = new Date(activeBooking.selected_date);
             activeBorrowDate.setHours(0, 0, 0, 0);
+            const pendingBorrowDate = new Date(borrowDate);
+            pendingBorrowDate.setHours(0, 0, 0, 0);
             const activeReturnDate = activeBooking.return_date ? new Date(activeBooking.return_date) : null;
             
-            // If active booking has no return date or return date is after/equal to pending booking date
-            const hasConflict = !activeReturnDate || (activeReturnDate >= borrowDate);
+            // Conflict if:
+            // 1. Active booking is not returned yet AND
+            // 2. Pending booking date is same or after active booking date
+            const isPendingAfterOrSameAsActive = pendingBorrowDate >= activeBorrowDate;
+            const hasConflict = !activeReturnDate && isPendingAfterOrSameAsActive;
             
             if (hasConflict) {
               // Get booking data before deletion for Teams notification
@@ -406,6 +418,7 @@ router.post('/', async (req, res) => {
   } = req.body;
   
   try {
+    await setTimezone();
     // Check for conflicts with existing bookings (both active and pending)
     const newBookingDate = new Date(selected_date);
     newBookingDate.setHours(0, 0, 0, 0);
@@ -498,6 +511,7 @@ router.put('/:id', async (req, res) => {
   const { images, return_name, return_location, return_description, return_time, return_date } = req.body;
   
   try {
+    await setTimezone();
     let query, params;
     
     if (return_name || return_location || return_time || return_date) {
@@ -558,6 +572,7 @@ router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   
   try {
+    await setTimezone();
     // Get data with user info before deleting for Teams notification
     const beforeDelete = await pool.query(`
       SELECT 
@@ -583,6 +598,34 @@ router.delete('/:id', async (req, res) => {
     
     // Return the data with user info for Teams notification
     res.json(beforeDelete.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get server time
+router.get('/server-time', async (req, res) => {
+  try {
+    await setTimezone();
+    const result = await pool.query("SELECT NOW() as server_time");
+    res.json({ 
+      serverTime: result.rows[0].server_time,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get server time
+router.get('/server-time', async (req, res) => {
+  try {
+    await setTimezone();
+    const result = await pool.query("SELECT NOW() as server_time");
+    res.json({ 
+      serverTime: result.rows[0].server_time,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

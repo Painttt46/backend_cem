@@ -191,7 +191,7 @@ async function sendTeamsNotification(type, data) {
 }
 
 function createDailyWorkMessage(type, data) {
-  const currentTime = new Date().toLocaleString('th-TH');
+  const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
 
   switch (type) {
     case 'all_complete':

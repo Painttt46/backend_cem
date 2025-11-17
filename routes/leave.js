@@ -191,7 +191,7 @@ function calculateLeaveCost(leaveType, totalDays) {
 }
 
 async function createLeaveMessage(type, data) {
-  const currentTime = new Date().toLocaleString('th-TH');
+  const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
   let title, color, tableData;
 
   // Calculate correct leave days

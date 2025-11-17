@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-cem
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=2546paint
+      - POSTGRES_DB=SOCC
+      - TZ=Asia/Bangkok
+      - PGTZ=Asia/Bangkok
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db_cem3.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin-cem
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - TZ=Asia/Bangkok
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend-cem
+    ports:
+      - "3001:3001"
+    environment:
+      - DB_HOST=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=2546paint
+      - DB_NAME=SOCC
+      - DB_PORT=5432
+      - JWT_SECRET=gent-cem-secret-key-2025-change-this-in-production
+      - JWT_EXPIRES_IN=1h
+      - NODE_ENV=production
+      - TZ=Asia/Bangkok
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

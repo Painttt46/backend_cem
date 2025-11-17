@@ -15,12 +15,16 @@ import usersRoutes from './routes/users.js';
 import carBookingRoutes from './routes/car_booking.js';
 import rolePermissionsRoutes from './routes/role_permissions.js';
 import settingsRoutes from './routes/settings.js';
+import { startCarBookingScheduler } from './services/carBookingScheduler.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+
+// Start car booking scheduler
+startCarBookingScheduler();
 // Trust proxy - Required for express-rate-limit when behind proxy/load balancer
 app.set('trust proxy', 1);
 
@@ -90,6 +94,30 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'API is working!', timestamp: new Date().toISOString() });
 });
 
+
+// Health check endpoint
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
+  } catch (error) {
+    res.status(503).json({ status: "unhealthy", error: error.message });
+  }
+});
+
+// Public server time endpoint (no auth required)
+app.get("/api/server-time", async (req, res) => {
+  try {
+    await pool.query("SET timezone = 'Asia/Bangkok'");
+    const result = await pool.query("SELECT NOW() as server_time");
+    res.json({ 
+      serverTime: result.rows[0].server_time,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 // Routes - Auth routes ไม่ต้องใช้ middleware (เพราะเป็น login)
 app.use('/api/auth', authLimiter, authRoutes);
 
