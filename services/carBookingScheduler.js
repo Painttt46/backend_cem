@@ -209,9 +209,9 @@ async function checkAndUpdateBookingStatus() {
   };
 }
 
+const checkStatus = checkAndUpdateBookingStatus();
+
 export function startCarBookingScheduler() {
-  const checkStatus = checkAndUpdateBookingStatus();
-  
   // Run every 5 seconds
   cron.schedule('*/5 * * * * *', async () => {
     console.log('[Scheduler] Checking car booking status...');
