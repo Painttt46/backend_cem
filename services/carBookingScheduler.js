@@ -102,17 +102,16 @@ function createCarBookingMessage(type, data) {
   };
 }
 
+let isRunning = false;
+
 async function checkAndUpdateBookingStatus() {
-  let isRunning = false;
+  if (isRunning) {
+    console.log('[Scheduler] Previous check still running, skipping...');
+    return;
+  }
   
-  return async function() {
-    if (isRunning) {
-      console.log('[Scheduler] Previous check still running, skipping...');
-      return;
-    }
-    
-    isRunning = true;
-    try {
+  isRunning = true;
+  try {
       await pool.query("SET timezone = 'Asia/Bangkok'");
       
       const result = await pool.query(`
@@ -201,21 +200,18 @@ async function checkAndUpdateBookingStatus() {
           }
         }
       }
-    } catch (error) {
-      console.error('[Scheduler] Error:', error);
-    } finally {
-      isRunning = false;
-    }
-  };
+  } catch (error) {
+    console.error('[Scheduler] Error:', error);
+  } finally {
+    isRunning = false;
+  }
 }
-
-const checkStatus = checkAndUpdateBookingStatus();
 
 export function startCarBookingScheduler() {
   // Run every 5 seconds
   cron.schedule('*/5 * * * * *', async () => {
     console.log('[Scheduler] Checking car booking status...');
-    await checkStatus();
+    await checkAndUpdateBookingStatus();
   });
   
   console.log('[Scheduler] Car booking scheduler started (every 5 seconds)');
