@@ -4,7 +4,7 @@ services:
     container_name: postgres-cem
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=2546paint
+      - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=SOCC
       - TZ=Asia/Bangkok
       - PGTZ=Asia/Bangkok
@@ -42,9 +42,9 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - DB_HOST=postgres
+      - DB_HOST=localhost
       - DB_USER=postgres
-      - DB_PASSWORD=2546paint
+      - DB_PASSWORD=postgres
       - DB_NAME=SOCC
       - DB_PORT=5432
       - JWT_SECRET=gent-cem-secret-key-2025-change-this-in-production
