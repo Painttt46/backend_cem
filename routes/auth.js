@@ -168,18 +168,20 @@ router.post('/forgot-password', async (req, res) => {
     }
     
     const user = result.rows[0];
-    const passwordToSend = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
-    const hashedPassword = await bcrypt.hash(passwordToSend, 10);
+    const newPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
     
-    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, user.id]);
-    
+    // ส่ง email ก่อน ถ้าสำเร็จค่อยเปลี่ยน password
     try {
       const emailResult = await sendForgotPasswordEmail(email, {
         ...user,
-        password: passwordToSend
+        password: newPassword
       });
       
       if (emailResult.success) {
+        // ส่ง email สำเร็จ ค่อยเปลี่ยน password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, user.id]);
+        
         return res.json({ 
           message: 'ส่งข้อมูลการเข้าสู่ระบบไปยังอีเมลของคุณเรียบร้อยแล้ว',
           success: true
@@ -188,16 +190,10 @@ router.post('/forgot-password', async (req, res) => {
         throw new Error(emailResult.error);
       }
     } catch (emailError) {
-      return res.json({
-        message: 'ไม่สามารถส่งอีเมลได้ แต่พบข้อมูลผู้ใช้',
-        success: true,
-        fallback: true,
-        userData: {
-          username: user.username,
-          email: user.email,
-          name: `${user.firstname} ${user.lastname}`,
-          password: passwordToSend
-        }
+      // ส่ง email ไม่ได้ ไม่เปลี่ยน password
+      return res.status(500).json({
+        error: 'ไม่สามารถส่งอีเมลได้ กรุณาติดต่อผู้ดูแลระบบ',
+        success: false
       });
     }
     

@@ -51,11 +51,11 @@ services:
       - JWT_EXPIRES_IN=1h
       - NODE_ENV=production
       - TZ=Asia/Bangkok
-      - EMAIL_HOST=gents.agents@gmail.com
+      - EMAIL_HOST=smtp.gmail.com
       - EMAIL_PORT=587
-      - EMAIL_USER=your-email@gmail.com
+      - EMAIL_USER=gents.agents@gmail.com
       - EMAIL_PASS=yftd yhwr jmuj ovsf
-      - EMAIL_FROM=Gent-CEM System <your-email@gmail.com>
+      - EMAIL_FROM=Gent-CEM System <gents.agents@gmail.com>
     volumes:
       - ./uploads:/app/uploads
     depends_on:
