@@ -1,4 +1,5 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
 
@@ -873,10 +874,17 @@ router.delete('/:id', async (req, res) => {
 
   try {
     // ดึง user info จาก token
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    const userId = token?.split('_')[1];
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
+    
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
 
-    if (!userId) {
+    let userId;
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      userId = decoded.userId;
+    } catch (e) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
