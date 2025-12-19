@@ -26,7 +26,7 @@ router.get('/', async (req, res) => {
         CASE
           WHEN (SELECT MAX(dwr.created_at) FROM daily_work_records dwr WHERE dwr.task_id = t.id) > t.updated_at
           THEN (SELECT dwr.work_status FROM daily_work_records dwr WHERE dwr.task_id = t.id ORDER BY dwr.work_date DESC, dwr.created_at DESC LIMIT 1)
-          ELSE COALESCE(t.status, 'pending')
+          ELSE t.status
         END as status
       FROM tasks t
       ORDER BY t.created_at DESC
@@ -77,7 +77,7 @@ router.get('/:id', async (req, res) => {
         CASE
           WHEN (SELECT MAX(dwr.created_at) FROM daily_work_records dwr WHERE dwr.task_id = t.id) > t.updated_at
           THEN (SELECT dwr.work_status FROM daily_work_records dwr WHERE dwr.task_id = t.id ORDER BY dwr.work_date DESC, dwr.created_at DESC LIMIT 1)
-          ELSE COALESCE(t.status, 'pending')
+          ELSE t.status
         END as status
       FROM tasks t 
       WHERE t.id = $1
