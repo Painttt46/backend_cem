@@ -43,14 +43,6 @@ router.post('/', async (req, res) => {
   try {
     const { task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category, files } = req.body;
     
-    // Get the last status (highest sort_order) as default
-    const statusResult = await pool.query(`
-      SELECT value FROM work_statuses 
-      ORDER BY sort_order DESC 
-      LIMIT 1
-    `);
-    const defaultStatus = statusResult.rows[0]?.value || 'pending';
-    
     // Get first category as default if not provided
     let finalCategory = category;
     if (!finalCategory) {
@@ -64,9 +56,9 @@ router.post('/', async (req, res) => {
     
     const result = await pool.query(`
       INSERT INTO tasks (task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category, files, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NULL)
       RETURNING *
-    `, [task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, finalCategory, JSON.stringify(files || []), defaultStatus]);
+    `, [task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, finalCategory, JSON.stringify(files || [])]);
     
     res.status(201).json(result.rows[0]);
   } catch (error) {
