@@ -523,10 +523,13 @@ router.post('/', async (req, res) => {
     create_calendar_event, attendees, create_teams_meeting, meeting_room, event_details
   } = req.body;
 
+  console.log('Daily work POST request:', { task_id, work_date, work_status, user_id });
+
   try {
     // Validate work_status
     if (!work_status || typeof work_status !== 'string' || work_status.trim() === '') {
-      return res.status(400).json({ error: 'Invalid work_status' });
+      console.log('Invalid work_status:', work_status);
+      return res.status(400).json({ error: 'กรุณาเลือกสถานะงาน' });
     }
 
     // ดึง task_name จาก tasks table
