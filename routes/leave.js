@@ -880,22 +880,9 @@ router.delete('/:id', async (req, res) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    // ดึงข้อมูล user ที่ login
-    const userResult = await pool.query(
-      'SELECT firstname, lastname FROM users WHERE id = $1',
-      [userId]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const user = userResult.rows[0];
-    const currentUserName = `${user.firstname} ${user.lastname}`;
-
     // ตรวจสอบคำขอลา
     const checkResult = await pool.query(
-      'SELECT employee_name, status FROM leave_requests WHERE id = $1',
+      'SELECT user_id, status FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -905,8 +892,8 @@ router.delete('/:id', async (req, res) => {
 
     const leaveRequest = checkResult.rows[0];
 
-    // ตรวจสอบว่าเป็นเจ้าของคำขอและยัง pending
-    if (leaveRequest.employee_name !== currentUserName) {
+    // ตรวจสอบว่าเป็นเจ้าของคำขอ
+    if (leaveRequest.user_id != userId) {
       return res.status(403).json({ error: 'Not authorized to delete this request' });
     }
 
