@@ -24,8 +24,8 @@ services:
     image: dpage/pgadmin4:latest
     container_name: pgadmin-cem
     environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
-      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_DEFAULT_EMAIL=admin@gent-s.com
+      - PGADMIN_DEFAULT_PASSWORD=Passw0rd1234!@#$
       - TZ=Asia/Bangkok
     ports:
       - "5050:80"
