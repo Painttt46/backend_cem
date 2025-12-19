@@ -515,15 +515,23 @@ router.put('/:id', async (req, res) => {
     let query, params;
     
     if (return_name || return_location || return_time || return_date) {
-      // Update return information and change status to returned
-      // Store return description in the same discription column
+      // Get existing images first
+      const existing = await pool.query('SELECT images FROM car_bookings WHERE id = $1', [id]);
+      const existingImages = existing.rows[0]?.images || [];
+      
+      // Merge: existing = borrow images, new = return images
+      const mergedImages = {
+        borrow: Array.isArray(existingImages) ? existingImages : (existingImages.borrow || []),
+        return: images || []
+      };
+      
       query = `
         UPDATE car_bookings 
-        SET return_name = $1, return_location = $2, discription = $3, return_time = $4, return_date = $5, status = 'returned', updated_at = NOW() 
-        WHERE id = $6 
+        SET return_name = $1, return_location = $2, discription = $3, return_time = $4, return_date = $5, images = $6, status = 'returned', updated_at = NOW() 
+        WHERE id = $7 
         RETURNING *
       `;
-      params = [return_name, return_location, return_description, return_time, return_date, id];
+      params = [return_name, return_location, return_description, return_time, return_date, JSON.stringify(mergedImages), id];
     } else {
       // Update images only
       query = `
