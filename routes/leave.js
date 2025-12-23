@@ -9,6 +9,19 @@ const router = express.Router();
 // Get approvers by level and send email notification
 async function notifyApprovers(level, leaveData, notificationType) {
   try {
+    // Check if table exists first
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'leave_approval_settings'
+      )
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      console.log('leave_approval_settings table does not exist, skipping notification');
+      return;
+    }
+
     const result = await pool.query(`
       SELECT u.email 
       FROM leave_approval_settings las
@@ -24,6 +37,7 @@ async function notifyApprovers(level, leaveData, notificationType) {
     }
   } catch (error) {
     console.error('Error notifying approvers:', error);
+    // Don't throw - notification failure shouldn't block approval
   }
 }
 
@@ -810,9 +824,14 @@ router.put('/:id/status', async (req, res) => {
   const { status, approved_by, approval_level } = req.body;
 
   try {
-    // Get leave request details first
+    // Ensure columns exist first
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
+
+    // Get leave request details
     const leaveRequest = await pool.query(`
-      SELECT user_id, leave_type, total_days, status, approval_level as current_level
+      SELECT user_id, leave_type, total_days, status, COALESCE(approval_level, 0) as current_level
       FROM leave_requests 
       WHERE id = $1
     `, [id]);
@@ -838,11 +857,6 @@ router.put('/:id/status', async (req, res) => {
         newApprovalLevel = 2;
       }
     }
-
-    // Update leave status - ensure columns exist
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
 
     let updateQuery, updateParams;
     
@@ -926,21 +940,25 @@ router.put('/:id/status', async (req, res) => {
 
     const updatedData = updatedResult.rows[0];
 
-    // Send email notifications based on new status
-    if (newStatus === 'pending_level2') {
-      // Notify level 2 approvers
-      await notifyApprovers(2, updatedData, 'pending_level2');
-      await sendTeamsNotification('approve', { ...updatedData, status: 'HR อนุมัติ - รอผู้บริหาร' });
-    } else if (newStatus === 'approved') {
-      await sendTeamsNotification('approve', updatedData);
-    } else if (newStatus === 'rejected') {
-      await sendTeamsNotification('reject', updatedData);
+    // Send notifications (don't let notification errors block the response)
+    try {
+      if (newStatus === 'pending_level2') {
+        await notifyApprovers(2, updatedData, 'pending_level2');
+        await sendTeamsNotification('approve', { ...updatedData, status: 'HR อนุมัติ - รอผู้บริหาร' });
+      } else if (newStatus === 'approved') {
+        await sendTeamsNotification('approve', updatedData);
+      } else if (newStatus === 'rejected') {
+        await sendTeamsNotification('reject', updatedData);
+      }
+    } catch (notifyError) {
+      console.error('Notification error (non-blocking):', notifyError);
     }
 
     res.json(updatedData);
   } catch (error) {
     console.error('Error updating leave status:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: error.message, details: error.stack });
   }
 });
 
