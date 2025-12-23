@@ -173,43 +173,56 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('th-TH', {
-      year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
   };
 
-  let subject, headerColor, headerText, statusText;
+  const formatTime = (date) => {
+    return new Date(date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  let subject, headerBg, headerIcon, headerText, actionText;
   
   switch (notificationType) {
     case 'new_request':
-      subject = `📝 คำขอลาใหม่ - ${leaveData.employee_name}`;
-      headerColor = '#3b82f6';
-      headerText = '📝 คำขอลาใหม่ - รอการอนุมัติขั้นที่ 1';
-      statusText = 'รอ HR อนุมัติ';
+      subject = `[แจ้งเตือน] คำขอลางาน - ${leaveData.employee_name}`;
+      headerBg = 'linear-gradient(135deg, #1e40af, #3b82f6)';
+      headerIcon = '📋';
+      headerText = 'คำขอลางานใหม่';
+      actionText = 'กรุณาพิจารณาอนุมัติคำขอลางาน';
       break;
     case 'pending_level2':
-      subject = `✅ HR อนุมัติแล้ว - รอผู้บริหารอนุมัติ - ${leaveData.employee_name}`;
-      headerColor = '#f59e0b';
-      headerText = '⏳ รอการอนุมัติขั้นที่ 2';
-      statusText = 'HR อนุมัติแล้ว - รอผู้บริหารอนุมัติ';
+      subject = `[รอดำเนินการ] คำขอลางานรอการอนุมัติขั้นสุดท้าย - ${leaveData.employee_name}`;
+      headerBg = 'linear-gradient(135deg, #b45309, #f59e0b)';
+      headerIcon = '⏳';
+      headerText = 'รอการอนุมัติขั้นสุดท้าย';
+      actionText = 'คำขอนี้ผ่านการอนุมัติจาก HR แล้ว กรุณาพิจารณาอนุมัติขั้นสุดท้าย';
       break;
     case 'approved':
-      subject = `✅ อนุมัติการลาสำเร็จ - ${leaveData.employee_name}`;
-      headerColor = '#10b981';
-      headerText = '✅ อนุมัติการลาสำเร็จ';
-      statusText = 'อนุมัติแล้ว';
+      subject = `[อนุมัติแล้ว] คำขอลางาน - ${leaveData.employee_name}`;
+      headerBg = 'linear-gradient(135deg, #047857, #10b981)';
+      headerIcon = '✅';
+      headerText = 'อนุมัติการลาเรียบร้อยแล้ว';
+      actionText = 'คำขอลางานได้รับการอนุมัติเรียบร้อยแล้ว';
       break;
     case 'rejected':
-      subject = `❌ ปฏิเสธการลา - ${leaveData.employee_name}`;
-      headerColor = '#ef4444';
-      headerText = '❌ ปฏิเสธการลา';
-      statusText = 'ไม่อนุมัติ';
+      subject = `[ไม่อนุมัติ] คำขอลางาน - ${leaveData.employee_name}`;
+      headerBg = 'linear-gradient(135deg, #b91c1c, #ef4444)';
+      headerIcon = '❌';
+      headerText = 'ไม่อนุมัติการลา';
+      actionText = 'คำขอลางานไม่ได้รับการอนุมัติ';
       break;
     default:
-      subject = `แจ้งเตือนการลา - ${leaveData.employee_name}`;
-      headerColor = '#6b7280';
+      subject = `[แจ้งเตือน] คำขอลางาน - ${leaveData.employee_name}`;
+      headerBg = '#4b5563';
+      headerIcon = '📌';
       headerText = 'แจ้งเตือนการลา';
-      statusText = leaveData.status;
+      actionText = '';
   }
+
+  const currentDate = new Date().toLocaleDateString('th-TH', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
 
   const mailOptions = {
     from: process.env.EMAIL_FROM,
@@ -222,76 +235,125 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
       </head>
-      <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background: #f3f4f6;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="padding: 20px;">
+      <body style="margin: 0; padding: 0; font-family: 'Sarabun', 'Segoe UI', Arial, sans-serif; background: #f8fafc; line-height: 1.6;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="padding: 30px 15px;">
           <tr>
             <td align="center">
-              <table width="600" cellpadding="0" cellspacing="0" style="background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+              <table width="650" cellpadding="0" cellspacing="0" style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.1);">
                 
                 <!-- Header -->
                 <tr>
-                  <td style="background: ${headerColor}; padding: 25px; text-align: center; color: white;">
-                    <h1 style="margin: 0; font-size: 22px;">${headerText}</h1>
+                  <td style="background: ${headerBg}; padding: 35px 40px; text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">${headerIcon}</div>
+                    <h1 style="margin: 0; font-size: 26px; color: white; font-weight: 600; letter-spacing: 0.5px;">${headerText}</h1>
+                    <p style="margin: 10px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">${currentDate}</p>
+                  </td>
+                </tr>
+                
+                <!-- Action Text -->
+                <tr>
+                  <td style="padding: 25px 40px 15px 40px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                    <p style="margin: 0; color: #475569; font-size: 15px; text-align: center;">${actionText}</p>
                   </td>
                 </tr>
                 
                 <!-- Content -->
                 <tr>
-                  <td style="padding: 30px;">
-                    <table width="100%" cellpadding="10" cellspacing="0" style="border: 1px solid #e5e7eb; border-radius: 8px;">
-                      <tr style="background: #f9fafb;">
-                        <td style="font-weight: bold; width: 40%;">ผู้ขอลา</td>
-                        <td>${leaveData.employee_name || '-'}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold;">ตำแหน่ง</td>
-                        <td>${leaveData.employee_position || '-'}</td>
-                      </tr>
-                      <tr style="background: #f9fafb;">
-                        <td style="font-weight: bold;">ประเภทการลา</td>
-                        <td>${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold;">วันเริ่มลา</td>
-                        <td>${formatDate(leaveData.start_datetime)}</td>
-                      </tr>
-                      <tr style="background: #f9fafb;">
-                        <td style="font-weight: bold;">วันสิ้นสุด</td>
-                        <td>${formatDate(leaveData.end_datetime)}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold;">จำนวนวัน</td>
-                        <td>${leaveData.total_days} วัน</td>
-                      </tr>
-                      <tr style="background: #f9fafb;">
-                        <td style="font-weight: bold;">เหตุผล</td>
-                        <td>${leaveData.reason || '-'}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold;">สถานะ</td>
-                        <td style="color: ${headerColor}; font-weight: bold;">${statusText}</td>
-                      </tr>
-                      ${leaveData.approved_by ? `
-                      <tr style="background: #f9fafb;">
-                        <td style="font-weight: bold;">ผู้ดำเนินการ</td>
-                        <td>${leaveData.approved_by}</td>
-                      </tr>
-                      ` : ''}
-                    </table>
+                  <td style="padding: 30px 40px;">
                     
-                    ${notificationType === 'new_request' || notificationType === 'pending_level2' ? `
-                    <div style="margin-top: 20px; text-align: center;">
-                      <p style="color: #6b7280;">กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติ</p>
+                    <!-- Employee Info Card -->
+                    <div style="background: #f1f5f9; border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+                      <h3 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px; font-weight: 600; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px;">
+                        👤 ข้อมูลผู้ขอลา
+                      </h3>
+                      <table width="100%" cellpadding="8" cellspacing="0">
+                        <tr>
+                          <td style="color: #64748b; width: 35%; font-size: 14px;">ชื่อ-นามสกุล</td>
+                          <td style="color: #1e293b; font-weight: 600; font-size: 14px;">${leaveData.employee_name || '-'}</td>
+                        </tr>
+                        <tr>
+                          <td style="color: #64748b; font-size: 14px;">ตำแหน่ง</td>
+                          <td style="color: #1e293b; font-size: 14px;">${leaveData.employee_position || '-'}</td>
+                        </tr>
+                      </table>
+                    </div>
+                    
+                    <!-- Leave Details Card -->
+                    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+                      <h3 style="margin: 0 0 15px 0; color: #92400e; font-size: 16px; font-weight: 600; border-bottom: 2px solid #fde68a; padding-bottom: 10px;">
+                        📅 รายละเอียดการลา
+                      </h3>
+                      <table width="100%" cellpadding="10" cellspacing="0">
+                        <tr>
+                          <td style="color: #78716c; width: 35%; font-size: 14px; vertical-align: top;">ประเภทการลา</td>
+                          <td style="font-size: 14px;">
+                            <span style="background: #fef3c7; color: #92400e; padding: 4px 12px; border-radius: 20px; font-weight: 600;">
+                              ${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}
+                            </span>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="color: #78716c; font-size: 14px; vertical-align: top;">วันที่เริ่มลา</td>
+                          <td style="color: #1c1917; font-size: 14px;">${formatDate(leaveData.start_datetime)}<br><span style="color: #78716c; font-size: 13px;">เวลา ${formatTime(leaveData.start_datetime)} น.</span></td>
+                        </tr>
+                        <tr>
+                          <td style="color: #78716c; font-size: 14px; vertical-align: top;">วันที่สิ้นสุด</td>
+                          <td style="color: #1c1917; font-size: 14px;">${formatDate(leaveData.end_datetime)}<br><span style="color: #78716c; font-size: 13px;">เวลา ${formatTime(leaveData.end_datetime)} น.</span></td>
+                        </tr>
+                        <tr>
+                          <td style="color: #78716c; font-size: 14px;">จำนวนวันลา</td>
+                          <td style="font-size: 14px;">
+                            <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 20px; font-weight: 700;">
+                              ${leaveData.total_days} วัน
+                            </span>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="color: #78716c; font-size: 14px; vertical-align: top;">เหตุผลการลา</td>
+                          <td style="color: #1c1917; font-size: 14px;">${leaveData.reason || '-'}</td>
+                        </tr>
+                      </table>
+                    </div>
+                    
+                    ${leaveData.approved_by_level1 || leaveData.approved_by_level2 ? `
+                    <!-- Approver Info -->
+                    <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 20px;">
+                      <h3 style="margin: 0 0 15px 0; color: #065f46; font-size: 16px; font-weight: 600; border-bottom: 2px solid #a7f3d0; padding-bottom: 10px;">
+                        ✍️ ผู้ดำเนินการอนุมัติ
+                      </h3>
+                      <table width="100%" cellpadding="8" cellspacing="0">
+                        ${leaveData.approved_by_level1 ? `
+                        <tr>
+                          <td style="color: #047857; width: 40%; font-size: 14px;">ขั้นที่ 1 (HR)</td>
+                          <td style="color: #065f46; font-weight: 600; font-size: 14px;">${leaveData.approved_by_level1}</td>
+                        </tr>
+                        ` : ''}
+                        ${leaveData.approved_by_level2 ? `
+                        <tr>
+                          <td style="color: #047857; font-size: 14px;">ขั้นที่ 2 (ผู้บริหาร)</td>
+                          <td style="color: #065f46; font-weight: 600; font-size: 14px;">${leaveData.approved_by_level2}</td>
+                        </tr>
+                        ` : ''}
+                      </table>
                     </div>
                     ` : ''}
+                    
+                    ${notificationType === 'new_request' || notificationType === 'pending_level2' ? `
+                    <!-- Action Button -->
+                    <div style="text-align: center; margin-top: 30px;">
+                      <p style="color: #64748b; font-size: 14px; margin-bottom: 15px;">กรุณาเข้าสู่ระบบเพื่อดำเนินการ</p>
+                    </div>
+                    ` : ''}
+                    
                   </td>
                 </tr>
                 
                 <!-- Footer -->
                 <tr>
-                  <td style="background: #1f2937; color: white; padding: 15px; text-align: center; font-size: 12px;">
-                    <p style="margin: 0;">© 2024 Gent-CEM System</p>
-                    <p style="margin: 5px 0 0 0; opacity: 0.7;">อีเมลนี้ถูกส่งโดยอัตโนมัติ</p>
+                  <td style="background: #1e293b; color: white; padding: 25px 40px; text-align: center;">
+                    <p style="margin: 0 0 5px 0; font-size: 15px; font-weight: 600;">Gent-CEM System</p>
+                    <p style="margin: 0; font-size: 12px; color: #94a3b8;">Customer Excellence Management</p>
+                    <p style="margin: 15px 0 0 0; font-size: 11px; color: #64748b;">อีเมลนี้ถูกส่งโดยอัตโนมัติจากระบบ กรุณาอย่าตอบกลับ</p>
                   </td>
                 </tr>
                 

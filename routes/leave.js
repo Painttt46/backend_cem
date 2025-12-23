@@ -261,9 +261,9 @@ async function createLeaveMessage(type, data) {
         ['วันเริ่มลา', formatDateTime(data.start_datetime)],
         ['วันสิ้นสุด', formatDateTime(data.end_datetime)],
         ['จำนวนวัน', correctDays + ' วัน'],
-
         ['เหตุผล', data.reason || '-'],
-        ['ผู้อนุมัติ', data.approved_by || 'ไม่ระบุ'],
+        ['ผู้อนุมัติขั้นที่ 1 (HR)', data.approved_by_level1 || '-'],
+        ['ผู้อนุมัติขั้นที่ 2 (ผู้บริหาร)', data.approved_by_level2 || '-'],
         ['สถานะ', 'อนุมัติ']
       ];
       break;
@@ -834,15 +834,43 @@ router.put('/:id/status', async (req, res) => {
 
     // Update leave status
     await pool.query(`
-      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0
+      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0;
+      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT;
+      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT;
     `);
 
-    const result = await pool.query(`
-      UPDATE leave_requests 
-      SET status = $1, approved_by = $2, approval_level = $3, updated_at = NOW() 
-      WHERE id = $4 
-      RETURNING *
-    `, [newStatus, approved_by, newApprovalLevel, id]);
+    let updateQuery, updateParams;
+    
+    if (newApprovalLevel === 1 && newStatus === 'pending_level2') {
+      // Level 1 approved
+      updateQuery = `
+        UPDATE leave_requests 
+        SET status = $1, approved_by_level1 = $2, approval_level = $3, updated_at = NOW() 
+        WHERE id = $4 
+        RETURNING *
+      `;
+      updateParams = [newStatus, approved_by, newApprovalLevel, id];
+    } else if (newApprovalLevel === 2 && newStatus === 'approved') {
+      // Level 2 approved
+      updateQuery = `
+        UPDATE leave_requests 
+        SET status = $1, approved_by_level2 = $2, approved_by = $2, approval_level = $3, updated_at = NOW() 
+        WHERE id = $4 
+        RETURNING *
+      `;
+      updateParams = [newStatus, approved_by, newApprovalLevel, id];
+    } else {
+      // Rejected or other
+      updateQuery = `
+        UPDATE leave_requests 
+        SET status = $1, approved_by = $2, approval_level = $3, updated_at = NOW() 
+        WHERE id = $4 
+        RETURNING *
+      `;
+      updateParams = [newStatus, approved_by, newApprovalLevel, id];
+    }
+
+    const result = await pool.query(updateQuery, updateParams);
 
     // If fully approved, update quota
     if (newStatus === 'approved' && currentStatus !== 'approved') {
@@ -882,7 +910,8 @@ router.put('/:id/status', async (req, res) => {
         l.id, l.leave_type, l.start_datetime, l.end_datetime, l.total_days, l.reason,
         l.has_delegation, l.delegate_name, l.delegate_position, l.delegate_department,
         l.delegate_contact, l.work_details, l.attachments, l.status, l.approved_by, 
-        l.approval_level, l.created_at, l.updated_at, l.user_id,
+        l.approval_level, l.approved_by_level1, l.approved_by_level2,
+        l.created_at, l.updated_at, l.user_id,
         u.firstname || ' ' || u.lastname as employee_name,
         u.position as employee_position
       FROM leave_requests l
