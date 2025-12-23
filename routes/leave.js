@@ -873,7 +873,7 @@ router.put('/:id/status', async (req, res) => {
       // Level 2 approved
       updateQuery = `
         UPDATE leave_requests 
-        SET status = $1, approved_by_level2 = $2, approved_by = $2, approval_level = $3, updated_at = NOW() 
+        SET status = $1, approved_by_level2 = $2::text, approved_by = $2::text, approval_level = $3, updated_at = NOW() 
         WHERE id = $4 
         RETURNING *
       `;
