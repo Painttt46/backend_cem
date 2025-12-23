@@ -832,12 +832,10 @@ router.put('/:id/status', async (req, res) => {
       }
     }
 
-    // Update leave status
-    await pool.query(`
-      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0;
-      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT;
-      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT;
-    `);
+    // Update leave status - ensure columns exist
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
 
     let updateQuery, updateParams;
     
