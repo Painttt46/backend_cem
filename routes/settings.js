@@ -216,7 +216,6 @@ router.put('/statuses/update-colors', async (req, res) => {
   }
 });
 
-export default router;
 
 // ========== LEAVE APPROVAL SETTINGS ==========
 
@@ -315,3 +314,5 @@ router.put('/leave-approval/:level/:userId', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+export default router;
