@@ -2,8 +2,30 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
+import { sendLeaveNotificationEmail } from '../services/emailService.js';
 
 const router = express.Router();
+
+// Get approvers by level and send email notification
+async function notifyApprovers(level, leaveData, notificationType) {
+  try {
+    const result = await pool.query(`
+      SELECT u.email 
+      FROM leave_approval_settings las
+      JOIN users u ON las.user_id = u.id
+      WHERE las.approval_level = $1 AND las.receive_email = true AND u.email IS NOT NULL
+    `, [level]);
+    
+    const emails = result.rows.map(r => r.email).filter(e => e);
+    
+    if (emails.length > 0) {
+      await sendLeaveNotificationEmail(emails, leaveData, notificationType);
+      console.log(`Sent ${notificationType} notification to level ${level} approvers:`, emails);
+    }
+  } catch (error) {
+    console.error('Error notifying approvers:', error);
+  }
+}
 
 // Teams notification function
 async function sendTeamsNotification(type, data) {
@@ -765,8 +787,8 @@ router.post('/', async (req, res) => {
 
     const leaveData = createdResult.rows[0];
 
-    // Remove Teams notification for new requests - only notify on approval
-    // await sendTeamsNotification('request', leaveData);
+    // Send email notification to level 1 approvers (HR)
+    await notifyApprovers(1, leaveData, 'new_request');
 
     res.status(201).json(leaveData);
   } catch (error) {
@@ -778,12 +800,12 @@ router.post('/', async (req, res) => {
 // Update leave status
 router.put('/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status, approved_by } = req.body;
+  const { status, approved_by, approval_level } = req.body;
 
   try {
     // Get leave request details first
     const leaveRequest = await pool.query(`
-      SELECT user_id, leave_type, total_days, status 
+      SELECT user_id, leave_type, total_days, status, approval_level as current_level
       FROM leave_requests 
       WHERE id = $1
     `, [id]);
@@ -792,22 +814,41 @@ router.put('/:id/status', async (req, res) => {
       return res.status(404).json({ error: 'Leave request not found' });
     }
 
-    const { user_id, leave_type, total_days, status: currentStatus } = leaveRequest.rows[0];
+    const { user_id, leave_type, total_days, status: currentStatus, current_level } = leaveRequest.rows[0];
+
+    let newStatus = status;
+    let newApprovalLevel = approval_level || current_level || 0;
+
+    // 2-Step Approval Logic
+    if (status === 'approved') {
+      if (newApprovalLevel === 1) {
+        // Level 1 (HR) approved -> move to pending level 2
+        newStatus = 'pending_level2';
+        newApprovalLevel = 1;
+      } else if (newApprovalLevel === 2) {
+        // Level 2 (Manager) approved -> fully approved
+        newStatus = 'approved';
+        newApprovalLevel = 2;
+      }
+    }
 
     // Update leave status
+    await pool.query(`
+      ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0
+    `);
+
     const result = await pool.query(`
       UPDATE leave_requests 
-      SET status = $1, approved_by = $2, updated_at = NOW() 
-      WHERE id = $3 
+      SET status = $1, approved_by = $2, approval_level = $3, updated_at = NOW() 
+      WHERE id = $4 
       RETURNING *
-    `, [status, approved_by, id]);
+    `, [newStatus, approved_by, newApprovalLevel, id]);
 
-    // If approving leave, check and update quota
-    if (status === 'approved' && currentStatus !== 'approved') {
+    // If fully approved, update quota
+    if (newStatus === 'approved' && currentStatus !== 'approved') {
       const currentYear = new Date().getFullYear();
       const days = parseInt(total_days) || 0;
 
-      // Check remaining quota
       const quotaCheck = await calculateRemainingLeave(user_id, leave_type);
 
       if (quotaCheck.remainingDays < days) {
@@ -816,17 +857,14 @@ router.put('/:id/status', async (req, res) => {
         });
       }
 
-      // Update used_days in user_leave_quotas
       await pool.query(`
         UPDATE user_leave_quotas
         SET used_days = COALESCE(used_days, 0) + $1
         WHERE user_id = $2 AND leave_type = $3 AND year = $4
       `, [days, user_id, leave_type, currentYear]);
-
-      console.log(`Approved leave: User ${user_id}, Type ${leave_type}, Days ${days}`);
     }
 
-    // If rejecting previously approved leave, decrease used_days
+    // If rejecting previously approved leave
     if (status === 'rejected' && currentStatus === 'approved') {
       const currentYear = new Date().getFullYear();
       const days = parseInt(total_days) || 0;
@@ -836,17 +874,15 @@ router.put('/:id/status', async (req, res) => {
         SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
         WHERE user_id = $2 AND leave_type = $3 AND year = $4
       `, [days, user_id, leave_type, currentYear]);
-
-      console.log(`Rejected approved leave: User ${user_id}, Type ${leave_type}, Days ${days}`);
     }
 
-    // Get updated data with user info for Teams notification
+    // Get updated data
     const updatedResult = await pool.query(`
       SELECT 
         l.id, l.leave_type, l.start_datetime, l.end_datetime, l.total_days, l.reason,
         l.has_delegation, l.delegate_name, l.delegate_position, l.delegate_department,
-        l.delegate_contact, l.work_details, l.attachments, l.status, l.approved_by, l.created_at, l.updated_at,
-        l.user_id,
+        l.delegate_contact, l.work_details, l.attachments, l.status, l.approved_by, 
+        l.approval_level, l.created_at, l.updated_at, l.user_id,
         u.firstname || ' ' || u.lastname as employee_name,
         u.position as employee_position
       FROM leave_requests l
@@ -856,9 +892,15 @@ router.put('/:id/status', async (req, res) => {
 
     const updatedData = updatedResult.rows[0];
 
-    // Send Teams notification based on status
-    if (status === 'approved') {
+    // Send email notifications based on new status
+    if (newStatus === 'pending_level2') {
+      // Notify level 2 approvers
+      await notifyApprovers(2, updatedData, 'pending_level2');
+      await sendTeamsNotification('approve', { ...updatedData, status: 'HR อนุมัติ - รอผู้บริหาร' });
+    } else if (newStatus === 'approved') {
       await sendTeamsNotification('approve', updatedData);
+    } else if (newStatus === 'rejected') {
+      await sendTeamsNotification('reject', updatedData);
     }
 
     res.json(updatedData);

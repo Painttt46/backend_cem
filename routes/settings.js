@@ -217,3 +217,101 @@ router.put('/statuses/update-colors', async (req, res) => {
 });
 
 export default router;
+
+// ========== LEAVE APPROVAL SETTINGS ==========
+
+// Create table if not exists
+async function ensureLeaveApprovalTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS leave_approval_settings (
+      id SERIAL PRIMARY KEY,
+      approval_level INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      receive_email BOOLEAN DEFAULT true,
+      can_approve BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(approval_level, user_id)
+    )
+  `);
+}
+
+// GET leave approval settings
+router.get('/leave-approval', async (req, res) => {
+  try {
+    await ensureLeaveApprovalTable();
+    
+    const result = await pool.query(`
+      SELECT 
+        las.*,
+        u.firstname || ' ' || u.lastname as user_name,
+        u.email,
+        u.position
+      FROM leave_approval_settings las
+      JOIN users u ON las.user_id = u.id
+      ORDER BY las.approval_level, u.firstname
+    `);
+    
+    const level1 = result.rows.filter(r => r.approval_level === 1);
+    const level2 = result.rows.filter(r => r.approval_level === 2);
+    
+    res.json({ level1, level2 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST add approver
+router.post('/leave-approval', async (req, res) => {
+  const { approval_level, user_id, receive_email, can_approve } = req.body;
+  
+  try {
+    await ensureLeaveApprovalTable();
+    
+    const result = await pool.query(`
+      INSERT INTO leave_approval_settings (approval_level, user_id, receive_email, can_approve)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (approval_level, user_id) 
+      DO UPDATE SET receive_email = $3, can_approve = $4, updated_at = NOW()
+      RETURNING *
+    `, [approval_level, user_id, receive_email !== false, can_approve !== false]);
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE remove approver
+router.delete('/leave-approval/:level/:userId', async (req, res) => {
+  const { level, userId } = req.params;
+  
+  try {
+    await pool.query(
+      'DELETE FROM leave_approval_settings WHERE approval_level = $1 AND user_id = $2',
+      [level, userId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT update approver settings
+router.put('/leave-approval/:level/:userId', async (req, res) => {
+  const { level, userId } = req.params;
+  const { receive_email, can_approve } = req.body;
+  
+  try {
+    const result = await pool.query(`
+      UPDATE leave_approval_settings 
+      SET receive_email = $1, can_approve = $2, updated_at = NOW()
+      WHERE approval_level = $3 AND user_id = $4
+      RETURNING *
+    `, [receive_email, can_approve, level, userId]);
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});

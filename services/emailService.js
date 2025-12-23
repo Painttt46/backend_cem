@@ -158,3 +158,158 @@ export const testEmailConnection = async () => {
     return false;
   }
 };
+
+// Send leave request notification email
+export const sendLeaveNotificationEmail = async (emails, leaveData, notificationType) => {
+  if (!emails || emails.length === 0) return { success: false, error: 'No recipients' };
+
+  const leaveTypeLabels = {
+    'sick': 'ลาป่วย',
+    'personal': 'ลากิจ',
+    'vacation': 'ลาพักร้อน',
+    'maternity': 'ลาคลอด',
+    'other': 'ลาอื่นๆ'
+  };
+
+  const formatDate = (date) => {
+    return new Date(date).toLocaleDateString('th-TH', {
+      year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  let subject, headerColor, headerText, statusText;
+  
+  switch (notificationType) {
+    case 'new_request':
+      subject = `📝 คำขอลาใหม่ - ${leaveData.employee_name}`;
+      headerColor = '#3b82f6';
+      headerText = '📝 คำขอลาใหม่ - รอการอนุมัติขั้นที่ 1';
+      statusText = 'รอ HR อนุมัติ';
+      break;
+    case 'pending_level2':
+      subject = `✅ HR อนุมัติแล้ว - รอผู้บริหารอนุมัติ - ${leaveData.employee_name}`;
+      headerColor = '#f59e0b';
+      headerText = '⏳ รอการอนุมัติขั้นที่ 2';
+      statusText = 'HR อนุมัติแล้ว - รอผู้บริหารอนุมัติ';
+      break;
+    case 'approved':
+      subject = `✅ อนุมัติการลาสำเร็จ - ${leaveData.employee_name}`;
+      headerColor = '#10b981';
+      headerText = '✅ อนุมัติการลาสำเร็จ';
+      statusText = 'อนุมัติแล้ว';
+      break;
+    case 'rejected':
+      subject = `❌ ปฏิเสธการลา - ${leaveData.employee_name}`;
+      headerColor = '#ef4444';
+      headerText = '❌ ปฏิเสธการลา';
+      statusText = 'ไม่อนุมัติ';
+      break;
+    default:
+      subject = `แจ้งเตือนการลา - ${leaveData.employee_name}`;
+      headerColor = '#6b7280';
+      headerText = 'แจ้งเตือนการลา';
+      statusText = leaveData.status;
+  }
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to: emails.join(', '),
+    subject: subject,
+    html: `
+      <!DOCTYPE html>
+      <html lang="th">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background: #f3f4f6;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="padding: 20px;">
+          <tr>
+            <td align="center">
+              <table width="600" cellpadding="0" cellspacing="0" style="background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+                
+                <!-- Header -->
+                <tr>
+                  <td style="background: ${headerColor}; padding: 25px; text-align: center; color: white;">
+                    <h1 style="margin: 0; font-size: 22px;">${headerText}</h1>
+                  </td>
+                </tr>
+                
+                <!-- Content -->
+                <tr>
+                  <td style="padding: 30px;">
+                    <table width="100%" cellpadding="10" cellspacing="0" style="border: 1px solid #e5e7eb; border-radius: 8px;">
+                      <tr style="background: #f9fafb;">
+                        <td style="font-weight: bold; width: 40%;">ผู้ขอลา</td>
+                        <td>${leaveData.employee_name || '-'}</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: bold;">ตำแหน่ง</td>
+                        <td>${leaveData.employee_position || '-'}</td>
+                      </tr>
+                      <tr style="background: #f9fafb;">
+                        <td style="font-weight: bold;">ประเภทการลา</td>
+                        <td>${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: bold;">วันเริ่มลา</td>
+                        <td>${formatDate(leaveData.start_datetime)}</td>
+                      </tr>
+                      <tr style="background: #f9fafb;">
+                        <td style="font-weight: bold;">วันสิ้นสุด</td>
+                        <td>${formatDate(leaveData.end_datetime)}</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: bold;">จำนวนวัน</td>
+                        <td>${leaveData.total_days} วัน</td>
+                      </tr>
+                      <tr style="background: #f9fafb;">
+                        <td style="font-weight: bold;">เหตุผล</td>
+                        <td>${leaveData.reason || '-'}</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: bold;">สถานะ</td>
+                        <td style="color: ${headerColor}; font-weight: bold;">${statusText}</td>
+                      </tr>
+                      ${leaveData.approved_by ? `
+                      <tr style="background: #f9fafb;">
+                        <td style="font-weight: bold;">ผู้ดำเนินการ</td>
+                        <td>${leaveData.approved_by}</td>
+                      </tr>
+                      ` : ''}
+                    </table>
+                    
+                    ${notificationType === 'new_request' || notificationType === 'pending_level2' ? `
+                    <div style="margin-top: 20px; text-align: center;">
+                      <p style="color: #6b7280;">กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติ</p>
+                    </div>
+                    ` : ''}
+                  </td>
+                </tr>
+                
+                <!-- Footer -->
+                <tr>
+                  <td style="background: #1f2937; color: white; padding: 15px; text-align: center; font-size: 12px;">
+                    <p style="margin: 0;">© 2024 Gent-CEM System</p>
+                    <p style="margin: 5px 0 0 0; opacity: 0.7;">อีเมลนี้ถูกส่งโดยอัตโนมัติ</p>
+                  </td>
+                </tr>
+                
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    console.log('Leave notification email sent:', result.messageId);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('Error sending leave notification:', error);
+    return { success: false, error: error.message };
+  }
+};
