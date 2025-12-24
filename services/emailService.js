@@ -173,7 +173,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('th-TH', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+      year: 'numeric', month: 'long', day: 'numeric'
     });
   };
 
@@ -181,193 +181,170 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     return new Date(date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
   };
 
-  let subject, headerBg, headerIcon, headerText, actionText;
+  const statusLabels = {
+    'pending': 'รอหัวหน้างานอนุมัติ',
+    'pending_level2': 'รอ HR อนุมัติ',
+    'approved': 'อนุมัติแล้ว',
+    'rejected': 'ไม่อนุมัติ'
+  };
+
+  let subject, headerText, headerBg, bodyText, footerNote;
   
   switch (notificationType) {
     case 'new_request':
       subject = `[แจ้งเตือน] คำขอลางาน - ${leaveData.employee_name}`;
-      headerBg = 'linear-gradient(135deg, #1e40af, #3b82f6)';
-      headerIcon = '📋';
-      headerText = 'คำขอลางานใหม่';
-      actionText = 'กรุณาพิจารณาอนุมัติคำขอลางาน';
+      headerText = 'มีคำขอลางานใหม่';
+      headerBg = 'linear-gradient(135deg, #4a90e2, #1e40af)';
+      bodyText = 'มีคำขอลางานใหม่รอการพิจารณา';
+      footerNote = 'กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติ';
       break;
     case 'pending_level2':
-      subject = `[รอดำเนินการ] คำขอลางานรอการอนุมัติขั้นสุดท้าย - ${leaveData.employee_name}`;
-      headerBg = 'linear-gradient(135deg, #b45309, #f59e0b)';
-      headerIcon = '⏳';
-      headerText = 'รอการอนุมัติขั้นสุดท้าย';
-      actionText = 'คำขอนี้ผ่านการอนุมัติจากหัวหน้างานแล้ว กรุณาพิจารณาอนุมัติขั้นสุดท้าย';
+      subject = `[อนุมัติขั้นที่ 1] คำขอลางาน - ${leaveData.employee_name}`;
+      headerText = 'หัวหน้างานอนุมัติเรียบร้อย';
+      headerBg = 'linear-gradient(135deg, #4a90e2, #d73527)';
+      bodyText = 'หัวหน้างานได้พิจารณา และอนุมัติคำขอลาของท่านเป็นที่เรียบร้อยแล้ว';
+      footerNote = 'ฝ่ายบุคคล กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติต่อไป';
       break;
     case 'approved':
       subject = `[อนุมัติแล้ว] คำขอลางาน - ${leaveData.employee_name}`;
-      headerBg = 'linear-gradient(135deg, #047857, #10b981)';
-      headerIcon = '✅';
-      headerText = 'อนุมัติการลาเรียบร้อยแล้ว';
-      actionText = 'คำขอลางานได้รับการอนุมัติเรียบร้อยแล้ว';
+      headerText = 'หัวหน้างาน และฝ่ายบุคคลอนุมัติลาเรียบร้อย';
+      headerBg = 'linear-gradient(135deg, #4a90e2, #d73527)';
+      bodyText = 'หัวหน้างาน และฝ่ายบุคคลได้พิจารณา และอนุมัติคำขอลาของท่านเป็นที่เรียบร้อย';
+      footerNote = 'อนุมัติคำขอลาของท่านเป็นที่เรียบร้อยแล้ว';
       break;
     case 'rejected':
       subject = `[ไม่อนุมัติ] คำขอลางาน - ${leaveData.employee_name}`;
-      headerBg = 'linear-gradient(135deg, #b91c1c, #ef4444)';
-      headerIcon = '❌';
       headerText = 'ไม่อนุมัติการลา';
-      actionText = 'คำขอลางานไม่ได้รับการอนุมัติ';
+      headerBg = 'linear-gradient(135deg, #ef4444, #b91c1c)';
+      bodyText = 'คำขอลางานของท่านไม่ได้รับการอนุมัติ';
+      footerNote = '';
       break;
     default:
       subject = `[แจ้งเตือน] คำขอลางาน - ${leaveData.employee_name}`;
-      headerBg = '#4b5563';
-      headerIcon = '📌';
       headerText = 'แจ้งเตือนการลา';
-      actionText = '';
+      headerBg = 'linear-gradient(135deg, #4a90e2, #1e40af)';
+      bodyText = '';
+      footerNote = '';
   }
 
-  const currentDate = new Date().toLocaleDateString('th-TH', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
-  });
+  // สร้าง approver text
+  let approverText = '';
+  if (leaveData.approved_by_level1) {
+    approverText = `หัวหน้างาน: ${leaveData.approved_by_level1}`;
+    if (leaveData.approved_by_level2) {
+      approverText += ` / HR: ${leaveData.approved_by_level2}`;
+    }
+  } else if (leaveData.approved_by_level2) {
+    approverText = `HR: ${leaveData.approved_by_level2}`;
+  }
 
   const mailOptions = {
     from: process.env.EMAIL_FROM,
     to: emails.join(', '),
     subject: subject,
-    html: `
-      <!DOCTYPE html>
-      <html lang="th">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      </head>
-      <body style="margin: 0; padding: 0; font-family: 'Sarabun', 'Segoe UI', Arial, sans-serif; background: #f8fafc; line-height: 1.6;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="padding: 30px 15px;">
-          <tr>
-            <td align="center">
-              <table width="650" cellpadding="0" cellspacing="0" style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.1);">
-                
-                <!-- Header -->
-                <tr>
-                  <td style="background: ${headerBg}; padding: 35px 40px; text-align: center;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">${headerIcon}</div>
-                    <h1 style="margin: 0; font-size: 26px; color: white; font-weight: 600; letter-spacing: 0.5px;">${headerText}</h1>
-                    <p style="margin: 10px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">${currentDate}</p>
-                  </td>
-                </tr>
-                
-                <!-- Action Text -->
-                <tr>
-                  <td style="padding: 25px 40px 15px 40px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-                    <p style="margin: 0; color: #475569; font-size: 15px; text-align: center;">${actionText}</p>
-                  </td>
-                </tr>
-                
-                <!-- Content -->
-                <tr>
-                  <td style="padding: 30px 40px;">
-                    
-                    <!-- Employee Info Card -->
-                    <div style="background: #f1f5f9; border-radius: 12px; padding: 20px; margin-bottom: 25px;">
-                      <h3 style="margin: 0 0 15px 0; color: #1e293b; font-size: 16px; font-weight: 600; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px;">
-                        👤 ข้อมูลผู้ขอลา
-                      </h3>
-                      <table width="100%" cellpadding="8" cellspacing="0">
-                        <tr>
-                          <td style="color: #64748b; width: 35%; font-size: 14px;">ชื่อ-นามสกุล</td>
-                          <td style="color: #1e293b; font-weight: 600; font-size: 14px;">${leaveData.employee_name || '-'}</td>
-                        </tr>
-                        <tr>
-                          <td style="color: #64748b; font-size: 14px;">ตำแหน่ง</td>
-                          <td style="color: #1e293b; font-size: 14px;">${leaveData.employee_position || '-'}</td>
-                        </tr>
-                      </table>
-                    </div>
-                    
-                    <!-- Leave Details Card -->
-                    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 20px; margin-bottom: 25px;">
-                      <h3 style="margin: 0 0 15px 0; color: #92400e; font-size: 16px; font-weight: 600; border-bottom: 2px solid #fde68a; padding-bottom: 10px;">
-                        📅 รายละเอียดการลา
-                      </h3>
-                      <table width="100%" cellpadding="10" cellspacing="0">
-                        <tr>
-                          <td style="color: #78716c; width: 35%; font-size: 14px; vertical-align: top;">ประเภทการลา</td>
-                          <td style="font-size: 14px;">
-                            <span style="background: #fef3c7; color: #92400e; padding: 4px 12px; border-radius: 20px; font-weight: 600;">
-                              ${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}
-                            </span>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td style="color: #78716c; font-size: 14px; vertical-align: top;">วันที่เริ่มลา</td>
-                          <td style="color: #1c1917; font-size: 14px;">${formatDate(leaveData.start_datetime)}<br><span style="color: #78716c; font-size: 13px;">เวลา ${formatTime(leaveData.start_datetime)} น.</span></td>
-                        </tr>
-                        <tr>
-                          <td style="color: #78716c; font-size: 14px; vertical-align: top;">วันที่สิ้นสุด</td>
-                          <td style="color: #1c1917; font-size: 14px;">${formatDate(leaveData.end_datetime)}<br><span style="color: #78716c; font-size: 13px;">เวลา ${formatTime(leaveData.end_datetime)} น.</span></td>
-                        </tr>
-                        <tr>
-                          <td style="color: #78716c; font-size: 14px;">จำนวนวันลา</td>
-                          <td style="font-size: 14px;">
-                            <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 20px; font-weight: 700;">
-                              ${leaveData.total_days} วัน
-                            </span>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td style="color: #78716c; font-size: 14px; vertical-align: top;">เหตุผลการลา</td>
-                          <td style="color: #1c1917; font-size: 14px;">${leaveData.reason || '-'}</td>
-                        </tr>
-                      </table>
-                    </div>
-                    
-                    ${leaveData.approved_by_level1 || leaveData.approved_by_level2 || notificationType === 'pending_level2' || notificationType === 'approved' ? `
-                    <!-- Approver Info -->
-                    <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 20px;">
-                      <h3 style="margin: 0 0 15px 0; color: #065f46; font-size: 16px; font-weight: 600; border-bottom: 2px solid #a7f3d0; padding-bottom: 10px;">
-                        ✍️ สถานะการอนุมัติ
-                      </h3>
-                      <table width="100%" cellpadding="8" cellspacing="0">
-                        <tr>
-                          <td style="color: #047857; width: 40%; font-size: 14px;">ขั้นที่ 1 (หัวหน้างาน)</td>
-                          <td style="font-size: 14px;">
-                            ${leaveData.approved_by_level1 
-                              ? `<span style="color: #065f46; font-weight: 600;">✅ ${leaveData.approved_by_level1}</span>` 
-                              : `<span style="color: #f59e0b; font-weight: 500;">⏳ รอการอนุมัติ</span>`}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td style="color: #047857; font-size: 14px;">ขั้นที่ 2 (HR)</td>
-                          <td style="font-size: 14px;">
-                            ${leaveData.approved_by_level2 
-                              ? `<span style="color: #065f46; font-weight: 600;">✅ ${leaveData.approved_by_level2}</span>` 
-                              : `<span style="color: #f59e0b; font-weight: 500;">⏳ รอการอนุมัติ</span>`}
-                          </td>
-                        </tr>
-                      </table>
-                    </div>
-                    ` : ''}
-                    
-                    ${notificationType === 'new_request' || notificationType === 'pending_level2' ? `
-                    <!-- Action Button -->
-                    <div style="text-align: center; margin-top: 30px;">
-                      <p style="color: #64748b; font-size: 14px; margin-bottom: 15px;">กรุณาเข้าสู่ระบบเพื่อดำเนินการ</p>
-                    </div>
-                    ` : ''}
-                    
-                  </td>
-                </tr>
-                
-                <!-- Footer -->
-                <tr>
-                  <td style="background: #1e293b; color: white; padding: 25px 40px; text-align: center;">
-                    <p style="margin: 0 0 5px 0; font-size: 15px; font-weight: 600;">Gent-CEM System</p>
-                    <p style="margin: 0; font-size: 12px; color: #94a3b8;">Customer Excellence Management</p>
-                    <p style="margin: 15px 0 0 0; font-size: 11px; color: #64748b;">อีเมลนี้ถูกส่งโดยอัตโนมัติจากระบบ กรุณาอย่าตอบกลับ</p>
-                  </td>
-                </tr>
-                
-              </table>
-            </td>
-          </tr>
-        </table>
-      </body>
-      </html>
-    `
+    html: `<!DOCTYPE html>
+<html lang="th" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta http-equiv="x-ua-compatible" content="ie=edge" />
+  <title>${headerText}</title>
+  <!--[if mso]>
+  <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch><o:AllowPNG/></o:OfficeDocumentSettings></xml>
+  <![endif]-->
+  <style>
+    html,body{margin:0!important;padding:0!important;height:100%!important;width:100%!important}
+    *{-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%}
+    table,td{mso-table-lspace:0pt!important;mso-table-rspace:0pt!important;border-collapse:collapse!important}
+    img{-ms-interpolation-mode:bicubic;border:0;outline:none;text-decoration:none}
+    a{text-decoration:none}
+    @media screen and (max-width:600px){
+      .container{width:100%!important}
+      .px{padding-left:18px!important;padding-right:18px!important}
+      .hero{padding:36px 18px!important}
+      .h1{font-size:28px!important;line-height:34px!important}
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background:#f2f3f5">
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden">${headerText}</div>
+  <center style="width:100%;background:#f2f3f5">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f3f5">
+      <tr>
+        <td align="center" style="padding:24px 12px">
+          <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff">
+            
+            <!-- Top logo -->
+            <tr>
+              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:20px;color:#190c86">
+                <p>Gen T Customer Excellency Management</p>
+              </td>
+            </tr>
+
+            <!-- Hero -->
+            <tr>
+              <td class="hero" align="center" style="background:${headerBg};padding:44px 18px">
+                <div style="margin:0 auto 14px;width:54px;height:54px">
+                  ${notificationType === 'approved' || notificationType === 'pending_level2' ? 
+                    `<svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#22C55E"/><path d="M7.5 12.5L10.5 15.5L16.8 9.2" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>` :
+                    notificationType === 'rejected' ?
+                    `<svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#EF4444"/><path d="M8 8L16 16M16 8L8 16" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/></svg>` :
+                    `<svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#3B82F6"/><path d="M12 7V13M12 16V17" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/></svg>`
+                  }
+                </div>
+                <br/>
+                <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400">
+                  ${headerText}
+                </div>
+              </td>
+            </tr>
+
+            <!-- Body -->
+            <tr>
+              <td class="px" style="padding:28px 42px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b">
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px">สวัสดี,</p>
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px">${bodyText}</p>
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px">
+                  ผู้ขอลา : <b>${leaveData.employee_name || '-'}</b><br>
+                  ตำแหน่ง : <b>${leaveData.employee_position || '-'}</b><br>
+                  ประเภทการลา : <b>${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}</b><br>
+                  วันเริ่มลา : <b>${formatDate(leaveData.start_datetime)} เวลา ${formatTime(leaveData.start_datetime)} น.</b><br>
+                  วันสิ้นสุด : <b>${formatDate(leaveData.end_datetime)} เวลา ${formatTime(leaveData.end_datetime)} น.</b><br>
+                  จำนวนวันลา : <b>${leaveData.total_days} วัน (${(leaveData.total_days * 8).toFixed(1)} ชม.)</b><br>
+                  เหตุผล : <b>${leaveData.reason || '-'}</b><br>
+                  สถานะ : <b>${statusLabels[leaveData.status] || leaveData.status}</b><br>
+                  ${approverText ? `ผู้ดำเนินการ : <b>${approverText}</b><br>` : ''}
+                </p>
+                <p>
+                  <a style="color:#4a90e2" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to login</a>
+                </p>
+                ${footerNote ? `<p style="margin:0 0 18px;font-size:13px;line-height:20px;color:#8a8a8a;font-style:italic">${footerNote}</p>` : ''}
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="background:#14143a;padding:18px">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td valign="top" style="padding:6px 8px">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#ffffff;font-weight:700">
+                        อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับอีเมลนี้
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </center>
+</body>
+</html>`
   };
 
   try {
