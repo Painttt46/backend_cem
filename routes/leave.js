@@ -718,6 +718,8 @@ router.get('/', async (req, res) => {
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1_id INTEGER`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2_id INTEGER`);
 
     const result = await pool.query(`
       SELECT 
@@ -725,6 +727,7 @@ router.get('/', async (req, res) => {
         l.has_delegation, l.delegate_name, l.delegate_position, l.delegate_department,
         l.delegate_contact, l.work_details, l.attachments, l.status, l.approved_by, 
         l.approval_level, l.approved_by_level1, l.approved_by_level2,
+        l.approved_by_level1_id, l.approved_by_level2_id,
         l.created_at, l.updated_at,
         u.firstname || ' ' || u.lastname as user_name,
         u.position as employee_position
@@ -821,13 +824,15 @@ router.post('/', async (req, res) => {
 // Update leave status
 router.put('/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status, approved_by, approval_level } = req.body;
+  const { status, approved_by, approval_level, approved_by_id } = req.body;
 
   try {
     // Ensure columns exist first
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1_id INTEGER`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2_id INTEGER`);
 
     // Get leave request details
     const leaveRequest = await pool.query(`
@@ -864,20 +869,20 @@ router.put('/:id/status', async (req, res) => {
       // Level 1 approved
       updateQuery = `
         UPDATE leave_requests 
-        SET status = $1, approved_by_level1 = $2, approval_level = $3, updated_at = NOW() 
-        WHERE id = $4 
+        SET status = $1, approved_by_level1 = $2, approved_by_level1_id = $3, approval_level = $4, updated_at = NOW() 
+        WHERE id = $5 
         RETURNING *
       `;
-      updateParams = [newStatus, approved_by, newApprovalLevel, id];
+      updateParams = [newStatus, approved_by, approved_by_id, newApprovalLevel, id];
     } else if (newApprovalLevel === 2 && newStatus === 'approved') {
       // Level 2 approved
       updateQuery = `
         UPDATE leave_requests 
-        SET status = $1, approved_by_level2 = $2::text, approved_by = $2::text, approval_level = $3, updated_at = NOW() 
-        WHERE id = $4 
+        SET status = $1, approved_by_level2 = $2, approved_by_level2_id = $3, approved_by = $2, approval_level = $4, updated_at = NOW() 
+        WHERE id = $5 
         RETURNING *
       `;
-      updateParams = [newStatus, approved_by, newApprovalLevel, id];
+      updateParams = [newStatus, approved_by, approved_by_id, newApprovalLevel, id];
     } else {
       // Rejected or other
       updateQuery = `
@@ -944,7 +949,6 @@ router.put('/:id/status', async (req, res) => {
     try {
       if (newStatus === 'pending_level2') {
         await notifyApprovers(2, updatedData, 'pending_level2');
-        await sendTeamsNotification('approve', { ...updatedData, status: 'HR อนุมัติ - รอผู้บริหาร' });
       } else if (newStatus === 'approved') {
         await sendTeamsNotification('approve', updatedData);
       } else if (newStatus === 'rejected') {
