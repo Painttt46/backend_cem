@@ -37,7 +37,7 @@ app.use(cookieParser());
 // Security: Rate limiting
 const limiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 2000, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again later.'
 });
 
@@ -47,7 +47,7 @@ app.use(limiter);
 // Stricter rate limiting for auth routes
 const authLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 20, // Limit each IP to 20 login attempts per 5 minutes
+  max: 200, // Limit each IP to 20 login attempts per 5 minutes
   message: 'Too many login attempts, please try again later.',
   skipSuccessfulRequests: true // Don't count successful logins
 });
