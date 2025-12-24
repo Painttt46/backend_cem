@@ -857,11 +857,21 @@ router.put('/:id/status', async (req, res) => {
     // 2-Step Approval Logic
     if (status === 'approved') {
       if (newApprovalLevel === 1) {
-        // Level 1 (HR) approved -> move to pending level 2
+        // Level 1 (หัวหน้างาน) approved -> move to pending level 2
         newStatus = 'pending_level2';
         newApprovalLevel = 1;
       } else if (newApprovalLevel === 2) {
-        // Level 2 (Manager) approved -> fully approved
+        // Level 2 (HR) approved -> fully approved
+        // เช็คโควต้าก่อน approve
+        const days = parseFloat(total_days) || 0;
+        const quotaCheck = await calculateRemainingLeave(user_id, leave_type);
+        
+        if (quotaCheck.remainingDays < days) {
+          return res.status(400).json({
+            error: `ไม่สามารถอนุมัติได้ โควต้าคงเหลือ ${quotaCheck.remainingDays} วัน แต่ขอลา ${days} วัน`
+          });
+        }
+        
         newStatus = 'approved';
         newApprovalLevel = 2;
       }
@@ -903,15 +913,7 @@ router.put('/:id/status', async (req, res) => {
     // If fully approved, update quota
     if (newStatus === 'approved' && currentStatus !== 'approved') {
       const currentYear = new Date().getFullYear();
-      const days = parseInt(total_days) || 0;
-
-      const quotaCheck = await calculateRemainingLeave(user_id, leave_type);
-
-      if (quotaCheck.remainingDays < days) {
-        return res.status(400).json({
-          error: `ไม่สามารถอนุมัติได้ โควต้าคงเหลือ ${quotaCheck.remainingDays} วัน แต่ขอลา ${days} วัน`
-        });
-      }
+      const days = parseFloat(total_days) || 0;
 
       await pool.query(`
         UPDATE user_leave_quotas
@@ -923,7 +925,7 @@ router.put('/:id/status', async (req, res) => {
     // If rejecting previously approved leave
     if (status === 'rejected' && currentStatus === 'approved') {
       const currentYear = new Date().getFullYear();
-      const days = parseInt(total_days) || 0;
+      const days = parseFloat(total_days) || 0;
 
       await pool.query(`
         UPDATE user_leave_quotas

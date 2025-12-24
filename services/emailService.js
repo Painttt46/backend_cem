@@ -172,13 +172,17 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
   };
 
   const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('th-TH', {
+    const d = new Date(date);
+    d.setHours(d.getHours() + 7); // +7 GMT
+    return d.toLocaleDateString('th-TH', {
       year: 'numeric', month: 'long', day: 'numeric'
     });
   };
 
   const formatTime = (date) => {
-    return new Date(date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    const d = new Date(date);
+    d.setHours(d.getHours() + 7); // +7 GMT
+    return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
   };
 
   const statusLabels = {
@@ -312,7 +316,6 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                   วันเริ่มลา : <b>${formatDate(leaveData.start_datetime)} เวลา ${formatTime(leaveData.start_datetime)} น.</b><br>
                   วันสิ้นสุด : <b>${formatDate(leaveData.end_datetime)} เวลา ${formatTime(leaveData.end_datetime)} น.</b><br>
                   จำนวนวันลา : <b>${leaveData.total_days} วัน (${(leaveData.total_days * 8).toFixed(1)} ชม.)</b><br>
-                  เหตุผล : <b>${leaveData.reason || '-'}</b><br>
                   สถานะ : <b>${statusLabels[leaveData.status] || leaveData.status}</b><br>
                   ${approverText ? `ผู้ดำเนินการ : <b>${approverText}</b><br>` : ''}
                 </p>
