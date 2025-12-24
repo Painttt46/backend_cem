@@ -178,7 +178,7 @@ async function calculateRemainingLeave(userId, leaveType) {
   `, [userId, leaveType, currentYear]);
 
   if (quotaResult.rows.length === 0) {
-    return { quota: 0, usedDays: 0, remainingDays: 0 };
+    return { quota: 0, usedDays: 0, remainingDays: 0, remainingHours: 0, quotaHours: 0, usedHours: 0 };
   }
 
   const quota = quotaResult.rows[0].annual_quota || 0;
@@ -195,15 +195,19 @@ async function calculateRemainingLeave(userId, leaveType) {
       AND EXTRACT(YEAR FROM start_datetime) = $3
     `, [userId, leaveType, currentYear]);
 
-    usedDays = parseInt(usedResult.rows[0].used_days) || 0;
+    usedDays = parseFloat(usedResult.rows[0].used_days) || 0;
   }
 
   const remainingDays = quota - usedDays;
+  const hoursPerDay = 8;
 
   return {
     quota,
     usedDays,
-    remainingDays: Math.max(0, remainingDays)
+    remainingDays: Math.max(0, remainingDays),
+    quotaHours: quota * hoursPerDay,
+    usedHours: usedDays * hoursPerDay,
+    remainingHours: Math.max(0, remainingDays) * hoursPerDay
   };
 }
 
