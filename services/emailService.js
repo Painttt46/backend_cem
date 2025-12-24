@@ -196,7 +196,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
       headerBg = 'linear-gradient(135deg, #b45309, #f59e0b)';
       headerIcon = '⏳';
       headerText = 'รอการอนุมัติขั้นสุดท้าย';
-      actionText = 'คำขอนี้ผ่านการอนุมัติจาก HR แล้ว กรุณาพิจารณาอนุมัติขั้นสุดท้าย';
+      actionText = 'คำขอนี้ผ่านการอนุมัติจากหัวหน้างานแล้ว กรุณาพิจารณาอนุมัติขั้นสุดท้าย';
       break;
     case 'approved':
       subject = `[อนุมัติแล้ว] คำขอลางาน - ${leaveData.employee_name}`;
@@ -315,25 +315,29 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                       </table>
                     </div>
                     
-                    ${leaveData.approved_by_level1 || leaveData.approved_by_level2 ? `
+                    ${leaveData.approved_by_level1 || leaveData.approved_by_level2 || notificationType === 'pending_level2' || notificationType === 'approved' ? `
                     <!-- Approver Info -->
                     <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 20px;">
                       <h3 style="margin: 0 0 15px 0; color: #065f46; font-size: 16px; font-weight: 600; border-bottom: 2px solid #a7f3d0; padding-bottom: 10px;">
-                        ✍️ ผู้ดำเนินการอนุมัติ
+                        ✍️ สถานะการอนุมัติ
                       </h3>
                       <table width="100%" cellpadding="8" cellspacing="0">
-                        ${leaveData.approved_by_level1 ? `
                         <tr>
-                          <td style="color: #047857; width: 40%; font-size: 14px;">ขั้นที่ 1 (HR)</td>
-                          <td style="color: #065f46; font-weight: 600; font-size: 14px;">${leaveData.approved_by_level1}</td>
+                          <td style="color: #047857; width: 40%; font-size: 14px;">ขั้นที่ 1 (หัวหน้างาน)</td>
+                          <td style="font-size: 14px;">
+                            ${leaveData.approved_by_level1 
+                              ? `<span style="color: #065f46; font-weight: 600;">✅ ${leaveData.approved_by_level1}</span>` 
+                              : `<span style="color: #f59e0b; font-weight: 500;">⏳ รอการอนุมัติ</span>`}
+                          </td>
                         </tr>
-                        ` : ''}
-                        ${leaveData.approved_by_level2 ? `
                         <tr>
-                          <td style="color: #047857; font-size: 14px;">ขั้นที่ 2 (ผู้บริหาร)</td>
-                          <td style="color: #065f46; font-weight: 600; font-size: 14px;">${leaveData.approved_by_level2}</td>
+                          <td style="color: #047857; font-size: 14px;">ขั้นที่ 2 (HR)</td>
+                          <td style="font-size: 14px;">
+                            ${leaveData.approved_by_level2 
+                              ? `<span style="color: #065f46; font-weight: 600;">✅ ${leaveData.approved_by_level2}</span>` 
+                              : `<span style="color: #f59e0b; font-weight: 500;">⏳ รอการอนุมัติ</span>`}
+                          </td>
                         </tr>
-                        ` : ''}
                       </table>
                     </div>
                     ` : ''}

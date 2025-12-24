@@ -949,14 +949,34 @@ router.put('/:id/status', async (req, res) => {
 
     const updatedData = updatedResult.rows[0];
 
+    // Get requester email
+    const requesterResult = await pool.query(
+      'SELECT email FROM users WHERE id = $1',
+      [user_id]
+    );
+    const requesterEmail = requesterResult.rows[0]?.email;
+
     // Send notifications (don't let notification errors block the response)
     try {
       if (newStatus === 'pending_level2') {
+        // Notify level 2 approvers (HR)
         await notifyApprovers(2, updatedData, 'pending_level2');
+        // Notify requester about step 1 approval
+        if (requesterEmail) {
+          await sendLeaveNotificationEmail([requesterEmail], updatedData, 'pending_level2');
+        }
       } else if (newStatus === 'approved') {
         await sendTeamsNotification('approve', updatedData);
+        // Notify requester about final approval
+        if (requesterEmail) {
+          await sendLeaveNotificationEmail([requesterEmail], updatedData, 'approved');
+        }
       } else if (newStatus === 'rejected') {
         await sendTeamsNotification('reject', updatedData);
+        // Notify requester about rejection
+        if (requesterEmail) {
+          await sendLeaveNotificationEmail([requesterEmail], updatedData, 'rejected');
+        }
       }
     } catch (notifyError) {
       console.error('Notification error (non-blocking):', notifyError);
