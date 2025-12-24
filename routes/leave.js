@@ -864,12 +864,18 @@ router.put('/:id/status', async (req, res) => {
         // Level 2 (HR) approved -> fully approved
         // เช็คโควต้าก่อน approve
         const days = parseFloat(total_days) || 0;
-        const quotaCheck = await calculateRemainingLeave(user_id, leave_type);
         
-        if (quotaCheck.remainingDays < days) {
-          return res.status(400).json({
-            error: `ไม่สามารถอนุมัติได้ โควต้าคงเหลือ ${quotaCheck.remainingDays} วัน แต่ขอลา ${days} วัน`
-          });
+        try {
+          const quotaCheck = await calculateRemainingLeave(user_id, leave_type);
+          
+          if (quotaCheck.remainingDays < days) {
+            return res.status(400).json({
+              error: `ไม่สามารถอนุมัติได้ โควต้าคงเหลือ ${quotaCheck.remainingDays} วัน แต่ขอลา ${days} วัน`
+            });
+          }
+        } catch (quotaError) {
+          console.error('Quota check error:', quotaError);
+          // ถ้าเช็คโควต้าไม่ได้ ให้ approve ต่อไป
         }
         
         newStatus = 'approved';
