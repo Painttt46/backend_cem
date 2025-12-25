@@ -828,7 +828,7 @@ router.post('/', async (req, res) => {
 // Update leave status
 router.put('/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status, approved_by, approval_level, approved_by_id } = req.body;
+  const { status, approved_by, approved_by_id } = req.body;
 
   try {
     // Ensure columns exist first
@@ -852,15 +852,15 @@ router.put('/:id/status', async (req, res) => {
     const { user_id, leave_type, total_days, status: currentStatus, current_level } = leaveRequest.rows[0];
 
     let newStatus = status;
-    let newApprovalLevel = approval_level || current_level || 0;
+    let newApprovalLevel = current_level || 0;
 
-    // 2-Step Approval Logic
+    // 2-Step Approval Logic - ตรวจสอบจาก currentStatus ใน DB
     if (status === 'approved') {
-      if (newApprovalLevel === 1) {
+      if (currentStatus === 'pending') {
         // Level 1 (หัวหน้างาน) approved -> move to pending level 2
         newStatus = 'pending_level2';
         newApprovalLevel = 1;
-      } else if (newApprovalLevel === 2) {
+      } else if (currentStatus === 'pending_level2') {
         // Level 2 (HR) approved -> fully approved
         // เช็คโควต้าก่อน approve
         const days = parseFloat(total_days) || 0;
