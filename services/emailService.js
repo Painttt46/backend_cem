@@ -303,20 +303,28 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                           <td align="center" valign="middle" style="padding:44px 18px;">
 
                             <!-- Badge (Outlook perfect circle) -->
+                            
                             <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                               <tr>
                                 <td align="center" valign="middle" style="padding:0;">
-                                  <v:roundrect arcsize="50%" stroked="f"
+                                  <!--[if mso]>
+                                  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml"
+                                    xmlns:w="urn:schemas-microsoft-com:office:word"
+                                    arcsize="50%" stroked="f"
                                     style="width:54px;height:54px;v-text-anchor:middle;"
                                     fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}">
                                     <w:anchorlock/>
-                                    <center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:28px;font-weight:bold;line-height:54px;">
-                                      ${notificationType === 'rejected' ? '✕' : '✓'}
-                                    </center>
+                                    <v:textbox inset="0,0,0,0">
+                                      <center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:28px;font-weight:bold;line-height:54px;">
+                                        ${notificationType === 'rejected' ? '✕' : '✓'}
+                                      </center>
+                                    </v:textbox>
                                   </v:roundrect>
+                                  <![endif]-->
                                 </td>
                               </tr>
                             </table>
+
 
                             <div style="height:18px;line-height:18px;font-size:18px;">&nbsp;</div>
 
