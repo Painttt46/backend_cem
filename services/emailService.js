@@ -198,35 +198,35 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     case 'new_request':
       subject = `[แจ้งเตือน] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'มีคำขอลางานใหม่';
-      headerBg = 'linear-gradient(135deg, #4a90e2, #1e40af)';
+      headerBg = '#3b82f6';
       bodyText = 'มีคำขอลางานใหม่รอการพิจารณา';
       footerNote = 'กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติ';
       break;
     case 'pending_level2':
       subject = `[อนุมัติขั้นที่ 1] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'หัวหน้างานอนุมัติเรียบร้อย';
-      headerBg = 'linear-gradient(135deg, #4a90e2, #d73527)';
+      headerBg = '#4a90e2';
       bodyText = 'หัวหน้างานได้พิจารณา และอนุมัติคำขอลาของท่านเป็นที่เรียบร้อยแล้ว';
       footerNote = 'ฝ่ายบุคคล กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติต่อไป';
       break;
     case 'approved':
       subject = `[อนุมัติแล้ว] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'หัวหน้างาน และฝ่ายบุคคลอนุมัติลาเรียบร้อย';
-      headerBg = 'linear-gradient(135deg, #4a90e2, #d73527)';
+      headerBg = '#22c55e';
       bodyText = 'หัวหน้างาน และฝ่ายบุคคลได้พิจารณา และอนุมัติคำขอลาของท่านเป็นที่เรียบร้อย';
       footerNote = 'อนุมัติคำขอลาของท่านเป็นที่เรียบร้อยแล้ว';
       break;
     case 'rejected':
       subject = `[ไม่อนุมัติ] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'ไม่อนุมัติการลา';
-      headerBg = 'linear-gradient(135deg, #ef4444, #b91c1c)';
+      headerBg = '#ef4444';
       bodyText = 'คำขอลางานของท่านไม่ได้รับการอนุมัติ';
       footerNote = '';
       break;
     default:
       subject = `[แจ้งเตือน] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'แจ้งเตือนการลา';
-      headerBg = 'linear-gradient(135deg, #4a90e2, #1e40af)';
+      headerBg = '#3b82f6';
       bodyText = '';
       footerNote = '';
   }
