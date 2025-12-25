@@ -185,6 +185,17 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
   };
 
+  // คำนวณจำนวนวันและชั่วโมงจาก start/end datetime
+  const calculateLeaveDuration = (start, end) => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diffMs = endDate - startDate;
+    const diffHours = diffMs / (1000 * 60 * 60);
+    const days = (diffHours / 8).toFixed(1);
+    const hours = diffHours.toFixed(1);
+    return { days, hours };
+  };
+
   const statusLabels = {
     'pending': 'รอหัวหน้างานอนุมัติ',
     'pending_level2': 'รอ HR อนุมัติ',
@@ -205,14 +216,14 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     case 'pending_level2':
       subject = `[อนุมัติขั้นที่ 1] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'หัวหน้างานอนุมัติเรียบร้อย';
-      headerBg = '#4a90e2';
+      headerBg = '#4a6fa5';
       bodyText = 'หัวหน้างานได้พิจารณา และอนุมัติคำขอลาของท่านเป็นที่เรียบร้อยแล้ว';
       footerNote = 'ฝ่ายบุคคล กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติต่อไป';
       break;
     case 'approved':
       subject = `[อนุมัติแล้ว] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'หัวหน้างาน และฝ่ายบุคคลอนุมัติลาเรียบร้อย';
-      headerBg = '#22c55e';
+      headerBg = '#4a6fa5';
       bodyText = 'หัวหน้างาน และฝ่ายบุคคลได้พิจารณา และอนุมัติคำขอลาของท่านเป็นที่เรียบร้อย';
       footerNote = 'อนุมัติคำขอลาของท่านเป็นที่เรียบร้อยแล้ว';
       break;
@@ -231,15 +242,13 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
       footerNote = '';
   }
 
-  // สร้าง approver text
-  let approverText = '';
+  // สร้าง approver text แยกบรรทัด
+  let approverHtml = '';
   if (leaveData.approved_by_level1) {
-    approverText = `หัวหน้างาน: ${leaveData.approved_by_level1}`;
-    if (leaveData.approved_by_level2) {
-      approverText += ` / HR: ${leaveData.approved_by_level2}`;
-    }
-  } else if (leaveData.approved_by_level2) {
-    approverText = `HR: ${leaveData.approved_by_level2}`;
+    approverHtml += `ผู้อนุมัติ (หัวหน้างาน) : <b>${leaveData.approved_by_level1}</b><br>`;
+  }
+  if (leaveData.approved_by_level2) {
+    approverHtml += `ผู้อนุมัติ (HR) : <b>${leaveData.approved_by_level2}</b><br>`;
   }
 
   const mailOptions = {
@@ -289,15 +298,13 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
             <!-- Hero -->
             <tr>
               <td class="hero" align="center" style="background:${headerBg};padding:44px 18px">
-                <div style="margin:0 auto 14px;width:54px;height:54px">
-                  ${notificationType === 'approved' || notificationType === 'pending_level2' ? 
-                    `<svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#22C55E"/><path d="M7.5 12.5L10.5 15.5L16.8 9.2" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>` :
-                    notificationType === 'rejected' ?
-                    `<svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#EF4444"/><path d="M8 8L16 16M16 8L8 16" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/></svg>` :
-                    `<svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#3B82F6"/><path d="M12 7V13M12 16V17" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/></svg>`
-                  }
-                </div>
-                <br/>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 14px">
+                  <tr>
+                    <td align="center" style="width:60px;height:60px;border-radius:50%;background:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};font-size:36px;color:#ffffff;font-weight:bold">
+                      ${notificationType === 'rejected' ? '✕' : '✓'}
+                    </td>
+                  </tr>
+                </table>
                 <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400">
                   ${headerText}
                 </div>
@@ -315,9 +322,10 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                   ประเภทการลา : <b>${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}</b><br>
                   วันเริ่มลา : <b>${formatDate(leaveData.start_datetime)} เวลา ${formatTime(leaveData.start_datetime)} น.</b><br>
                   วันสิ้นสุด : <b>${formatDate(leaveData.end_datetime)} เวลา ${formatTime(leaveData.end_datetime)} น.</b><br>
-                  จำนวนวันลา : <b>${leaveData.total_days} วัน (${(leaveData.total_days * 8).toFixed(1)} ชม.)</b><br>
+                  จำนวนวันลา : <b>${calculateLeaveDuration(leaveData.start_datetime, leaveData.end_datetime).days} วัน (${calculateLeaveDuration(leaveData.start_datetime, leaveData.end_datetime).hours} ชม.)</b><br>
+                  เหตุผล : <b>${leaveData.reason || '-'}</b><br>
                   สถานะ : <b>${statusLabels[leaveData.status] || leaveData.status}</b><br>
-                  ${approverText ? `ผู้ดำเนินการ : <b>${approverText}</b><br>` : ''}
+                  ${approverHtml}
                 </p>
                 <p>
                   <a style="color:#4a90e2" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to login</a>
