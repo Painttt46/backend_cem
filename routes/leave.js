@@ -828,7 +828,7 @@ router.post('/', async (req, res) => {
 // Update leave status
 router.put('/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status, approved_by, approved_by_id } = req.body;
+  const { status, approved_by, approved_by_id, reject_reason } = req.body;
 
   try {
     // Ensure columns exist first
@@ -837,6 +837,9 @@ router.put('/:id/status', async (req, res) => {
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1_id INTEGER`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2_id INTEGER`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_by TEXT`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_level INTEGER`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS reject_reason TEXT`);
 
     // Get leave request details
     const leaveRequest = await pool.query(`
@@ -905,13 +908,14 @@ router.put('/:id/status', async (req, res) => {
       updateParams = [newStatus, approved_by, approved_by_id, approved_by, newApprovalLevel, id];
     } else {
       // Rejected or other
+      const rejectedLevel = currentStatus === 'pending' ? 1 : (currentStatus === 'pending_level2' ? 2 : 0);
       updateQuery = `
         UPDATE leave_requests 
-        SET status = $1, approved_by = $2, approval_level = $3, updated_at = NOW() 
-        WHERE id = $4 
+        SET status = $1, approved_by = $2, approval_level = $3, rejected_by = $4, rejected_level = $5, reject_reason = $6, updated_at = NOW() 
+        WHERE id = $7 
         RETURNING *
       `;
-      updateParams = [newStatus, approved_by, newApprovalLevel, id];
+      updateParams = [newStatus, approved_by, rejectedLevel, approved_by, rejectedLevel, reject_reason || null, id];
     }
 
     const result = await pool.query(updateQuery, updateParams);

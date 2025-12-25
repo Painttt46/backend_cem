@@ -227,8 +227,9 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     case 'rejected':
       subject = `[ไม่อนุมัติ] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'ไม่อนุมัติการลา';
-      bodyText = 'คำขอลางานของท่านไม่ได้รับการอนุมัติ';
-      footerNote = '';
+      const rejectLevel = leaveData.rejected_level === 1 ? 'หัวหน้างาน' : 'HR';
+      bodyText = `คำขอลางานของท่านไม่ได้รับการอนุมัติจาก${rejectLevel}`;
+      footerNote = leaveData.reject_reason ? `เหตุผล: ${leaveData.reject_reason}` : '';
       break;
     default:
       subject = `[แจ้งเตือน] คำขอลางาน - ${leaveData.employee_name}`;
@@ -334,22 +335,8 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                     </div>
                   </v:textbox>
                 </v:rect>
-                <![endif]-->
 
-                <!--[if !mso]><!-->
-                <div class="heroPad" style="padding:44px 18px;">
-                  <!-- BIG ICON (non-Outlook) -->
-                  <div class="iconBig" style="font-family:Arial,Helvetica,sans-serif;font-size:56px;line-height:56px;font-weight:700;color:#ffffff;text-align:center;">
-                    ${notificationType === 'rejected' ? '✕' : '✓'}
-                  </div>
-
-                  <div style="height:16px;line-height:16px;font-size:16px;">&nbsp;</div>
-
-                  <div class="h1" align="center" style="text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400;margin:0;">
-                    ${headerText}
-                  </div>
-                </div>
-                <!--<![endif]-->
+                
 
               </td>
             </tr>
