@@ -311,12 +311,12 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                         <tr>
                           <td align="center" valign="middle" style="padding:44px 18px;">
 
-                            <!-- Badge (Outlook circle) -->
+                            <!-- Badge (Outlook VML - FIXED) -->
                             <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                               <tr>
                                 <td align="center" valign="middle" style="padding:0;">
-                                  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
-                                    arcsize="50%" stroked="f"
+                                  <v:oval xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                                    stroked="f"
                                     style="width:54px;height:54px;v-text-anchor:middle;"
                                     fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}">
                                     <w:anchorlock/>
@@ -325,7 +325,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                                         ${notificationType === 'rejected' ? '✕' : '✓'}
                                       </center>
                                     </v:textbox>
-                                  </v:roundrect>
+                                  </v:oval>
                                 </td>
                               </tr>
                             </table>
@@ -351,7 +351,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
                 <!--[if !mso]><!-->
                 <div class="heroPad" style="padding:44px 18px;">
-                  <div style="margin:0 auto 14px;width:54px;height:54px;border-radius:50%;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:54px;text-align:center;font-size:28px;color:#ffffff;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">
+                  <div style="mso-hide:all;margin:0 auto 14px;width:54px;height:54px;border-radius:50%;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:54px;text-align:center;font-size:28px;color:#ffffff;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">
                     ${notificationType === 'rejected' ? '✕' : '✓'}
                   </div>
 
