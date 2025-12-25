@@ -343,23 +343,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                     </div>
                   </v:textbox>
                 </v:rect>
-                <![endif]-->
-
-                <!--[if !mso]><!-->
-                <div style="padding:44px 18px;">
-                  <div style="margin:0 auto 14px;width:54px;height:54px;border-radius:50%;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:54px;text-align:center;font-size:28px;color:#ffffff;font-weight:bold;">
-                    ${notificationType === 'rejected' ? '✕' : '✓'}
-                  </div>
-
-                  <div align="center" style="text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400;margin:0;">
-                    ${headerText}
-                  </div>
-                </div>
-                <!--<![endif]-->
-              </td>
-            </tr>
-
-
+                
             <!-- Body -->
             <tr>
               <td class="px" style="padding:28px 42px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b">
