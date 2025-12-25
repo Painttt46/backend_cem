@@ -304,8 +304,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                 </td></tr>
                 </table>
                 <br/><br/>
-                <div style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400">
-                ${headerText}
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;font-weight:400;color:#ffffff;mso-line-height-rule:exactly;">${headerText}</td></tr></table>
                 </div>
                 </center>
                 </v:textbox>
