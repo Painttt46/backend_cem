@@ -898,11 +898,11 @@ router.put('/:id/status', async (req, res) => {
       // Level 2 approved
       updateQuery = `
         UPDATE leave_requests 
-        SET status = $1, approved_by_level2 = $2, approved_by_level2_id = $3, approved_by = $2, approval_level = $4, updated_at = NOW() 
-        WHERE id = $5 
+        SET status = $1, approved_by_level2 = $2, approved_by_level2_id = $3, approved_by = $4, approval_level = $5, updated_at = NOW() 
+        WHERE id = $6 
         RETURNING *
       `;
-      updateParams = [newStatus, approved_by, approved_by_id, newApprovalLevel, id];
+      updateParams = [newStatus, approved_by, approved_by_id, approved_by, newApprovalLevel, id];
     } else {
       // Rejected or other
       updateQuery = `
