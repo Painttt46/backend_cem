@@ -258,9 +258,11 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
   <meta name="x-apple-disable-message-reformatting" />
   <meta http-equiv="x-ua-compatible" content="ie=edge" />
   <title>${headerText}</title>
+
   <!--[if mso]>
   <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch><o:AllowPNG/></o:OfficeDocumentSettings></xml>
   <![endif]-->
+
   <style>
     html,body{margin:0!important;padding:0!important;height:100%!important;width:100%!important}
     *{-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%}
@@ -270,31 +272,38 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     @media screen and (max-width:600px){
       .container{width:100%!important}
       .px{padding-left:18px!important;padding-right:18px!important}
-      .hero{padding:36px 18px!important}
+      .heroPad{padding:36px 18px!important}
       .h1{font-size:28px!important;line-height:34px!important}
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background:#f2f3f5">
-  <div style="display:none;font-size:1px;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden">${headerText}</div>
-  <center style="width:100%;background:#f2f3f5">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f3f5">
+
+<body style="margin:0;padding:0;background:#f2f3f5;">
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+    ${headerText}
+  </div>
+
+  <center style="width:100%;background:#f2f3f5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
       <tr>
-        <td align="center" style="padding:24px 12px">
-          <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff">
-            
+        <td align="center" style="padding:24px 12px;">
+
+          <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;">
+
             <!-- Top logo -->
             <tr>
-              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:20px;color:#190c86">
-                <p>Gen T Customer Excellency Management</p>
+              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:28px;color:#190c86;">
+                <div>Gen T Customer Excellency Management</div>
               </td>
             </tr>
 
             <!-- Hero -->
             <tr>
-              <td class="hero" align="center" style="background:linear-gradient(135deg,#4A90E2,#D73527);padding:0;">
+              <td align="center" style="padding:0;background-color:#4A90E2;background:linear-gradient(135deg,#4A90E2,#D73527);">
+
                 <!--[if gte mso 9]>
-                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false" style="width:600px;height:220px;">
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false"
+                  style="width:600px;height:220px;">
                   <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
                   <v:textbox inset="0,0,0,0" style="mso-fit-shape-to-text:false">
                     <div>
@@ -302,29 +311,24 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                         <tr>
                           <td align="center" valign="middle" style="padding:44px 18px;">
 
-                            <!-- Badge (Outlook perfect circle) -->
-                            
+                            <!-- Badge (Outlook circle) -->
                             <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                               <tr>
                                 <td align="center" valign="middle" style="padding:0;">
-                                  <!--[if mso]>
-                                  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml"
-                                    xmlns:w="urn:schemas-microsoft-com:office:word"
+                                  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
                                     arcsize="50%" stroked="f"
                                     style="width:54px;height:54px;v-text-anchor:middle;"
                                     fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}">
                                     <w:anchorlock/>
                                     <v:textbox inset="0,0,0,0">
-                                      <center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:28px;font-weight:bold;line-height:54px;">
+                                      <center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:28px;font-weight:bold;line-height:54px;mso-line-height-rule:exactly;">
                                         ${notificationType === 'rejected' ? '✕' : '✓'}
                                       </center>
                                     </v:textbox>
                                   </v:roundrect>
-                                  <![endif]-->
                                 </td>
                               </tr>
                             </table>
-
 
                             <div style="height:18px;line-height:18px;font-size:18px;">&nbsp;</div>
 
@@ -343,13 +347,30 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                     </div>
                   </v:textbox>
                 </v:rect>
-                
+                <![endif]-->
+
+                <!--[if !mso]><!-->
+                <div class="heroPad" style="padding:44px 18px;">
+                  <div style="margin:0 auto 14px;width:54px;height:54px;border-radius:50%;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:54px;text-align:center;font-size:28px;color:#ffffff;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">
+                    ${notificationType === 'rejected' ? '✕' : '✓'}
+                  </div>
+
+                  <div class="h1" align="center" style="text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400;margin:0;">
+                    ${headerText}
+                  </div>
+                </div>
+                <!--<![endif]-->
+
+              </td>
+            </tr>
+
             <!-- Body -->
             <tr>
-              <td class="px" style="padding:28px 42px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b">
-                <p style="margin:0 0 18px;font-size:16px;line-height:26px">สวัสดี,</p>
-                <p style="margin:0 0 18px;font-size:16px;line-height:26px">${bodyText}</p>
-                <p style="margin:0 0 18px;font-size:16px;line-height:26px">
+              <td class="px" style="padding:28px 42px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b;">
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">สวัสดี,</p>
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">${bodyText}</p>
+
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">
                   ผู้ขอลา : <b>${leaveData.employee_name || '-'}</b><br>
                   ตำแหน่ง : <b>${leaveData.employee_position || '-'}</b><br>
                   ประเภทการลา : <b>${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}</b><br>
@@ -360,20 +381,22 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                   สถานะ : <b>${statusLabels[leaveData.status] || leaveData.status}</b><br>
                   ${approverHtml}
                 </p>
-                <p>
-                  <a style="color:#4a90e2" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to login</a>
+
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">
+                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to login</a>
                 </p>
-                ${footerNote ? `<p style="margin:0 0 18px;font-size:13px;line-height:20px;color:#8a8a8a;font-style:italic">${footerNote}</p>` : ''}
+
+                ${footerNote ? `<p style="margin:0 0 18px;font-size:13px;line-height:20px;color:#8a8a8a;font-style:italic;">${footerNote}</p>` : ''}
               </td>
             </tr>
 
             <!-- Footer -->
             <tr>
-              <td style="background:#14143a;padding:18px">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <td style="background:#14143a;padding:18px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
-                    <td valign="top" style="padding:6px 8px">
-                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#ffffff;font-weight:700">
+                    <td valign="top" style="padding:6px 8px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#ffffff;font-weight:700;">
                         อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับอีเมลนี้
                       </div>
                     </td>
