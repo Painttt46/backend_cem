@@ -13,7 +13,12 @@ export const verifyToken = async (req, res, next) => {
         token = authHeader.replace('Bearer ', '');
       }
     }
-    
+
+    // รองรับ token จาก query string (สำหรับ img src)
+    if (!token && req.query.token) {
+      token = req.query.token;
+    }
+
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });
     }
