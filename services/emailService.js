@@ -203,41 +203,36 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     'rejected': 'ไม่อนุมัติ'
   };
 
-  let subject, headerText, headerBg, bodyText, footerNote;
+  let subject, headerText, bodyText, footerNote;
   
   switch (notificationType) {
     case 'new_request':
       subject = `[แจ้งเตือน] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'มีคำขอลางานใหม่';
-      headerBg = '#3b82f6';
       bodyText = 'มีคำขอลางานใหม่รอการพิจารณา';
       footerNote = 'กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติ';
       break;
     case 'pending_level2':
       subject = `[อนุมัติขั้นที่ 1] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'หัวหน้างานอนุมัติเรียบร้อย';
-      headerBg = '#4a6fa5';
       bodyText = 'หัวหน้างานได้พิจารณา และอนุมัติคำขอลาของท่านเป็นที่เรียบร้อยแล้ว';
       footerNote = 'ฝ่ายบุคคล กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติต่อไป';
       break;
     case 'approved':
       subject = `[อนุมัติแล้ว] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'หัวหน้างาน และฝ่ายบุคคลอนุมัติลาเรียบร้อย';
-      headerBg = '#4a6fa5';
       bodyText = 'หัวหน้างาน และฝ่ายบุคคลได้พิจารณา และอนุมัติคำขอลาของท่านเป็นที่เรียบร้อย';
       footerNote = 'อนุมัติคำขอลาของท่านเป็นที่เรียบร้อยแล้ว';
       break;
     case 'rejected':
       subject = `[ไม่อนุมัติ] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'ไม่อนุมัติการลา';
-      headerBg = '#ef4444';
       bodyText = 'คำขอลางานของท่านไม่ได้รับการอนุมัติ';
       footerNote = '';
       break;
     default:
       subject = `[แจ้งเตือน] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'แจ้งเตือนการลา';
-      headerBg = '#3b82f6';
       bodyText = '';
       footerNote = '';
   }
@@ -297,16 +292,27 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
             <!-- Hero -->
             <tr>
-              <td class="hero" align="center" style="background:${headerBg};padding:44px 18px">
-                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 14px">
-                  <tr>
-                    <td align="center" style="width:60px;height:60px;border-radius:50%;background:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};font-size:36px;color:#ffffff;font-weight:bold">
-                      ${notificationType === 'rejected' ? '✕' : '✓'}
-                    </td>
-                  </tr>
-                </table>
-                <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400">
+              <td class="hero" align="center" style="padding:44px 18px">
+                <!--[if gte mso 9]>
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;position:absolute;">
+                <v:fill type="gradient" color="#D73527" color2="#4A90E2" angle="135"/>
+                </v:rect>
+                <![endif]-->
+                <div style="background:linear-gradient(135deg, #4A90E2, #D73527);padding:44px 18px">
+                <!--[if mso]>
+                <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" style="height:60px;v-text-anchor:middle;width:60px;" arcsize="50%" fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}" stroke="f">
+                <w:anchorlock/>
+                <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:32px;font-weight:bold;">${notificationType === 'rejected' ? '✕' : '✓'}</center>
+                </v:roundrect>
+                <![endif]-->
+                <!--[if !mso]><!-->
+                <div style="width:60px;height:60px;border-radius:30px;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:60px;text-align:center;font-size:32px;color:#ffffff;font-weight:bold;margin:0 auto 14px">
+                  ${notificationType === 'rejected' ? '✕' : '✓'}
+                </div>
+                <!--<![endif]-->
+                <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400;margin-top:14px">
                   ${headerText}
+                </div>
                 </div>
               </td>
             </tr>
