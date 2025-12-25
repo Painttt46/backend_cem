@@ -292,30 +292,34 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
             <!-- Hero -->
             <tr>
-              <td class="hero" align="center" style="background:linear-gradient(135deg, #4A90E2, #D73527);padding:44px 18px">
+              <td class="hero" align="center" style="background:linear-gradient(135deg, #4A90E2, #D73527);padding:0">
                 <!--[if gte mso 9]>
-                <v:background xmlns:v="urn:schemas-microsoft-com:vml" fill="t">
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;height:180px">
                 <v:fill type="gradient" color="#D73527" color2="#4A90E2" angle="135"/>
-                </v:background>
+                <v:textbox inset="0,44px,0,44px">
                 <![endif]-->
-                <div style="margin:0 auto 14px;width:54px;height:54px">
-                  <!--[if mso]>
-                  <v:oval xmlns:v="urn:schemas-microsoft-com:vml" style="width:54px;height:54px;v-text-anchor:middle" fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}" stroked="f">
-                  <v:textbox inset="0,0,0,0">
-                  <center style="color:#ffffff;font-size:28px;font-weight:bold;line-height:54px">${notificationType === 'rejected' ? '✕' : '✓'}</center>
-                  </v:textbox>
-                  </v:oval>
-                  <![endif]-->
-                  <!--[if !mso]><!-->
-                  <div style="width:54px;height:54px;border-radius:27px;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:54px;text-align:center;font-size:28px;color:#ffffff;font-weight:bold">
-                    ${notificationType === 'rejected' ? '✕' : '✓'}
+                <div style="padding:44px 18px">
+                  <div style="margin:0 auto 14px;width:54px;height:54px">
+                    <!--[if mso]>
+                    <v:oval xmlns:v="urn:schemas-microsoft-com:vml" style="width:54px;height:54px" fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}" stroked="f">
+                    <center style="color:#ffffff;font-size:28px;font-weight:bold;line-height:48px">${notificationType === 'rejected' ? '✕' : '✓'}</center>
+                    </v:oval>
+                    <![endif]-->
+                    <!--[if !mso]><!-->
+                    <div style="width:54px;height:54px;border-radius:27px;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:50px;text-align:center;font-size:28px;color:#ffffff;font-weight:bold">
+                      ${notificationType === 'rejected' ? '✕' : '✓'}
+                    </div>
+                    <!--<![endif]-->
                   </div>
-                  <!--<![endif]-->
+                  <br/>
+                  <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400">
+                    ${headerText}
+                  </div>
                 </div>
-                <br/>
-                <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400">
-                  ${headerText}
-                </div>
+                <!--[if gte mso 9]>
+                </v:textbox>
+                </v:rect>
+                <![endif]-->
               </td>
             </tr>
 
