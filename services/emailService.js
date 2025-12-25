@@ -292,23 +292,23 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
             <!-- Hero -->
             <tr>
-              <td class="hero" align="center" style="padding:0;background:#4A90E2;">
+              <td class="hero" align="center" style="background:linear-gradient(135deg,#4A90E2,#D73527);padding:0;">
                 <!--[if gte mso 9]>
-                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false"
-                  style="width:600px;height:220px;">
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false" style="width:600px;height:220px;">
                   <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
                   <v:textbox inset="0,0,0,0" style="mso-fit-shape-to-text:false">
                     <div>
                       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="220" align="center">
                         <tr>
-                          <td align="center" valign="middle" style="padding:44px 18px 44px 18px;">
-                            
-                            <!-- Badge (Perfect circle in Outlook via VML) -->
+                          <td align="center" valign="middle" style="padding:44px 18px;">
+
+                            <!-- Badge (Outlook perfect circle) -->
                             <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                               <tr>
                                 <td align="center" valign="middle" style="padding:0;">
-                                  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" arcsize="50%" stroked="f"
-                                    style="width:54px;height:54px;v-text-anchor:middle;" fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}">
+                                  <v:roundrect arcsize="50%" stroked="f"
+                                    style="width:54px;height:54px;v-text-anchor:middle;"
+                                    fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}">
                                     <w:anchorlock/>
                                     <center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:28px;font-weight:bold;line-height:54px;">
                                       ${notificationType === 'rejected' ? '✕' : '✓'}
@@ -323,8 +323,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                             <!-- Header -->
                             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                               <tr>
-                                <td align="center"
-                                  style="text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;font-weight:400;color:#ffffff;mso-line-height-rule:exactly;">
+                                <td align="center" style="text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;font-weight:400;color:#ffffff;mso-line-height-rule:exactly;">
                                   ${headerText}
                                 </td>
                               </tr>
@@ -339,14 +338,12 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                 <![endif]-->
 
                 <!--[if !mso]><!-->
-                <div style="padding:44px 18px;background:linear-gradient(135deg,#4A90E2,#D73527);">
-                  <div
-                    style="margin:0 auto 14px;width:54px;height:54px;border-radius:50%;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:54px;text-align:center;font-size:28px;color:#ffffff;font-weight:bold;">
+                <div style="padding:44px 18px;">
+                  <div style="margin:0 auto 14px;width:54px;height:54px;border-radius:50%;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:54px;text-align:center;font-size:28px;color:#ffffff;font-weight:bold;">
                     ${notificationType === 'rejected' ? '✕' : '✓'}
                   </div>
 
-                  <div align="center"
-                    style="text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;font-weight:400;color:#ffffff;margin:0;mso-line-height-rule:exactly;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+                  <div align="center" style="text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400;margin:0;">
                     ${headerText}
                   </div>
                 </div>
