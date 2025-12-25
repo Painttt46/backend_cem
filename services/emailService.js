@@ -311,21 +311,24 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                         <tr>
                           <td align="center" valign="middle" style="padding:44px 18px;">
 
-                            <!-- Badge (Outlook VML - FIXED) -->
+                            <!-- Badge (Outlook FIXED: circle + icon in one VML group) -->
                             <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                               <tr>
-                                <td align="center" valign="middle" style="padding:0;">
-                                  <v:oval xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
-                                    stroked="f"
-                                    style="width:54px;height:54px;v-text-anchor:middle;"
-                                    fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}">
-                                    <w:anchorlock/>
-                                    <v:textbox inset="0,0,0,0">
-                                      <center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:28px;font-weight:bold;line-height:54px;mso-line-height-rule:exactly;">
-                                        ${notificationType === 'rejected' ? '✕' : '✓'}
-                                      </center>
-                                    </v:textbox>
-                                  </v:oval>
+                                <td align="center" valign="middle" style="padding:0;line-height:0;font-size:0;">
+                                  <v:group xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                                    style="width:54px;height:54px;" coordsize="54,54">
+                                    <v:oval stroked="f"
+                                      style="position:absolute;left:0;top:0;width:54px;height:54px;"
+                                      fillcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}" />
+                                    <v:shape type="#_x0000_t202" filled="f" stroked="f"
+                                      style="position:absolute;left:0;top:0;width:54px;height:54px;">
+                                      <v:textbox inset="0,0,0,0">
+                                        <div style="text-align:center;line-height:54px;font-family:Arial,Helvetica,sans-serif;font-size:28px;font-weight:bold;color:#ffffff;mso-line-height-rule:exactly;">
+                                          ${notificationType === 'rejected' ? '✕' : '✓'}
+                                        </div>
+                                      </v:textbox>
+                                    </v:shape>
+                                  </v:group>
                                 </td>
                               </tr>
                             </table>
@@ -351,6 +354,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
                 <!--[if !mso]><!-->
                 <div class="heroPad" style="padding:44px 18px;">
+                  <!-- HTML badge (hide from Outlook just in case) -->
                   <div style="mso-hide:all;margin:0 auto 14px;width:54px;height:54px;border-radius:50%;background-color:${notificationType === 'rejected' ? '#EF4444' : '#22C55E'};line-height:54px;text-align:center;font-size:28px;color:#ffffff;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">
                     ${notificationType === 'rejected' ? '✕' : '✓'}
                   </div>
@@ -412,7 +416,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
   </center>
 </body>
 </html>`
-  };
+};
 
   try {
     const result = await transporter.sendMail(mailOptions);
