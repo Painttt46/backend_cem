@@ -222,10 +222,11 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
       footerNote = 'อนุมัติคำขอลาของท่านเป็นที่เรียบร้อยแล้ว';
       break;
     case 'rejected':
+      const rejectLevel = leaveData.rejected_level === 1 ? 'หัวหน้างาน' : 'HR';
+      const rejectorName = leaveData.rejected_by || '';
       subject = `[ไม่อนุมัติ] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'ไม่อนุมัติการลา';
-      const rejectLevel = leaveData.rejected_level === 1 ? 'หัวหน้างาน' : 'HR';
-      bodyText = `คำขอลางานของท่านไม่ได้รับการอนุมัติจาก${rejectLevel}`;
+      bodyText = `คำขอลางานของท่านไม่ได้รับการอนุมัติจาก${rejectLevel} (${rejectorName})`;
       footerNote = leaveData.reject_reason ? `เหตุผล: ${leaveData.reject_reason}` : '';
       break;
     default:
