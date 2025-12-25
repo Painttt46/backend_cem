@@ -299,12 +299,24 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                 <v:textbox style="mso-fit-shape-to-text:false" inset="0,40px,0,40px">
                 <center>
                 <table cellpadding="0" cellspacing="0" width="54" align="center">
-                <tr><td align="center" valign="middle" width="54" height="54" bgcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}" style="border-radius:27px;color:#ffffff;font-size:28px;font-weight:bold">
-                ${notificationType === 'rejected' ? '✕' : '✓'}
-                </td></tr>
+                <tr>
+                  <td align="center">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="54" height="54">
+                      <tr>
+                        <td align="center" valign="middle"
+                            width="54" height="54"
+                            bgcolor="${notificationType === 'rejected' ? '#EF4444' : '#22C55E'}"
+                            style="width:54px;height:54px;line-height:54px;border-radius:50%;color:#ffffff;font-size:28px;font-weight:bold;text-align:center;mso-line-height-rule:exactly;">
+                          ${notificationType === 'rejected' ? '✕' : '✓'}
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
                 </table>
                 <br/><br/>
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;font-weight:400;color:#ffffff;mso-line-height-rule:exactly;">${headerText}</td></tr></table>
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td align="center" style="text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;font-weight:400;color:#ffffff;mso-line-height-rule:exactly;">${headerText}</td></tr></table>
                 </div>
                 </center>
                 </v:textbox>
