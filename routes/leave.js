@@ -724,6 +724,9 @@ router.get('/', async (req, res) => {
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1_id INTEGER`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2_id INTEGER`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_by TEXT`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_level INTEGER`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS reject_reason TEXT`);
 
     const result = await pool.query(`
       SELECT 
@@ -732,6 +735,7 @@ router.get('/', async (req, res) => {
         l.delegate_contact, l.work_details, l.attachments, l.status, l.approved_by, 
         l.approval_level, l.approved_by_level1, l.approved_by_level2,
         l.approved_by_level1_id, l.approved_by_level2_id,
+        l.rejected_by, l.rejected_level, l.reject_reason,
         l.created_at, l.updated_at,
         u.firstname || ' ' || u.lastname as user_name,
         u.position as employee_position
