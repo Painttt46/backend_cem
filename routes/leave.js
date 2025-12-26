@@ -755,6 +755,86 @@ router.delete('/leave-types/:leaveType', async (req, res) => {
   }
 });
 
+// ==================== HOLIDAYS API ====================
+
+// Get all holidays
+router.get('/holidays', async (req, res) => {
+  try {
+    // Create table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS holidays (
+        id SERIAL PRIMARY KEY,
+        holiday_date DATE NOT NULL UNIQUE,
+        description VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    const { year } = req.query;
+    let query = 'SELECT * FROM holidays';
+    let params = [];
+
+    if (year) {
+      query += ' WHERE EXTRACT(YEAR FROM holiday_date) = $1';
+      params.push(year);
+    }
+
+    query += ' ORDER BY holiday_date';
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching holidays:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add holidays
+router.post('/holidays', async (req, res) => {
+  try {
+    const { dates, description } = req.body;
+
+    // Create table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS holidays (
+        id SERIAL PRIMARY KEY,
+        holiday_date DATE NOT NULL UNIQUE,
+        description VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    const added = [];
+    for (const date of dates) {
+      try {
+        const result = await pool.query(
+          'INSERT INTO holidays (holiday_date, description) VALUES ($1, $2) ON CONFLICT (holiday_date) DO NOTHING RETURNING *',
+          [date, description || 'วันหยุด']
+        );
+        if (result.rows.length > 0) added.push(result.rows[0]);
+      } catch (e) {
+        // Skip duplicates
+      }
+    }
+
+    res.json({ message: 'เพิ่มวันหยุดสำเร็จ', added });
+  } catch (error) {
+    console.error('Error adding holidays:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete holiday
+router.delete('/holidays/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM holidays WHERE id = $1', [id]);
+    res.json({ message: 'ลบวันหยุดสำเร็จ' });
+  } catch (error) {
+    console.error('Error deleting holiday:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get all leave requests
 router.get('/', async (req, res) => {
   try {

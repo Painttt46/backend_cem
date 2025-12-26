@@ -61,16 +61,16 @@ export const sendForgotPasswordEmail = async (email, userData) => {
             <tr>
               <td align="center" style="padding:0;background-color:#4A90E2;background:linear-gradient(135deg,#4A90E2,#D73527);">
                 <!--[if gte mso 9]>
-                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false" style="width:600px;height:180px;">
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false" style="width:600px;height:150px;">
                   <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
                   <v:textbox inset="0,0,0,0" style="mso-fit-shape-to-text:false">
                     <div>
-                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="180" align="center">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="150" align="center">
                         <tr>
-                          <td align="center" valign="middle" style="padding:44px 18px;">
-                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:56px;line-height:56px;font-weight:700;color:#ffffff;text-align:center;">🔐</div>
-                            <div style="height:16px;line-height:16px;font-size:16px;">&nbsp;</div>
-                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;font-weight:400;color:#ffffff;">New Password</div>
+                          <td align="center" valign="middle" style="padding:30px 18px;">
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:44px;line-height:44px;font-weight:700;color:#ffffff;text-align:center;">🔐</div>
+                            <div style="height:12px;line-height:12px;font-size:12px;">&nbsp;</div>
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;font-weight:400;color:#ffffff;">New Password</div>
                           </td>
                         </tr>
                       </table>
@@ -81,10 +81,10 @@ export const sendForgotPasswordEmail = async (email, userData) => {
                 <!--[if !mso]><!-->
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                   <tr>
-                    <td align="center" style="padding:44px 18px;">
-                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:56px;line-height:56px;color:#ffffff;text-align:center;">🔐</div>
-                      <div style="height:16px;"></div>
-                      <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400;">New Password</div>
+                    <td align="center" style="padding:30px 18px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:44px;line-height:44px;color:#ffffff;text-align:center;">🔐</div>
+                      <div style="height:12px;"></div>
+                      <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;color:#ffffff;font-weight:400;">New Password</div>
                     </td>
                   </tr>
                 </table>
