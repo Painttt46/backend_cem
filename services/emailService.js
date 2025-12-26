@@ -96,7 +96,7 @@ export const sendForgotPasswordEmail = async (email, userData) => {
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">Hello, <b>${userData.email}</b></p>
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">เราได้ส่งอีเมลฉบับนี้ถึงคุณเพื่อตอบสนองคำขอของคุณในการรีเซ็ตรหัสผ่านบน <strong>GenT-CEM</strong>.</p>
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">รหัสผ่านใหม่ของคุณ คือ : <b>${userData.password || 'ไม่พบข้อมูล'}</b></p>
-                <p><a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to login</a></p>
+                <p><a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to Login Internal</a> | <a style="color:#4a90e2;" href="http://61.91.51.126:3000/login" target="_blank">Click to Login External</a></p>
                 <p style="margin:0 0 18px;font-size:13px;line-height:20px;color:#8a8a8a;font-style:italic;">โปรดเปลี่ยนรหัสผ่านของคุณอีกครั้งหลังจากเข้าสู่ระบบสำเร็จแล้ว</p>
               </td>
             </tr>
@@ -345,7 +345,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                 </p>
 
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">
-                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to login</a>
+                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to Login Internal</a> | <a style="color:#4a90e2;" href="http://61.91.51.126:3000/login" target="_blank">Click to Login External</a>
                 </p>
 
                 ${footerNote ? `<p style="margin:0 0 18px;font-size:13px;line-height:20px;color:#8a8a8a;font-style:italic;">${footerNote}</p>` : ''}
