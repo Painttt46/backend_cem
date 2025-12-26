@@ -607,15 +607,15 @@ router.get('/leave-types', async (req, res) => {
   try {
     const currentYear = new Date().getFullYear();
 
-    // Get distinct leave types from user_leave_quotas
-    // Add color column if not exists
-    await pool.query(`
-      ALTER TABLE user_leave_quotas 
-      ADD COLUMN IF NOT EXISTS color VARCHAR(20)
-    `);
+    // Add columns if not exists
+    await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS color VARCHAR(20)`);
+    await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS advance_days INTEGER DEFAULT 0`);
+    await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);
 
     const result = await pool.query(`
-      SELECT DISTINCT leave_type, color
+      SELECT DISTINCT leave_type, color, advance_days, display_name,
+        (SELECT annual_quota FROM user_leave_quotas uq2 
+         WHERE uq2.leave_type = user_leave_quotas.leave_type AND uq2.year = $1 LIMIT 1) as default_quota
       FROM user_leave_quotas 
       WHERE year = $1
       ORDER BY leave_type
@@ -638,10 +638,17 @@ router.get('/leave-types', async (req, res) => {
       'other': '#6366f1'
     };
 
+    const defaultAdvanceDays = {
+      'personal': 3,  // ลากิจต้องลาล่วงหน้า 3 วัน
+      'vacation': 7   // ลาพักร้อนต้องลาล่วงหน้า 7 วัน
+    };
+
     const leaveTypes = result.rows.map(row => ({
       value: row.leave_type,
-      label: leaveTypeLabels[row.leave_type] || row.leave_type,
-      color: row.color || leaveTypeColors[row.leave_type] || '#6c757d'
+      label: row.display_name || leaveTypeLabels[row.leave_type] || row.leave_type,
+      color: row.color || leaveTypeColors[row.leave_type] || '#6c757d',
+      advance_days: row.advance_days ?? defaultAdvanceDays[row.leave_type] ?? 0,
+      default_quota: row.default_quota || 0
     }));
 
     res.json(leaveTypes);
@@ -654,7 +661,7 @@ router.get('/leave-types', async (req, res) => {
 // Create new leave type
 router.post('/leave-types', async (req, res) => {
   try {
-    const { name, default_quota } = req.body;
+    const { name, default_quota, advance_days } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'กรุณาระบุชื่อประเภทการลา' });
@@ -665,6 +672,7 @@ router.post('/leave-types', async (req, res) => {
 
     const currentYear = new Date().getFullYear();
     const quota = default_quota || 0;
+    const advDays = advance_days || 0;
 
     // Generate random color
     const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
@@ -675,19 +683,51 @@ router.post('/leave-types', async (req, res) => {
 
     for (const user of usersResult.rows) {
       await pool.query(`
-        INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year, color)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (user_id, leave_type, year) DO UPDATE SET color = $5
-      `, [user.id, value, quota, currentYear, color]);
+        INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year, color, advance_days, display_name)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (user_id, leave_type, year) DO UPDATE SET color = $5, advance_days = $6, display_name = $7
+      `, [user.id, value, quota, currentYear, color, advDays, value]);
     }
 
     res.json({
       message: 'เพิ่มประเภทการลาสำเร็จ',
-      leave_type: { name, value, default_quota: quota, color },
+      leave_type: { name, value, default_quota: quota, color, advance_days: advDays },
       users_updated: usersResult.rows.length
     });
   } catch (error) {
     console.error('Error creating leave type:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update leave type settings
+router.put('/leave-types/:leaveType', async (req, res) => {
+  try {
+    const leaveType = decodeURIComponent(req.params.leaveType);
+    const { display_name, color, default_quota, advance_days } = req.body;
+    const currentYear = new Date().getFullYear();
+
+    // Update all records for this leave type
+    await pool.query(`
+      UPDATE user_leave_quotas 
+      SET display_name = COALESCE($1, display_name),
+          color = COALESCE($2, color),
+          advance_days = COALESCE($3, advance_days)
+      WHERE leave_type = $4 AND year = $5
+    `, [display_name, color, advance_days, leaveType, currentYear]);
+
+    // Update default quota if provided
+    if (default_quota !== undefined) {
+      await pool.query(`
+        UPDATE user_leave_quotas 
+        SET annual_quota = $1
+        WHERE leave_type = $2 AND year = $3
+      `, [default_quota, leaveType, currentYear]);
+    }
+
+    res.json({ message: 'อัปเดตประเภทการลาสำเร็จ' });
+  } catch (error) {
+    console.error('Error updating leave type:', error);
     res.status(500).json({ error: error.message });
   }
 });
