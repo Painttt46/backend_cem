@@ -43,35 +43,52 @@ export const sendForgotPasswordEmail = async (email, userData) => {
       .px{padding-left:18px!important;padding-right:18px!important}
       .hero{padding:36px 18px!important}
       .h1{font-size:28px!important;line-height:34px!important}
-      .footer-col{display:block!important;width:100%!important;text-align:center!important;padding:10px 0!important}
-      .footer-left{text-align:left!important}
     }
   </style>
 </head>
 <body style="margin:0;padding:0;background:#f2f3f5;">
   <div style="display:none;font-size:1px;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">Your new password</div>
   <center style="width:100%;background:#f2f3f5;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f3f5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
       <tr>
         <td align="center" style="padding:24px 12px;">
-          <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;">
+          <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;">
             <tr>
-              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:20px;color:#190c86;">
-                <p>Gen T Customer Excellency Management</p>
+              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:28px;color:#190c86;">
+                <div>Gen T Customer Excellency Management</div>
               </td>
             </tr>
             <tr>
-              <td class="hero" align="center" style="background:linear-gradient(135deg,#4a90e2,#d73527);padding:44px 18px;">
-                <div style="margin:0 auto 14px;width:54px;height:54px;">
-                  <svg width="85" height="85" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto;">
-                    <path d="M38 54V42C38 26 50 14 64 14C78 14 90 26 90 42V54" stroke="white" stroke-width="5" stroke-linecap="round"/>
-                    <rect x="30" y="54" width="68" height="52" rx="10" stroke="white" stroke-width="5"/>
-                    <circle cx="64" cy="78" r="6" stroke="white" stroke-width="4"/>
-                    <path d="M64 84V94" stroke="white" stroke-width="4" stroke-linecap="round"/>
-                  </svg>
-                </div>
-                <br/>
-                <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400;">New Password</div>
+              <td align="center" style="padding:0;background-color:#4A90E2;background:linear-gradient(135deg,#4A90E2,#D73527);">
+                <!--[if gte mso 9]>
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false" style="width:600px;height:180px;">
+                  <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
+                  <v:textbox inset="0,0,0,0" style="mso-fit-shape-to-text:false">
+                    <div>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="180" align="center">
+                        <tr>
+                          <td align="center" valign="middle" style="padding:44px 18px;">
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:56px;line-height:56px;font-weight:700;color:#ffffff;text-align:center;">🔐</div>
+                            <div style="height:16px;line-height:16px;font-size:16px;">&nbsp;</div>
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;font-weight:400;color:#ffffff;">New Password</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+                  </v:textbox>
+                </v:rect>
+                <![endif]-->
+                <!--[if !mso]><!-->
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td align="center" style="padding:44px 18px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:56px;line-height:56px;color:#ffffff;text-align:center;">🔐</div>
+                      <div style="height:16px;"></div>
+                      <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:34px;line-height:40px;color:#ffffff;font-weight:400;">New Password</div>
+                    </td>
+                  </tr>
+                </table>
+                <!--<![endif]-->
               </td>
             </tr>
             <tr>
@@ -85,10 +102,10 @@ export const sendForgotPasswordEmail = async (email, userData) => {
             </tr>
             <tr>
               <td style="background:#14143a;padding:18px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
-                    <td class="footer-col footer-left" valign="top" style="width:50%;padding:6px 8px;">
-                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#ffffff;font-weight:700;margin-bottom:8px;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับอีเมลนี้</div>
+                    <td valign="top" style="padding:6px 8px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#ffffff;font-weight:700;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับอีเมลนี้</div>
                     </td>
                   </tr>
                 </table>
