@@ -168,12 +168,16 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Format ชั่วโมงเป็น HH:MM
-  const formatHoursToTime = (hours) => {
-    if (!hours || hours <= 0) return '0:00';
-    const h = Math.floor(hours);
-    const m = Math.round((hours - h) * 60);
-    return `${h}:${String(m).padStart(2, '0')}`;
+  // Format จำนวนวันเป็นชั่วโมง:นาที
+  const formatDaysToHoursMinutes = (days) => {
+    if (!days || days <= 0) return '0 ชั่วโมง';
+    const totalMinutes = Math.round(days * 8 * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    if (m === 0) {
+      return `${h} ชั่วโมง`;
+    }
+    return `${h} ชั่วโมง ${m} นาที`;
   };
 
   const statusLabels = {
@@ -296,7 +300,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
                             <!-- BIG ICON (Outlook) -->
                             <div class="iconBig" style="font-family:Arial,Helvetica,sans-serif;font-size:56px;line-height:56px;font-weight:700;color:#ffffff;mso-line-height-rule:exactly;text-align:center;">
-                              ${notificationType === 'rejected' ? '✕' : '✓'}
+                              ${notificationType === 'rejected' ? '✕' : notificationType === 'new_request' ? '📋' : '✓'}
                             </div>
 
                             <div style="height:16px;line-height:16px;font-size:16px;">&nbsp;</div>
@@ -334,7 +338,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                   ประเภทการลา : <b>${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}</b><br>
                   วันเริ่มลา : <b>${formatDate(leaveData.start_datetime)} เวลา ${formatTime(leaveData.start_datetime)} น.</b><br>
                   วันสิ้นสุด : <b>${formatDate(leaveData.end_datetime)} เวลา ${formatTime(leaveData.end_datetime)} น.</b><br>
-                  จำนวนวันลา : <b>${leaveData.total_days} วัน (${formatHoursToTime(leaveData.total_days * 8)})</b><br>
+                  จำนวนวันลา : <b>${leaveData.total_days} วัน (${formatDaysToHoursMinutes(leaveData.total_days)})</b><br>
                   เหตุผล : <b>${leaveData.reason || '-'}</b><br>
                   สถานะ : <b>${statusLabels[leaveData.status] || leaveData.status}</b><br>
                   ${approverHtml}
