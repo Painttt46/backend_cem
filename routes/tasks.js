@@ -98,15 +98,16 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { task_name, so_number, contract_number, sale_owner, description, category, status, files } = req.body;
+    const { task_name, so_number, contract_number, sale_owner, description, category, status, files, project_start_date, project_end_date } = req.body;
     
     const result = await pool.query(`
       UPDATE tasks 
       SET task_name = $1, so_number = $2, contract_number = $3, 
-          sale_owner = $4, description = $5, category = $6, status = $7, files = $8::jsonb, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $9
+          sale_owner = $4, description = $5, category = $6, status = $7, files = $8::jsonb, 
+          project_start_date = $9, project_end_date = $10, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $11
       RETURNING *
-    `, [task_name, so_number, contract_number, sale_owner, description, category, status, JSON.stringify(files || []), id]);
+    `, [task_name, so_number, contract_number, sale_owner, description, category, status, JSON.stringify(files || []), project_start_date, project_end_date, id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });

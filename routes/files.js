@@ -32,6 +32,9 @@ const upload = multer({
 
 // Upload files
 router.post('/upload', (req, res) => {
+  console.log('=== File Upload Request ===');
+  console.log('Content-Type:', req.headers['content-type']);
+  
   upload.array('files', 5)(req, res, (err) => {
     if (err) {
       console.error('Multer error:', err);
@@ -42,7 +45,20 @@ router.post('/upload', (req, res) => {
     }
     
     try {
+      console.log('Files received:', req.files?.length || 0);
+      console.log('Files details:', req.files?.map(f => ({ name: f.originalname, size: f.size, path: f.path })));
+      
+      if (!req.files || req.files.length === 0) {
+        console.log('No files in request');
+        return res.status(400).json({ 
+          success: false, 
+          error: 'No files uploaded' 
+        });
+      }
+      
       const fileNames = req.files.map(file => file.filename);
+      console.log('Saved filenames:', fileNames);
+      
       res.json({ 
         success: true, 
         files: fileNames,
