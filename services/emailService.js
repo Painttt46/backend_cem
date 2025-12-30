@@ -55,7 +55,7 @@ export const sendForgotPasswordEmail = async (email, userData) => {
           <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;">
             <tr>
               <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:28px;color:#190c86;">
-                <div>Gen T Customer Excellency Management</div>
+                <div>Gen T Excellency Management</div>
               </td>
             </tr>
             <tr>
@@ -280,7 +280,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
             <!-- Top logo -->
             <tr>
               <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:28px;color:#190c86;">
-                <div>Gen T Customer Excellency Management</div>
+                <div>Gen T Excellency Management</div>
               </td>
             </tr>
 
