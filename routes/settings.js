@@ -315,4 +315,87 @@ router.put('/leave-approval/:level/:userId', async (req, res) => {
   }
 });
 
+// ========== ROLE WORK HOURS ==========
+
+// Create table if not exists
+async function ensureRoleWorkHoursTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS role_work_hours (
+      id SERIAL PRIMARY KEY,
+      role VARCHAR(50) UNIQUE NOT NULL,
+      start_time TIME NOT NULL DEFAULT '09:00',
+      end_time TIME NOT NULL DEFAULT '18:00',
+      lunch_start TIME DEFAULT '12:00',
+      lunch_end TIME DEFAULT '13:00',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+// GET all role work hours
+router.get('/role-work-hours', async (req, res) => {
+  try {
+    await ensureRoleWorkHoursTable();
+    const result = await pool.query('SELECT * FROM role_work_hours ORDER BY role');
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET work hours by role
+router.get('/role-work-hours/:role', async (req, res) => {
+  try {
+    await ensureRoleWorkHoursTable();
+    const result = await pool.query('SELECT * FROM role_work_hours WHERE role = $1', [req.params.role]);
+    
+    if (result.rows.length === 0) {
+      // Return default work hours
+      res.json({
+        role: req.params.role,
+        start_time: '09:00',
+        end_time: '18:00',
+        lunch_start: '12:00',
+        lunch_end: '13:00'
+      });
+    } else {
+      res.json(result.rows[0]);
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST/PUT upsert role work hours
+router.post('/role-work-hours', async (req, res) => {
+  const { role, start_time, end_time, lunch_start, lunch_end } = req.body;
+  
+  try {
+    await ensureRoleWorkHoursTable();
+    
+    const result = await pool.query(`
+      INSERT INTO role_work_hours (role, start_time, end_time, lunch_start, lunch_end)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (role) 
+      DO UPDATE SET start_time = $2, end_time = $3, lunch_start = $4, lunch_end = $5, updated_at = NOW()
+      RETURNING *
+    `, [role, start_time, end_time, lunch_start || '12:00', lunch_end || '13:00']);
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE role work hours
+router.delete('/role-work-hours/:role', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM role_work_hours WHERE role = $1', [req.params.role]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
