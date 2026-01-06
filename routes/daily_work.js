@@ -473,7 +473,7 @@ router.get('/', async (req, res) => {
 
     let query = `
       SELECT 
-        dwr.id, dwr.task_id, 
+        dwr.id, dwr.task_id, dwr.step_id,
         TO_CHAR(dwr.work_date, 'YYYY-MM-DD') as work_date,
         dwr.start_time, dwr.end_time, dwr.total_hours,
         dwr.work_status, dwr.location, dwr.work_description, dwr.files, dwr.submitted_at,
@@ -485,10 +485,12 @@ router.get('/', async (req, res) => {
         t.so_number,
         t.contract_number,
         t.sale_owner,
-        COALESCE(t.category, 'งานทั่วไป') as category
+        COALESCE(t.category, 'งานทั่วไป') as category,
+        ts.step_name
       FROM daily_work_records dwr
       LEFT JOIN users u ON dwr.user_id = u.id
       LEFT JOIN tasks t ON dwr.task_id = t.id
+      LEFT JOIN task_steps ts ON dwr.step_id = ts.id
     `;
 
     const params = [];
@@ -520,12 +522,12 @@ router.get('/', async (req, res) => {
 // Create daily work record
 router.post('/', async (req, res) => {
   const {
-    task_id, work_date, start_time, end_time, total_hours,
+    task_id, step_id, work_date, start_time, end_time, total_hours,
     work_status, location, work_description, files, user_id, submitted_at,
     create_calendar_event, attendees, create_teams_meeting, meeting_room, event_details
   } = req.body;
 
-  console.log('Daily work POST request:', { task_id, work_date, work_status, user_id });
+  console.log('Daily work POST request:', { task_id, step_id, work_date, work_status, user_id });
 
   try {
     // Validate work_status
@@ -552,13 +554,13 @@ router.post('/', async (req, res) => {
 
     const result = await pool.query(`
       INSERT INTO daily_work_records (
-        task_id, task_name, so_number, contract_number, sale_owner,
+        task_id, step_id, task_name, so_number, contract_number, sale_owner,
         work_date, start_time, end_time, total_hours,
         work_status, location, work_description, files, user_id, submitted_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) 
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) 
       RETURNING *
     `, [
-      task_id, task_name, so_number, contract_number, sale_owner,
+      task_id, step_id, task_name, so_number, contract_number, sale_owner,
       work_date, start_time, end_time, total_hours,
       work_status, location, work_description, JSON.stringify(files || []), user_id, submitted_at
     ]);
@@ -620,7 +622,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
+    const { step_id, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
 
     // Validate work_status
     if (!work_status || typeof work_status !== 'string' || work_status.trim() === '') {
@@ -637,12 +639,12 @@ router.put('/:id', async (req, res) => {
 
     const result = await pool.query(`
       UPDATE daily_work_records 
-      SET work_date = $1, start_time = $2, end_time = $3, total_hours = $4,
-          work_status = $5, location = $6, work_description = $7, 
-          files = $8::jsonb, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $9
+      SET step_id = $1, work_date = $2, start_time = $3, end_time = $4, total_hours = $5,
+          work_status = $6, location = $7, work_description = $8, 
+          files = $9::jsonb, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $10
       RETURNING *
-    `, [work_date, start_time, end_time, total_hours, work_status, location, work_description, JSON.stringify(files || []), id]);
+    `, [step_id, work_date, start_time, end_time, total_hours, work_status, location, work_description, JSON.stringify(files || []), id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Daily work record not found' });
