@@ -28,7 +28,7 @@ router.post('/', async (req, res) => {
       INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description)
       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
       RETURNING *
-    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || 'pending', description]);
+    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description]);
     
     res.status(201).json(result.rows[0]);
   } catch (error) {
