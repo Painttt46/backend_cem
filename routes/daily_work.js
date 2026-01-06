@@ -524,7 +524,8 @@ router.post('/', async (req, res) => {
   const {
     task_id, step_id, work_date, start_time, end_time, total_hours,
     work_status, location, work_description, files, user_id, submitted_at,
-    create_calendar_event, attendees, create_teams_meeting, meeting_room, event_details
+    create_calendar_event, event_title, meeting_start_time, meeting_end_time, 
+    attendees, create_teams_meeting, meeting_room, event_details
   } = req.body;
 
   console.log('Daily work POST request:', { task_id, step_id, work_date, work_status, user_id });
@@ -566,12 +567,15 @@ router.post('/', async (req, res) => {
     ]);
 
     // Create calendar event if requested
-    if (create_calendar_event && task_name && start_time && end_time) {
+    if (create_calendar_event && event_title && (meeting_start_time || start_time) && (meeting_end_time || end_time)) {
+      const eventStartTime = meeting_start_time || start_time;
+      const eventEndTime = meeting_end_time || end_time;
+      
       console.log('Creating calendar event with data:', {
-        task_name,
+        event_title,
         work_date,
-        start_time,
-        end_time,
+        start_time: eventStartTime,
+        end_time: eventEndTime,
         location,
         work_description,
         user_id,
@@ -586,10 +590,10 @@ router.post('/', async (req, res) => {
           `${userResult.rows[0].firstname} ${userResult.rows[0].lastname}` : 'ไม่ระบุ';
 
         await sendCalendarEvent({
-          task_name,
+          task_name: event_title,
           work_date,
-          start_time,
-          end_time,
+          start_time: eventStartTime,
+          end_time: eventEndTime,
           location,
           work_description,
           user_name: userName,
