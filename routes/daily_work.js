@@ -55,13 +55,13 @@ async function sendCalendarEvent(data) {
     const attendees = [];
 
     // Auto add engineers@gent-s.com
-    attendees.push({
-      emailAddress: {
-        address: "engineers@gent-s.com",
-        name: "Engineers Team"
-      },
-      type: "required"
-    });
+    //attendees.push({
+      //emailAddress: {
+        //address: "engineers@gent-s.com",
+        //name: "Engineers Team"
+      //},
+      //type: "required"
+    //});
 
     if (data.attendees && data.attendees.length > 0) {
       data.attendees.forEach(email => {
@@ -79,7 +79,7 @@ async function sendCalendarEvent(data) {
     // No meeting room attendees needed, just Teams meeting
 
     const calendarEvent = {
-      subject: `งาน: ${data.task_name}`,
+      subject: data.task_name,
       body: {
         contentType: "HTML",
         content: `<p><strong>ผู้ปฏิบัติงาน:</strong> ${data.user_name}</p><p><strong>รายละเอียด:</strong> ${data.work_description || 'ไม่ระบุ'}</p>${data.event_details ? `<p><strong>รายละเอียดเพิ่มเติม:</strong> ${data.event_details}</p>` : ''}`
