@@ -96,8 +96,8 @@ async function sendCalendarEvent(data) {
         displayName: data.location || ''
       },
       attendees: attendees,
-      isOnlineMeeting: true,
-      onlineMeetingProvider: "teamsForBusiness"
+      isOnlineMeeting: data.create_teams_meeting === true,
+      onlineMeetingProvider: data.create_teams_meeting === true ? "teamsForBusiness" : undefined
     };
 
     console.log('Calendar event payload:', JSON.stringify(calendarEvent, null, 2));

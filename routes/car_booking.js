@@ -178,6 +178,22 @@ function createCarBookingMessage(type, data) {
   };
 }
 
+// Get latest fuel level from last returned booking
+router.get('/latest-fuel', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT fuel_level_return 
+      FROM car_bookings 
+      WHERE status = 'returned' AND fuel_level_return IS NOT NULL
+      ORDER BY updated_at DESC 
+      LIMIT 1
+    `);
+    res.json({ fuel_level: result.rows[0]?.fuel_level_return || 50 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get all car booking records with status calculation
 router.get('/', async (req, res) => {
   try {
@@ -186,7 +202,7 @@ router.get('/', async (req, res) => {
       SELECT 
         c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
         c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
-        c.return_time, c.return_date, c.status, c.user_id,
+        c.return_time, c.return_date, c.status, c.user_id, c.fuel_level_borrow, c.fuel_level_return,
         u.firstname || ' ' || u.lastname as name
       FROM car_bookings c
       LEFT JOIN users u ON c.user_id = u.id
@@ -414,7 +430,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const { 
     type, location, project, description,
-    selected_date, time, license, colleagues, images, user_id
+    selected_date, time, license, colleagues, images, user_id, fuel_level_borrow
   } = req.body;
   
   try {
@@ -464,8 +480,8 @@ router.post('/', async (req, res) => {
     const result = await pool.query(`
       INSERT INTO car_bookings (
         type, location, project, discription,
-        selected_date, time, license, colleagues, images, user_id, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
+        selected_date, time, license, colleagues, images, user_id, status, fuel_level_borrow
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
       RETURNING *
     `, [
       type, 
@@ -478,7 +494,8 @@ router.post('/', async (req, res) => {
       JSON.stringify(colleagues || []),
       JSON.stringify(images || []),
       user_id,
-      'pending'
+      'pending',
+      fuel_level_borrow || null
     ]);
     
     // Get created data with user info for Teams notification
@@ -508,7 +525,7 @@ router.post('/', async (req, res) => {
 // Update car booking record
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { images, return_name, return_location, return_description, return_time, return_date } = req.body;
+  const { images, return_name, return_location, return_description, return_time, return_date, fuel_level_return } = req.body;
   
   try {
     await setTimezone();
@@ -527,11 +544,11 @@ router.put('/:id', async (req, res) => {
       
       query = `
         UPDATE car_bookings 
-        SET return_name = $1, return_location = $2, discription = $3, return_time = $4, return_date = $5, images = $6, status = 'returned', updated_at = NOW() 
-        WHERE id = $7 
+        SET return_name = $1, return_location = $2, discription = $3, return_time = $4, return_date = $5, images = $6, fuel_level_return = $7, status = 'returned', updated_at = NOW() 
+        WHERE id = $8 
         RETURNING *
       `;
-      params = [return_name, return_location, return_description, return_time, return_date, JSON.stringify(mergedImages), id];
+      params = [return_name, return_location, return_description, return_time, return_date, JSON.stringify(mergedImages), fuel_level_return || null, id];
     } else {
       // Update images only
       query = `
