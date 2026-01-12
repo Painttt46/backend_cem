@@ -200,6 +200,7 @@ async function sendDailyWorkSummaryToTeams() {
     // Get all work records for today grouped by user
     const result = await pool.query(`
       SELECT 
+        d.id,
         d.user_id,
         u.firstname || ' ' || u.lastname as user_name,
         u.position,
@@ -210,15 +211,23 @@ async function sendDailyWorkSummaryToTeams() {
         d.end_time,
         d.total_hours,
         d.work_status,
+        d.location,
         d.work_description,
-        d.submitted_at
+        d.submitted_at,
+        ts.step_name
       FROM daily_work_records d
       JOIN users u ON d.user_id = u.id
+      LEFT JOIN task_steps ts ON d.step_id = ts.id
       WHERE d.work_date = $1
       ORDER BY u.firstname, u.lastname, d.submitted_at
     `, [today]);
 
     if (result.rows.length === 0) return;
+
+    // Find latest record id
+    const latestId = result.rows.reduce((max, row) => 
+      new Date(row.submitted_at) > new Date(max.submitted_at) ? row : max
+    ).id;
 
     // Group by user
     const groupedByUser = {};
@@ -232,13 +241,17 @@ async function sendDailyWorkSummaryToTeams() {
         };
       }
       groupedByUser[row.user_id].works.push({
+        id: row.id,
         task_name: row.task_name,
         so_number: row.so_number,
+        step_name: row.step_name,
         start_time: row.start_time?.substring(0, 5) || '',
         end_time: row.end_time?.substring(0, 5) || '',
         total_hours: row.total_hours,
         work_status: row.work_status,
-        work_description: row.work_description
+        location: row.location,
+        work_description: row.work_description,
+        isLatest: row.id === latestId
       });
     }
 
@@ -248,17 +261,12 @@ async function sendDailyWorkSummaryToTeams() {
     // Build containers for each user
     const userContainers = Object.values(groupedByUser).map(user => {
       const workItems = user.works.map(w => ({
-        type: "ColumnSet",
-        columns: [
-          {
-            type: "Column",
-            width: "stretch",
-            items: [
-              { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}`, weight: "Bolder", size: "Small", wrap: true },
-              { type: "TextBlock", text: `⏰ ${w.start_time}-${w.end_time} (${w.total_hours} ชม.) | ${w.work_status}`, size: "Small", spacing: "None" },
-              ...(w.work_description ? [{ type: "TextBlock", text: `📝 ${w.work_description}`, size: "Small", spacing: "None", wrap: true, isSubtle: true }] : [])
-            ]
-          }
+        type: "Container",
+        style: w.isLatest ? "accent" : "default",
+        items: [
+          { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}${w.step_name ? ` - ${w.step_name}` : ''}${w.isLatest ? ' 🆕' : ''}`, weight: "Bolder", size: "Small", wrap: true },
+          { type: "TextBlock", text: `⏰ ${w.start_time}-${w.end_time} (${w.total_hours} ชม.) | ${w.work_status}${w.location ? ` | 📍 ${w.location}` : ''}`, size: "Small", spacing: "None" },
+          ...(w.work_description ? [{ type: "TextBlock", text: `📝 ${w.work_description}`, size: "Small", spacing: "None", wrap: true, isSubtle: true }] : [])
         ],
         spacing: "Small"
       }));
