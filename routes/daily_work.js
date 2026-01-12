@@ -285,7 +285,7 @@ async function sendDailyWorkSummaryToTeams() {
           type: "Container",
           style: containerStyle,
           items: [
-            { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}${w.step_name ? ` - ${w.step_name}` : ''}${w.isLatest ? ' 🆕' : ''}`, weight: "Bolder", size: "Small", wrap: true, color: textColor },
+            { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}${w.step_name ? ` | ⚙️ ${w.step_name}` : ''}${w.isLatest ? ' ✨' : ''}`, weight: "Bolder", size: "Small", wrap: true, color: textColor },
             { type: "TextBlock", text: `⏰ ${w.start_time}-${w.end_time} (${w.total_hours} ชม.) | ${w.work_status}${w.location ? ` | 📍 ${w.location}` : ''}`, size: "Small", spacing: "None", color: textColor },
             ...(w.work_description ? [{ type: "TextBlock", text: `📝 ${w.work_description}`, size: "Small", spacing: "None", wrap: true, isSubtle: true }] : [])
           ],
@@ -659,7 +659,12 @@ router.get('/', async (req, res) => {
         t.contract_number,
         t.sale_owner,
         COALESCE(t.category, 'งานทั่วไป') as category,
-        ts.step_name
+        ts.step_name,
+        ts.description as step_description,
+        ts.start_date as step_start_date,
+        ts.end_date as step_end_date,
+        ts.assigned_users as step_assigned_users,
+        ts.status as step_status
       FROM daily_work_records dwr
       LEFT JOIN users u ON dwr.user_id = u.id
       LEFT JOIN tasks t ON dwr.task_id = t.id
