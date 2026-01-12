@@ -233,6 +233,8 @@ async function sendDailyWorkSummaryToTeams() {
     });
     const latestId = latestRecord.id;
     const latestUserId = latestRecord.user_id;
+    
+    console.log('Latest record:', { id: latestId, user_id: latestUserId, user_name: latestRecord.user_name, updated_at: latestRecord.updated_at });
 
     // Group by user
     const groupedByUser = {};
@@ -786,11 +788,14 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Send Teams notification for daily work summary
-    try {
-      await sendDailyWorkSummaryToTeams();
-    } catch (teamsError) {
-      console.error('Teams notification failed:', teamsError);
+    // Send Teams notification only if work_date is today
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    if (work_date === today) {
+      try {
+        await sendDailyWorkSummaryToTeams();
+      } catch (teamsError) {
+        console.error('Teams notification failed:', teamsError);
+      }
     }
 
     res.status(201).json(result.rows[0]);
@@ -833,13 +838,16 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Daily work record not found' });
     }
 
-    // Send Teams notification
-    console.log('Sending Teams notification after edit...');
-    try {
-      await sendDailyWorkSummaryToTeams();
-      console.log('Teams notification sent successfully');
-    } catch (teamsError) {
-      console.error('Teams notification failed:', teamsError);
+    // Send Teams notification only if work_date is today
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    if (work_date === today) {
+      console.log('Sending Teams notification after edit...');
+      try {
+        await sendDailyWorkSummaryToTeams();
+        console.log('Teams notification sent successfully');
+      } catch (teamsError) {
+        console.error('Teams notification failed:', teamsError);
+      }
     }
 
     res.json(result.rows[0]);
@@ -861,4 +869,5 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+export { sendDailyWorkSummaryToTeams };
 export default router;

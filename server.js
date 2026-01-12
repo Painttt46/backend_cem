@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
+import { sendDailyWorkSummaryToTeams } from './routes/daily_work.js';
 import pool from './config/database.js';
 import { verifyToken } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
@@ -31,6 +32,14 @@ startCarBookingScheduler();
 
 // Daily work reminder - ทุกวันจันทร์-ศุกร์ เวลา 10:00 น.
 cron.schedule('0 10 * * 1-5', async () => {
+  console.log('[Scheduler] Sending daily work summary to Teams...');
+  try {
+    await sendDailyWorkSummaryToTeams();
+    console.log('[Scheduler] Daily work summary sent');
+  } catch (error) {
+    console.error('[Scheduler] Daily work summary error:', error);
+  }
+  
   console.log('[Scheduler] Checking daily work submissions...');
   try {
     const today = new Date().toISOString().split('T')[0];
