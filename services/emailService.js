@@ -156,7 +156,6 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
   const formatDate = (date) => {
     const d = new Date(date);
-    d.setHours(d.getHours() + 7); // +7 GMT
     return d.toLocaleDateString('th-TH', {
       year: 'numeric', month: 'long', day: 'numeric'
     });
@@ -164,7 +163,6 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
   const formatTime = (date) => {
     const d = new Date(date);
-    d.setHours(d.getHours() + 7); // +7 GMT
     return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
   };
 
@@ -178,6 +176,12 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
       return `${h} ชั่วโมง`;
     }
     return `${h} ชั่วโมง ${m} นาที`;
+  };
+
+  const formatDays = (days) => {
+    if (!days || days <= 0) return '0';
+    const rounded = Math.round(days * 10) / 10;
+    return Number.isInteger(rounded) ? rounded : rounded.toFixed(1);
   };
 
   const statusLabels = {
@@ -338,7 +342,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                   ประเภทการลา : <b>${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}</b><br>
                   วันเริ่มลา : <b>${formatDate(leaveData.start_datetime)} เวลา ${formatTime(leaveData.start_datetime)} น.</b><br>
                   วันสิ้นสุด : <b>${formatDate(leaveData.end_datetime)} เวลา ${formatTime(leaveData.end_datetime)} น.</b><br>
-                  จำนวนวันลา : <b>${leaveData.total_days} วัน (${formatDaysToHoursMinutes(leaveData.total_days)})</b><br>
+                  จำนวนวันลา : <b>${formatDays(leaveData.total_days)} วัน (${formatDaysToHoursMinutes(leaveData.total_days)})</b><br>
                   เหตุผล : <b>${leaveData.reason || '-'}</b><br>
                   สถานะ : <b>${statusLabels[leaveData.status] || leaveData.status}</b><br>
                   ${approverHtml}
@@ -382,6 +386,64 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     return { success: true, messageId: result.messageId };
   } catch (error) {
     console.error('Error sending leave notification:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+
+// Send daily work reminder email
+export const sendDailyWorkReminder = async (user) => {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to: user.email,
+    subject: '⏰ แจ้งเตือน: กรุณาลงบันทึกการทำงานประจำวัน - GenT-CEM',
+    html: `<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;">
+  <center>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+      <tr>
+        <td align="center" style="padding:40px 20px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+            <tr>
+              <td style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:30px;border-radius:8px 8px 0 0;">
+                <h1 style="margin:0;color:#ffffff;font-family:Arial,sans-serif;font-size:24px;">⏰ แจ้งเตือนลงบันทึกการทำงาน</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px;font-family:Arial,sans-serif;">
+                <p style="margin:0 0 20px;font-size:16px;color:#333;">สวัสดีคุณ <b>${user.firstname} ${user.lastname}</b>,</p>
+                <p style="margin:0 0 20px;font-size:16px;color:#333;">ระบบตรวจพบว่าคุณยังไม่ได้ลงบันทึกการทำงานประจำวันนี้</p>
+                <p style="margin:0 0 20px;font-size:16px;color:#333;">กรุณาเข้าสู่ระบบเพื่อบันทึกการทำงานของคุณ</p>
+                <div style="text-align:center;margin:30px 0;">
+                  <a href="${process.env.FRONTEND_URL || 'http://localhost:8080'}/daily-work" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">ลงบันทึกการทำงาน</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background-color:#f8f9fa;padding:20px;border-radius:0 0 8px 8px;text-align:center;">
+                <p style="margin:0;font-size:12px;color:#6c757d;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับ</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </center>
+</body>
+</html>`
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    console.log(`Daily work reminder sent to ${user.email}:`, result.messageId);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error(`Error sending daily work reminder to ${user.email}:`, error);
     return { success: false, error: error.message };
   }
 };

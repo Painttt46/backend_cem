@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
+import cron from 'node-cron';
 import pool from './config/database.js';
 import { verifyToken } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
@@ -17,6 +18,7 @@ import carBookingRoutes from './routes/car_booking.js';
 import rolePermissionsRoutes from './routes/role_permissions.js';
 import settingsRoutes from './routes/settings.js';
 import { startCarBookingScheduler } from './services/carBookingScheduler.js';
+import { sendDailyWorkReminder } from './services/emailService.js';
 
 dotenv.config();
 
@@ -26,6 +28,34 @@ const PORT = process.env.PORT || 3001;
 
 // Start car booking scheduler
 startCarBookingScheduler();
+
+// Daily work reminder - ทุกวันจันทร์-ศุกร์ เวลา 10:00 น.
+cron.schedule('0 10 * * 1-5', async () => {
+  console.log('[Scheduler] Checking daily work submissions...');
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // หา users ที่ยังไม่ลงงานวันนี้
+    const result = await pool.query(`
+      SELECT u.id, u.email, u.firstname, u.lastname
+      FROM users u
+      WHERE u.role != 'admin'
+      AND u.id NOT IN (
+        SELECT DISTINCT user_id FROM daily_work WHERE work_date = $1
+      )
+      AND u.email IS NOT NULL
+    `, [today]);
+    
+    for (const user of result.rows) {
+      await sendDailyWorkReminder(user);
+    }
+    
+    console.log(`[Scheduler] Sent ${result.rows.length} daily work reminders`);
+  } catch (error) {
+    console.error('[Scheduler] Daily work reminder error:', error);
+  }
+}, { timezone: 'Asia/Bangkok' });
+
 // Trust proxy - Required for express-rate-limit when behind proxy/load balancer
 app.set('trust proxy', 1);
 

@@ -190,6 +190,147 @@ async function sendTeamsNotification(type, data) {
   }
 }
 
+// Send daily work summary to Teams
+async function sendDailyWorkSummaryToTeams() {
+  const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/772efa7dba4846248602bec0f4ec9adf/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=u_vIlVoRaHZOEJ-gEE6SXcdJ-HZPpp3KN6-y1WSoGRI';
+  
+  try {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+    
+    // Get all work records for today grouped by user
+    const result = await pool.query(`
+      SELECT 
+        d.user_id,
+        u.firstname || ' ' || u.lastname as user_name,
+        u.position,
+        u.department,
+        d.task_name,
+        d.so_number,
+        d.start_time,
+        d.end_time,
+        d.total_hours,
+        d.work_status,
+        d.work_description,
+        d.submitted_at
+      FROM daily_work_records d
+      JOIN users u ON d.user_id = u.id
+      WHERE d.work_date = $1
+      ORDER BY u.firstname, u.lastname, d.submitted_at
+    `, [today]);
+
+    if (result.rows.length === 0) return;
+
+    // Group by user
+    const groupedByUser = {};
+    for (const row of result.rows) {
+      if (!groupedByUser[row.user_id]) {
+        groupedByUser[row.user_id] = {
+          name: row.user_name,
+          position: row.position || '',
+          department: row.department || '',
+          works: []
+        };
+      }
+      groupedByUser[row.user_id].works.push({
+        task_name: row.task_name,
+        so_number: row.so_number,
+        start_time: row.start_time?.substring(0, 5) || '',
+        end_time: row.end_time?.substring(0, 5) || '',
+        total_hours: row.total_hours,
+        work_status: row.work_status,
+        work_description: row.work_description
+      });
+    }
+
+    const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+    const userCount = Object.keys(groupedByUser).length;
+
+    // Build containers for each user
+    const userContainers = Object.values(groupedByUser).map(user => {
+      const workItems = user.works.map(w => ({
+        type: "ColumnSet",
+        columns: [
+          {
+            type: "Column",
+            width: "stretch",
+            items: [
+              { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}`, weight: "Bolder", size: "Small", wrap: true },
+              { type: "TextBlock", text: `⏰ ${w.start_time}-${w.end_time} (${w.total_hours} ชม.) | ${w.work_status}`, size: "Small", spacing: "None" },
+              ...(w.work_description ? [{ type: "TextBlock", text: `📝 ${w.work_description}`, size: "Small", spacing: "None", wrap: true, isSubtle: true }] : [])
+            ]
+          }
+        ],
+        spacing: "Small"
+      }));
+
+      return {
+        type: "Container",
+        style: "emphasis",
+        items: [
+          {
+            type: "TextBlock",
+            text: `👤 ${user.name}`,
+            weight: "Bolder",
+            size: "Medium"
+          },
+          {
+            type: "TextBlock",
+            text: `${user.position}${user.department ? ` - ${user.department}` : ''}`,
+            size: "Small",
+            isSubtle: true,
+            spacing: "None"
+          },
+          ...workItems
+        ],
+        spacing: "Medium"
+      };
+    });
+
+    const message = {
+      type: "AdaptiveCard",
+      version: "1.5",
+      body: [
+        {
+          type: "TextBlock",
+          text: "📊 สรุปการลงงานประจำวัน",
+          size: "Large",
+          weight: "Bolder",
+          color: "Accent"
+        },
+        {
+          type: "TextBlock",
+          text: `📅 วันที่: ${new Date(today).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`,
+          size: "Small",
+          spacing: "None"
+        },
+        {
+          type: "TextBlock",
+          text: `🕐 อัปเดตล่าสุด: ${currentTime} | พนักงานลงงานแล้ว: ${userCount} คน`,
+          size: "Small",
+          spacing: "None",
+          isSubtle: true
+        },
+        ...userContainers
+      ],
+      msteams: { width: "Full" }
+    };
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+
+    if (!response.ok) {
+      console.error('Daily work summary Teams notification failed:', response.status);
+    } else {
+      console.log('Daily work summary sent to Teams');
+    }
+  } catch (error) {
+    console.error('Daily work summary Teams error:', error);
+  }
+}
+
 function createDailyWorkMessage(type, data) {
   const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
 
@@ -613,6 +754,13 @@ router.post('/', async (req, res) => {
         has_start_time: !!start_time,
         has_end_time: !!end_time
       });
+    }
+
+    // Send Teams notification for daily work summary
+    try {
+      await sendDailyWorkSummaryToTeams();
+    } catch (teamsError) {
+      console.error('Teams notification failed:', teamsError);
     }
 
     res.status(201).json(result.rows[0]);
