@@ -185,7 +185,7 @@ router.get('/latest-fuel', async (req, res) => {
       SELECT fuel_level_return 
       FROM car_bookings 
       WHERE status = 'returned' AND fuel_level_return IS NOT NULL
-      ORDER BY return_time DESC 
+      ORDER BY updated_at DESC 
       LIMIT 1
     `);
     res.json({ fuel_level: result.rows[0]?.fuel_level_return || 50 });
