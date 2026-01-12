@@ -56,6 +56,20 @@ router.delete('/categories/:value', async (req, res) => {
   }
 });
 
+// PUT update single category
+router.put('/categories/:value', async (req, res) => {
+  const { label, color } = req.body;
+  try {
+    await pool.query(
+      'UPDATE task_categories SET label = $1, color = $2 WHERE value = $3',
+      [label, color, req.params.value]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // PUT update category order
 router.put('/categories/reorder', async (req, res) => {
   const { categories } = req.body;
@@ -169,6 +183,20 @@ router.post('/statuses', async (req, res) => {
 router.delete('/statuses/:value', async (req, res) => {
   try {
     await pool.query('DELETE FROM work_statuses WHERE value = $1', [req.params.value]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT update single status
+router.put('/statuses/:value', async (req, res) => {
+  const { label, color } = req.body;
+  try {
+    await pool.query(
+      'UPDATE work_statuses SET label = $1, color = $2 WHERE value = $3',
+      [label, color, req.params.value]
+    );
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
