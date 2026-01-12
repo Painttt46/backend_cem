@@ -833,8 +833,10 @@ router.put('/:id', async (req, res) => {
     }
 
     // Send Teams notification
+    console.log('Sending Teams notification after edit...');
     try {
       await sendDailyWorkSummaryToTeams();
+      console.log('Teams notification sent successfully');
     } catch (teamsError) {
       console.error('Teams notification failed:', teamsError);
     }
