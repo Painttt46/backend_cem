@@ -271,20 +271,27 @@ async function sendDailyWorkSummaryToTeams() {
 
     // Build containers for each user
     const userContainers = sortedUsers.map(user => {
-      const workItems = user.works.map(w => ({
-        type: "Container",
-        style: w.isLatest ? "warning" : "default",
-        items: [
-          { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}${w.step_name ? ` - ${w.step_name}` : ''}${w.isLatest ? ' 🆕' : ''}`, weight: "Bolder", size: "Small", wrap: true, color: w.isLatest ? "Warning" : "Default" },
-          { type: "TextBlock", text: `⏰ ${w.start_time}-${w.end_time} (${w.total_hours} ชม.) | ${w.work_status}${w.location ? ` | 📍 ${w.location}` : ''}`, size: "Small", spacing: "None" },
-          ...(w.work_description ? [{ type: "TextBlock", text: `📝 ${w.work_description}`, size: "Small", spacing: "None", wrap: true, isSubtle: true }] : [])
-        ],
-        spacing: "Small"
-      }));
+      const workItems = user.works.map(w => {
+        const isCancelled = w.work_status === 'cancelled';
+        const containerStyle = isCancelled ? "attention" : (user.isLatestUser ? "warning" : "default");
+        const textColor = isCancelled ? "Attention" : (user.isLatestUser ? "Warning" : "Default");
+        
+        return {
+          type: "Container",
+          style: containerStyle,
+          items: [
+            { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}${w.step_name ? ` - ${w.step_name}` : ''}${w.isLatest ? ' 🆕' : ''}`, weight: "Bolder", size: "Small", wrap: true, color: textColor },
+            { type: "TextBlock", text: `⏰ ${w.start_time}-${w.end_time} (${w.total_hours} ชม.) | ${w.work_status}${w.location ? ` | 📍 ${w.location}` : ''}`, size: "Small", spacing: "None", color: textColor },
+            ...(w.work_description ? [{ type: "TextBlock", text: `📝 ${w.work_description}`, size: "Small", spacing: "None", wrap: true, isSubtle: true }] : [])
+          ],
+          spacing: "Small"
+        };
+      });
 
       return {
         type: "Container",
         style: user.isLatestUser ? "warning" : "emphasis",
+        bleed: user.isLatestUser,
         items: [
           {
             type: "TextBlock",
@@ -297,7 +304,7 @@ async function sendDailyWorkSummaryToTeams() {
             type: "TextBlock",
             text: `${user.position}${user.department ? ` - ${user.department}` : ''}`,
             size: "Small",
-            isSubtle: true,
+            isSubtle: !user.isLatestUser,
             spacing: "None"
           },
           ...workItems
