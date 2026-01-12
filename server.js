@@ -30,7 +30,7 @@ const PORT = process.env.PORT || 3001;
 // Start car booking scheduler
 startCarBookingScheduler();
 
-// Daily work reminder - ทุกวันจันทร์-ศุกร์ เวลา 10:00 น.
+// Daily work summary - ทุกวันจันทร์-ศุกร์ เวลา 10:00 น.
 cron.schedule('0 10 * * 1-5', async () => {
   console.log('[Scheduler] Sending daily work summary to Teams...');
   try {
@@ -38,30 +38,6 @@ cron.schedule('0 10 * * 1-5', async () => {
     console.log('[Scheduler] Daily work summary sent');
   } catch (error) {
     console.error('[Scheduler] Daily work summary error:', error);
-  }
-  
-  console.log('[Scheduler] Checking daily work submissions...');
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    
-    // หา users ที่ยังไม่ลงงานวันนี้
-    const result = await pool.query(`
-      SELECT u.id, u.email, u.firstname, u.lastname
-      FROM users u
-      WHERE u.role != 'admin'
-      AND u.id NOT IN (
-        SELECT DISTINCT user_id FROM daily_work WHERE work_date = $1
-      )
-      AND u.email IS NOT NULL
-    `, [today]);
-    
-    for (const user of result.rows) {
-      await sendDailyWorkReminder(user);
-    }
-    
-    console.log(`[Scheduler] Sent ${result.rows.length} daily work reminders`);
-  } catch (error) {
-    console.error('[Scheduler] Daily work reminder error:', error);
   }
 }, { timezone: 'Asia/Bangkok' });
 
