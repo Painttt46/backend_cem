@@ -701,10 +701,13 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const {
     task_id, step_id, work_date, start_time, end_time, total_hours,
-    work_status, location, work_description, files, user_id, submitted_at,
+    location, work_description, files, user_id, submitted_at,
     create_calendar_event, event_title, meeting_start_time, meeting_end_time, 
     attendees, create_teams_meeting, meeting_room, event_details
   } = req.body;
+
+  // ดึง work_status จาก task.status
+  let work_status = 'pending';
 
   console.log('Daily work POST request:', { task_id, step_id, work_date, work_status, user_id });
 
@@ -716,12 +719,13 @@ router.post('/', async (req, res) => {
     let sale_owner = null;
 
     if (task_id) {
-      const taskResult = await pool.query('SELECT task_name, so_number, contract_number, sale_owner FROM tasks WHERE id = $1', [task_id]);
+      const taskResult = await pool.query('SELECT task_name, so_number, contract_number, sale_owner, status FROM tasks WHERE id = $1', [task_id]);
       if (taskResult.rows.length > 0) {
         task_name = taskResult.rows[0].task_name;
         so_number = taskResult.rows[0].so_number;
         contract_number = taskResult.rows[0].contract_number;
         sale_owner = taskResult.rows[0].sale_owner;
+        work_status = taskResult.rows[0].status || 'pending';
       }
     }
 
