@@ -214,6 +214,7 @@ async function sendDailyWorkSummaryToTeams() {
         d.location,
         d.work_description,
         d.submitted_at,
+        d.updated_at,
         ts.step_name
       FROM daily_work_records d
       JOIN users u ON d.user_id = u.id
@@ -224,10 +225,12 @@ async function sendDailyWorkSummaryToTeams() {
 
     if (result.rows.length === 0) return;
 
-    // Find latest record
-    const latestRecord = result.rows.reduce((max, row) => 
-      new Date(row.submitted_at) > new Date(max.submitted_at) ? row : max
-    );
+    // Find latest action record (by updated_at)
+    const latestRecord = result.rows.reduce((max, row) => {
+      const maxTime = new Date(max.updated_at || max.submitted_at);
+      const rowTime = new Date(row.updated_at || row.submitted_at);
+      return rowTime > maxTime ? row : max;
+    });
     const latestId = latestRecord.id;
     const latestUserId = latestRecord.user_id;
 
@@ -827,6 +830,13 @@ router.put('/:id', async (req, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Daily work record not found' });
+    }
+
+    // Send Teams notification
+    try {
+      await sendDailyWorkSummaryToTeams();
+    } catch (teamsError) {
+      console.error('Teams notification failed:', teamsError);
     }
 
     res.json(result.rows[0]);
