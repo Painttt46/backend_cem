@@ -224,20 +224,24 @@ async function sendDailyWorkSummaryToTeams() {
 
     if (result.rows.length === 0) return;
 
-    // Find latest record id
-    const latestId = result.rows.reduce((max, row) => 
+    // Find latest record
+    const latestRecord = result.rows.reduce((max, row) => 
       new Date(row.submitted_at) > new Date(max.submitted_at) ? row : max
-    ).id;
+    );
+    const latestId = latestRecord.id;
+    const latestUserId = latestRecord.user_id;
 
     // Group by user
     const groupedByUser = {};
     for (const row of result.rows) {
       if (!groupedByUser[row.user_id]) {
         groupedByUser[row.user_id] = {
+          userId: row.user_id,
           name: row.user_name,
           position: row.position || '',
           department: row.department || '',
-          works: []
+          works: [],
+          isLatestUser: row.user_id === latestUserId
         };
       }
       groupedByUser[row.user_id].works.push({
@@ -258,13 +262,20 @@ async function sendDailyWorkSummaryToTeams() {
     const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
     const userCount = Object.keys(groupedByUser).length;
 
+    // Sort users - latest user at bottom
+    const sortedUsers = Object.values(groupedByUser).sort((a, b) => {
+      if (a.isLatestUser) return 1;
+      if (b.isLatestUser) return -1;
+      return a.name.localeCompare(b.name);
+    });
+
     // Build containers for each user
-    const userContainers = Object.values(groupedByUser).map(user => {
+    const userContainers = sortedUsers.map(user => {
       const workItems = user.works.map(w => ({
         type: "Container",
-        style: w.isLatest ? "accent" : "default",
+        style: w.isLatest ? "warning" : "default",
         items: [
-          { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}${w.step_name ? ` - ${w.step_name}` : ''}${w.isLatest ? ' 🆕' : ''}`, weight: "Bolder", size: "Small", wrap: true },
+          { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}${w.step_name ? ` - ${w.step_name}` : ''}${w.isLatest ? ' 🆕' : ''}`, weight: "Bolder", size: "Small", wrap: true, color: w.isLatest ? "Warning" : "Default" },
           { type: "TextBlock", text: `⏰ ${w.start_time}-${w.end_time} (${w.total_hours} ชม.) | ${w.work_status}${w.location ? ` | 📍 ${w.location}` : ''}`, size: "Small", spacing: "None" },
           ...(w.work_description ? [{ type: "TextBlock", text: `📝 ${w.work_description}`, size: "Small", spacing: "None", wrap: true, isSubtle: true }] : [])
         ],
@@ -273,13 +284,14 @@ async function sendDailyWorkSummaryToTeams() {
 
       return {
         type: "Container",
-        style: "emphasis",
+        style: user.isLatestUser ? "warning" : "emphasis",
         items: [
           {
             type: "TextBlock",
-            text: `👤 ${user.name}`,
+            text: `👤 ${user.name}${user.isLatestUser ? ' 🆕' : ''}`,
             weight: "Bolder",
-            size: "Medium"
+            size: "Medium",
+            color: user.isLatestUser ? "Warning" : "Default"
           },
           {
             type: "TextBlock",
