@@ -512,8 +512,23 @@ router.post('/', async (req, res) => {
     
     const bookingData = createdResult.rows[0];
     
-    // Send booking notification
+    // Send booking notification first
     await sendTeamsNotification('booking', bookingData);
+    
+    // Check if booking time has passed - if so, activate immediately
+    const now = new Date();
+    const borrowDate = new Date(selected_date);
+    const [hour, minute] = (time || '09:00').split(':').map(Number);
+    borrowDate.setHours(hour, minute, 0, 0);
+    
+    if (now >= borrowDate) {
+      // Update status to active
+      await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', bookingData.id]);
+      bookingData.status = 'active';
+      
+      // Send active notification after booking notification
+      await sendTeamsNotification('active', bookingData);
+    }
     
     res.status(201).json(bookingData);
   } catch (error) {

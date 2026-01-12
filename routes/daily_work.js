@@ -802,6 +802,7 @@ router.post('/', async (req, res) => {
 
 // Update daily work record
 router.put('/:id', async (req, res) => {
+  console.log('PUT /api/daily-work/:id called, id:', req.params.id);
   try {
     const { id } = req.params;
     const { step_id, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
