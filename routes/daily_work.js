@@ -709,12 +709,6 @@ router.post('/', async (req, res) => {
   console.log('Daily work POST request:', { task_id, step_id, work_date, work_status, user_id });
 
   try {
-    // Validate work_status
-    if (!work_status || typeof work_status !== 'string' || work_status.trim() === '') {
-      console.log('Invalid work_status:', work_status);
-      return res.status(400).json({ error: 'กรุณาเลือกสถานะงาน' });
-    }
-
     // ดึง task_name จาก tasks table
     let task_name = null;
     let so_number = null;
@@ -818,10 +812,6 @@ router.put('/:id', async (req, res) => {
     const { step_id, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
 
     // Validate work_status
-    if (!work_status || typeof work_status !== 'string' || work_status.trim() === '') {
-      return res.status(400).json({ error: 'Invalid work_status' });
-    }
-
     // คำนวณ total_hours จาก start_time และ end_time
     let total_hours = 0;
     if (start_time && end_time) {
