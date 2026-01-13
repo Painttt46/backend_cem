@@ -707,7 +707,7 @@ router.post('/', async (req, res) => {
   } = req.body;
 
   // ดึง work_status จาก task.status
-  let work_status = 'pending';
+  let work_status = null;
 
   console.log('Daily work POST request:', { task_id, step_id, work_date, work_status, user_id });
 
@@ -725,7 +725,7 @@ router.post('/', async (req, res) => {
         so_number = taskResult.rows[0].so_number;
         contract_number = taskResult.rows[0].contract_number;
         sale_owner = taskResult.rows[0].sale_owner;
-        work_status = taskResult.rows[0].status || 'pending';
+        work_status = taskResult.rows[0].status;
       }
     }
 
