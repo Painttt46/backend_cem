@@ -8,9 +8,11 @@ router.get('/task/:taskId', async (req, res) => {
   try {
     const { taskId } = req.params;
     const result = await pool.query(`
-      SELECT * FROM task_steps 
-      WHERE task_id = $1 
-      ORDER BY step_order ASC
+      SELECT ts.*, 
+        EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id) as has_work_logged
+      FROM task_steps ts
+      WHERE ts.task_id = $1 
+      ORDER BY ts.step_order ASC
     `, [taskId]);
     res.json(result.rows);
   } catch (error) {
