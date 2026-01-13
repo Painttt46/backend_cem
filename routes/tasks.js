@@ -24,8 +24,8 @@ router.get('/', async (req, res) => {
         TO_CHAR(t.project_end_date, 'YYYY-MM-DD') as project_end_date,
         t.created_at, t.category,
         CASE
-          WHEN (SELECT MAX(dwr.created_at) FROM daily_work_records dwr WHERE dwr.task_id = t.id) > t.updated_at
-          THEN (SELECT dwr.work_status FROM daily_work_records dwr WHERE dwr.task_id = t.id ORDER BY dwr.work_date DESC, dwr.created_at DESC LIMIT 1)
+          WHEN (SELECT MAX(dwr.created_at) FROM daily_work_records dwr WHERE dwr.task_id = t.id AND dwr.work_status != 'cancelled') > t.updated_at
+          THEN (SELECT dwr.work_status FROM daily_work_records dwr WHERE dwr.task_id = t.id AND dwr.work_status != 'cancelled' ORDER BY dwr.work_date DESC, dwr.created_at DESC LIMIT 1)
           ELSE t.status
         END as status
       FROM tasks t
