@@ -15,10 +15,14 @@ router.get('/', async (req, res) => {
       ALTER TABLE tasks 
       ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'
     `);
+    await pool.query(`
+      ALTER TABLE tasks 
+      ADD COLUMN IF NOT EXISTS customer_info VARCHAR(255)
+    `);
     
     const result = await pool.query(`
       SELECT 
-        t.id, t.task_name, t.so_number, t.contract_number, t.sale_owner, 
+        t.id, t.task_name, t.so_number, t.contract_number, t.sale_owner, t.customer_info,
         t.description, t.files, 
         TO_CHAR(t.project_start_date, 'YYYY-MM-DD') as project_start_date,
         TO_CHAR(t.project_end_date, 'YYYY-MM-DD') as project_end_date,
@@ -37,7 +41,7 @@ router.get('/', async (req, res) => {
 // Create new task
 router.post('/', async (req, res) => {
   try {
-    const { task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category, files } = req.body;
+    const { task_name, so_number, contract_number, sale_owner, customer_info, project_start_date, project_end_date, description, category, files } = req.body;
     
     // Check if so_number already exists
     if (so_number) {
@@ -59,10 +63,10 @@ router.post('/', async (req, res) => {
     }
     
     const result = await pool.query(`
-      INSERT INTO tasks (task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, category, files, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NULL)
+      INSERT INTO tasks (task_name, so_number, contract_number, sale_owner, customer_info, project_start_date, project_end_date, description, category, files, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NULL)
       RETURNING *
-    `, [task_name, so_number, contract_number, sale_owner, project_start_date, project_end_date, description, finalCategory, JSON.stringify(files || [])]);
+    `, [task_name, so_number, contract_number, sale_owner, customer_info, project_start_date, project_end_date, description, finalCategory, JSON.stringify(files || [])]);
     
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -105,7 +109,7 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { task_name, so_number, contract_number, sale_owner, description, category, status, files, project_start_date, project_end_date } = req.body;
+    const { task_name, so_number, contract_number, sale_owner, customer_info, description, category, status, files, project_start_date, project_end_date } = req.body;
     
     // Check if so_number already exists (excluding current task)
     if (so_number) {
@@ -118,11 +122,11 @@ router.put('/:id', async (req, res) => {
     const result = await pool.query(`
       UPDATE tasks 
       SET task_name = $1, so_number = $2, contract_number = $3, 
-          sale_owner = $4, description = $5, category = $6, status = $7, files = $8::jsonb, 
-          project_start_date = $9, project_end_date = $10, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $11
+          sale_owner = $4, customer_info = $5, description = $6, category = $7, status = $8, files = $9::jsonb, 
+          project_start_date = $10, project_end_date = $11, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $12
       RETURNING *
-    `, [task_name, so_number, contract_number, sale_owner, description, category, status, JSON.stringify(files || []), project_start_date, project_end_date, id]);
+    `, [task_name, so_number, contract_number, sale_owner, customer_info, description, category, status, JSON.stringify(files || []), project_start_date, project_end_date, id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });

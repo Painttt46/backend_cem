@@ -431,7 +431,7 @@ function createDailyWorkMessage(type, data) {
           },
           {
             type: "TextBlock",
-            text: `เวลา: ${currentTime} (หลัง 9:30 น.)`,
+            text: `เวลา: ${currentTime} (หลัง 10:00 น.)`,
             size: "Small",
             color: "Default",
             spacing: "None"
@@ -496,8 +496,8 @@ function startAutoCheck() {
     const currentHour = bangkokTime.getHours();
     const currentMinute = bangkokTime.getMinutes();
 
-    // Only check after 9:30 AM Thailand time
-    if (currentHour > 9 || (currentHour === 9 && currentMinute >= 30)) {
+    // Only check after 10:00 AM Thailand time
+    if (currentHour >= 10) {
       try {
         await checkAndNotifyMissingWork();
       } catch (error) {
