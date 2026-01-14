@@ -200,12 +200,14 @@ router.get('/', async (req, res) => {
     await setTimezone();
     const result = await pool.query(`
       SELECT 
-        c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
+        c.id, c.type, c.location, c.project, c.task_id, c.discription, c.selected_date, c.time, c.license, 
         c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
         c.return_time, c.return_date, c.status, c.user_id, c.fuel_level_borrow, c.fuel_level_return,
-        u.firstname || ' ' || u.lastname as name
+        u.firstname || ' ' || u.lastname as name,
+        t.so_number, t.customer_info
       FROM car_bookings c
       LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN tasks t ON c.task_id = t.id
       ORDER BY c.created_at DESC
     `);
     
@@ -429,12 +431,22 @@ router.get('/', async (req, res) => {
 // Create car booking record
 router.post('/', async (req, res) => {
   const { 
-    type, location, project, description,
+    type, location, task_id, description,
     selected_date, time, license, colleagues, images, user_id, fuel_level_borrow
   } = req.body;
   
   try {
     await setTimezone();
+    
+    // Get project info from task
+    let project = '';
+    if (task_id) {
+      const taskResult = await pool.query('SELECT task_name FROM tasks WHERE id = $1', [task_id]);
+      if (taskResult.rows.length > 0) {
+        project = taskResult.rows[0].task_name;
+      }
+    }
+    
     // Check for conflicts with existing bookings (both active and pending)
     const newBookingDate = new Date(selected_date);
     newBookingDate.setHours(0, 0, 0, 0);
@@ -479,14 +491,15 @@ router.post('/', async (req, res) => {
     
     const result = await pool.query(`
       INSERT INTO car_bookings (
-        type, location, project, discription,
+        type, location, project, task_id, discription,
         selected_date, time, license, colleagues, images, user_id, status, fuel_level_borrow
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
       RETURNING *
     `, [
       type, 
       location || '', 
-      project || '', 
+      project || '',
+      task_id || null,
       description || '',
       selected_date, 
       time || '09:00', 
