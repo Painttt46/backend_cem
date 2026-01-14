@@ -656,6 +656,7 @@ router.get('/', async (req, res) => {
         COALESCE(u.department, 'ไม่ระบุ') as employee_department,
         t.task_name,
         t.so_number,
+        t.customer_info,
         t.contract_number,
         t.sale_owner,
         COALESCE(t.category, 'งานทั่วไป') as category,
