@@ -814,9 +814,8 @@ router.put('/:id', async (req, res) => {
   console.log('PUT /api/daily-work/:id called, id:', req.params.id);
   try {
     const { id } = req.params;
-    const { step_id, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
+    const { task_id, step_id, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
 
-    // Validate work_status
     // คำนวณ total_hours จาก start_time และ end_time
     let total_hours = 0;
     if (start_time && end_time) {
@@ -827,12 +826,12 @@ router.put('/:id', async (req, res) => {
 
     const result = await pool.query(`
       UPDATE daily_work_records 
-      SET step_id = $1, work_date = $2, start_time = $3, end_time = $4, total_hours = $5,
-          work_status = $6, location = $7, work_description = $8, 
-          files = $9::jsonb, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $10
+      SET task_id = $1, step_id = $2, work_date = $3, start_time = $4, end_time = $5, total_hours = $6,
+          work_status = $7, location = $8, work_description = $9, 
+          files = $10::jsonb, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $11
       RETURNING *
-    `, [step_id, work_date, start_time, end_time, total_hours, work_status, location, work_description, JSON.stringify(files || []), id]);
+    `, [task_id, step_id, work_date, start_time, end_time, total_hours, work_status, location, work_description, JSON.stringify(files || []), id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Daily work record not found' });

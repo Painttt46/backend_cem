@@ -178,17 +178,20 @@ function createCarBookingMessage(type, data) {
   };
 }
 
-// Get latest fuel level from last returned booking
+// Get latest fuel level and easy pass from last returned booking
 router.get('/latest-fuel', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT fuel_level_return 
+      SELECT fuel_level_return, easy_pass_return 
       FROM car_bookings 
       WHERE status = 'returned' AND fuel_level_return IS NOT NULL
       ORDER BY updated_at DESC 
       LIMIT 1
     `);
-    res.json({ fuel_level: result.rows[0]?.fuel_level_return || 50 });
+    res.json({ 
+      fuel_level: result.rows[0]?.fuel_level_return || 50,
+      easy_pass_balance: result.rows[0]?.easy_pass_return || 500
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -432,7 +435,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const { 
     type, location, task_id, description,
-    selected_date, time, license, colleagues, images, user_id, fuel_level_borrow
+    selected_date, time, license, colleagues, images, user_id, fuel_level_borrow, easy_pass_borrow
   } = req.body;
   
   try {
@@ -492,8 +495,8 @@ router.post('/', async (req, res) => {
     const result = await pool.query(`
       INSERT INTO car_bookings (
         type, location, project, task_id, discription,
-        selected_date, time, license, colleagues, images, user_id, status, fuel_level_borrow
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
+        selected_date, time, license, colleagues, images, user_id, status, fuel_level_borrow, easy_pass_borrow
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) 
       RETURNING *
     `, [
       type, 
@@ -508,7 +511,8 @@ router.post('/', async (req, res) => {
       JSON.stringify(images || []),
       user_id,
       'pending',
-      fuel_level_borrow || null
+      fuel_level_borrow || null,
+      easy_pass_borrow || null
     ]);
     
     // Get created data with user info for Teams notification
@@ -553,7 +557,7 @@ router.post('/', async (req, res) => {
 // Update car booking record
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { images, return_name, return_location, return_description, return_time, return_date, fuel_level_return } = req.body;
+  const { images, return_name, return_location, return_description, return_time, return_date, fuel_level_return, easy_pass_return } = req.body;
   
   try {
     await setTimezone();
@@ -572,11 +576,11 @@ router.put('/:id', async (req, res) => {
       
       query = `
         UPDATE car_bookings 
-        SET return_name = $1, return_location = $2, discription = $3, return_time = $4, return_date = $5, images = $6, fuel_level_return = $7, status = 'returned', updated_at = NOW() 
-        WHERE id = $8 
+        SET return_name = $1, return_location = $2, discription = $3, return_time = $4, return_date = $5, images = $6, fuel_level_return = $7, easy_pass_return = $8, status = 'returned', updated_at = NOW() 
+        WHERE id = $9 
         RETURNING *
       `;
-      params = [return_name, return_location, return_description, return_time, return_date, JSON.stringify(mergedImages), fuel_level_return || null, id];
+      params = [return_name, return_location, return_description, return_time, return_date, JSON.stringify(mergedImages), fuel_level_return || null, easy_pass_return || null, id];
     } else {
       // Update images only
       query = `
