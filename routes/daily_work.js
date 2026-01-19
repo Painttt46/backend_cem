@@ -64,14 +64,19 @@ async function sendCalendarEvent(data) {
     //});
 
     if (data.attendees && data.attendees.length > 0) {
-      data.attendees.forEach(email => {
-        attendees.push({
-          emailAddress: {
-            address: email,
-            name: email
-          },
-          type: "required"
-        });
+      data.attendees.forEach(attendee => {
+        // รองรับทั้ง string และ object
+        const email = typeof attendee === 'string' ? attendee : attendee.email;
+        const name = typeof attendee === 'string' ? attendee : (attendee.name || attendee.email);
+        if (email) {
+          attendees.push({
+            emailAddress: {
+              address: email,
+              name: name
+            },
+            type: "required"
+          });
+        }
       });
     }
 
