@@ -496,8 +496,8 @@ function startAutoCheck() {
     const currentHour = bangkokTime.getHours();
     const currentMinute = bangkokTime.getMinutes();
 
-    // Only check after 10:00 AM Thailand time
-    if (currentHour >= 10) {
+    // Only check between 10:00 AM - 18:00 PM Thailand time
+    if (currentHour >= 10 && currentHour < 18) {
       try {
         await checkAndNotifyMissingWork();
       } catch (error) {
