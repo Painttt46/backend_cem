@@ -36,7 +36,7 @@ export async function logAudit(req, { action, tableName, recordId, recordName, o
     }
     if (!userName) userName = 'system';
     
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
+    const ip = req.headers['x-client-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.headers['x-real-ip'] || req.ip || req.connection?.remoteAddress || 'unknown';
     // แปลง IPv6-mapped IPv4 เป็น IPv4 ปกติ
     const cleanIp = ip.replace(/^::ffff:/, '');
     const userAgent = req.headers['user-agent'] || '';
