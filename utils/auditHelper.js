@@ -37,6 +37,8 @@ export async function logAudit(req, { action, tableName, recordId, recordName, o
     if (!userName) userName = 'system';
     
     const ip = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
+    // แปลง IPv6-mapped IPv4 เป็น IPv4 ปกติ
+    const cleanIp = ip.replace(/^::ffff:/, '');
     const userAgent = req.headers['user-agent'] || '';
 
     await pool.query(`
@@ -45,7 +47,7 @@ export async function logAudit(req, { action, tableName, recordId, recordName, o
     `, [userId, userName, action, tableName, recordId || null, recordName || null, 
         oldData ? JSON.stringify(oldData) : null, 
         newData ? JSON.stringify(newData) : null, 
-        ip, userAgent]);
+        cleanIp, userAgent]);
   } catch (error) {
     console.error('Audit log error:', error.message);
   }
