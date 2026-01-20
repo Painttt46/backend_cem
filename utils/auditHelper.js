@@ -34,7 +34,7 @@ export async function logAudit(req, { action, tableName, recordId, recordName, o
         userName = `${userResult.rows[0].firstname} ${userResult.rows[0].lastname}`;
       }
     }
-    if (!userName) userName = 'System';
+    if (!userName) userName = 'system';
     
     const ip = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || '';
