@@ -74,8 +74,8 @@ router.post('/login', async (req, res) => {
       action: 'LOGIN',
       tableName: 'users',
       recordId: user.id,
-      recordName: `${user.firstname} ${user.lastname}`,
-      newData: { username, role: user.role }
+      recordName: null,
+      userName: `${user.firstname} ${user.lastname}`
     });
     
     res.json({

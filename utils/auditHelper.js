@@ -21,19 +21,20 @@ async function ensureTable() {
 }
 
 // Helper: บันทึก audit log
-export async function logAudit(req, { action, tableName, recordId, recordName, oldData, newData }) {
+export async function logAudit(req, { action, tableName, recordId, recordName, oldData, newData, userName: customUserName }) {
   try {
     await ensureTable();
-    const userId = req.user?.id || null;
+    const userId = req.user?.id || recordId || null;
     
-    // ดึงชื่อเต็มจาก database ถ้ามี user_id
-    let userName = 'System';
-    if (userId) {
+    // ใช้ชื่อที่ส่งมา หรือดึงจาก database
+    let userName = customUserName || null;
+    if (!userName && userId) {
       const userResult = await pool.query('SELECT firstname, lastname FROM users WHERE id = $1', [userId]);
       if (userResult.rows.length > 0) {
         userName = `${userResult.rows[0].firstname} ${userResult.rows[0].lastname}`;
       }
     }
+    if (!userName) userName = 'System';
     
     const ip = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || '';
