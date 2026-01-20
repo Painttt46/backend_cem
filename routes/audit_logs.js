@@ -31,7 +31,16 @@ export async function logAudit(req, { action, tableName, recordId, recordName, o
   try {
     await ensureTable();
     const userId = req.user?.id || null;
-    const userName = req.user ? `${req.user.username}` : 'System';
+    
+    // ดึงชื่อเต็มจาก database ถ้ามี user_id
+    let userName = 'System';
+    if (userId) {
+      const userResult = await pool.query('SELECT firstname, lastname FROM users WHERE id = $1', [userId]);
+      if (userResult.rows.length > 0) {
+        userName = `${userResult.rows[0].firstname} ${userResult.rows[0].lastname}`;
+      }
+    }
+    
     const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
     const userAgent = req.headers['user-agent'] || '';
 

@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { logAudit } from './audit_logs.js';
 
 const router = express.Router();
 
@@ -58,6 +59,14 @@ router.post('/upload', (req, res) => {
       
       const fileNames = req.files.map(file => file.filename);
       console.log('Saved filenames:', fileNames);
+      
+      // Log audit
+      await logAudit(req, {
+        action: 'CREATE',
+        tableName: 'files',
+        recordName: `อัพโหลด ${fileNames.length} ไฟล์`,
+        newData: { files: fileNames }
+      });
       
       res.json({ 
         success: true, 

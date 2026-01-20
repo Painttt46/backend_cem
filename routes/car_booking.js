@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
+import { logAudit } from './audit_logs.js';
 
 const router = express.Router();
 
@@ -547,6 +548,15 @@ router.post('/', async (req, res) => {
       await sendTeamsNotification('active', bookingData);
     }
     
+    // Log audit
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'car_bookings',
+      recordId: bookingData.id,
+      recordName: `${bookingData.name} - ${selected_date}`,
+      newData: { project, location, selected_date, time, license }
+    });
+    
     res.status(201).json(bookingData);
   } catch (error) {
     console.error('Database error:', error);
@@ -617,6 +627,15 @@ router.put('/:id', async (req, res) => {
       await sendTeamsNotification('return', updatedData);
     }
     
+    // Log audit
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'car_bookings',
+      recordId: parseInt(id),
+      recordName: `${updatedData.name} - คืนรถ`,
+      newData: { return_name, return_location, return_time, return_date }
+    });
+    
     res.json(updatedData);
   } catch (error) {
     console.error('Database update error:', error);
@@ -646,15 +665,26 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Record not found' });
     }
     
+    const oldData = beforeDelete.rows[0];
+    
     const result = await pool.query(`
       DELETE FROM car_bookings WHERE id = $1 RETURNING *
     `, [id]);
     
     // Send cancel notification
-    await sendTeamsNotification('cancel', beforeDelete.rows[0]);
+    await sendTeamsNotification('cancel', oldData);
+    
+    // Log audit
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'car_bookings',
+      recordId: parseInt(id),
+      recordName: `${oldData.name} - ${oldData.selected_date}`,
+      oldData: { project: oldData.project, location: oldData.location, selected_date: oldData.selected_date }
+    });
     
     // Return the data with user info for Teams notification
-    res.json(beforeDelete.rows[0]);
+    res.json(oldData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

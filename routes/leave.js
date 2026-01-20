@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
 import { sendLeaveNotificationEmail } from '../services/emailService.js';
+import { logAudit } from './audit_logs.js';
 
 const router = express.Router();
 
@@ -689,6 +690,14 @@ router.post('/leave-types', async (req, res) => {
       `, [user.id, value, quota, currentYear, color, advDays, value]);
     }
 
+    // Log audit
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'settings',
+      recordName: `ประเภทการลา: ${name}`,
+      newData: { name, default_quota: quota, advance_days: advDays }
+    });
+
     res.json({
       message: 'เพิ่มประเภทการลาสำเร็จ',
       leave_type: { name, value, default_quota: quota, color, advance_days: advDays },
@@ -744,6 +753,14 @@ router.delete('/leave-types/:leaveType', async (req, res) => {
       WHERE leave_type = $1 AND year = $2
       RETURNING *
     `, [leaveType, currentYear]);
+
+    // Log audit
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'settings',
+      recordName: `ประเภทการลา: ${leaveType}`,
+      oldData: { leave_type: leaveType, deleted_records: result.rows.length }
+    });
 
     res.json({
       message: 'ลบประเภทการลาสำเร็จ',
@@ -939,6 +956,15 @@ router.post('/', async (req, res) => {
 
     const leaveData = createdResult.rows[0];
 
+    // Log audit
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'leave_requests',
+      recordId: leaveData.id,
+      recordName: `${leaveData.employee_name} - ${getLeaveTypeLabel(leave_type)}`,
+      newData: { leave_type, start_datetime, end_datetime, total_days, reason }
+    });
+
     // Send email notification to level 1 approvers (HR)
     await notifyApprovers(1, leaveData, 'new_request');
 
@@ -1118,6 +1144,16 @@ router.put('/:id/status', async (req, res) => {
     } catch (notifyError) {
       console.error('Notification error (non-blocking):', notifyError);
     }
+
+    // Log audit
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'leave_requests',
+      recordId: parseInt(id),
+      recordName: `${updatedData.employee_name} - ${getLeaveTypeLabel(updatedData.leave_type)}`,
+      oldData: { status: currentStatus },
+      newData: { status: newStatus, approved_by }
+    });
 
     res.json(updatedData);
   } catch (error) {

@@ -1,5 +1,6 @@
 import express from 'express';
 import pool from '../config/database.js';
+import { logAudit } from './audit_logs.js';
 
 const router = express.Router();
 
@@ -41,6 +42,17 @@ router.post('/', async (req, res) => {
     }
     
     await client.query('COMMIT');
+    
+    // Log audit
+    const role = permissions[0]?.role;
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'role_permissions',
+      recordId: null,
+      recordName: `สิทธิ์ Role: ${role}`,
+      newData: { role, permissions_count: permissions.length }
+    });
+    
     res.json({ message: 'Permissions saved successfully' });
   } catch (error) {
     await client.query('ROLLBACK');

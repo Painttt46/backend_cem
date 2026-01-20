@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
+import { logAudit } from './audit_logs.js';
 
 const router = express.Router();
 
@@ -807,6 +808,15 @@ router.post('/', async (req, res) => {
       }
     }
 
+    // Log audit
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'daily_work_records',
+      recordId: result.rows[0].id,
+      recordName: `${task_name || 'งาน'} - ${work_date}`,
+      newData: { task_name, work_date, start_time, end_time, total_hours, location }
+    });
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Database error:', error);
@@ -854,6 +864,15 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    // Log audit
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'daily_work_records',
+      recordId: parseInt(id),
+      recordName: `งาน - ${work_date}`,
+      newData: { work_date, start_time, end_time, work_status, location }
+    });
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error updating daily work record:', error);
@@ -866,7 +885,23 @@ router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
+    // Get data before delete for audit
+    const oldResult = await pool.query('SELECT task_name, work_date FROM daily_work_records WHERE id = $1', [id]);
+    const oldData = oldResult.rows[0];
+    
     await pool.query('DELETE FROM daily_work_records WHERE id = $1', [id]);
+    
+    // Log audit
+    if (oldData) {
+      await logAudit(req, {
+        action: 'DELETE',
+        tableName: 'daily_work_records',
+        recordId: parseInt(id),
+        recordName: `${oldData.task_name || 'งาน'} - ${oldData.work_date}`,
+        oldData
+      });
+    }
+    
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

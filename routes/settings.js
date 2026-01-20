@@ -1,5 +1,6 @@
 import express from 'express';
 import pool from '../config/database.js';
+import { logAudit } from './audit_logs.js';
 
 const router = express.Router();
 
@@ -40,6 +41,8 @@ router.post('/categories', async (req, res) => {
       'INSERT INTO task_categories (label, value, icon, color, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [label, value, icon, color, sortOrder]
     );
+    
+    await logAudit(req, { action: 'CREATE', tableName: 'settings', recordName: `หมวดหมู่งาน: ${label}`, newData: { label, value } });
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -50,6 +53,7 @@ router.post('/categories', async (req, res) => {
 router.delete('/categories/:value', async (req, res) => {
   try {
     await pool.query('DELETE FROM task_categories WHERE value = $1', [req.params.value]);
+    await logAudit(req, { action: 'DELETE', tableName: 'settings', recordName: `หมวดหมู่งาน: ${req.params.value}` });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -173,6 +177,7 @@ router.post('/statuses', async (req, res) => {
       'INSERT INTO work_statuses (label, value, icon, color, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [label, value, icon, color, sortOrder]
     );
+    await logAudit(req, { action: 'CREATE', tableName: 'settings', recordName: `สถานะงาน: ${label}`, newData: { label, value } });
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -183,6 +188,7 @@ router.post('/statuses', async (req, res) => {
 router.delete('/statuses/:value', async (req, res) => {
   try {
     await pool.query('DELETE FROM work_statuses WHERE value = $1', [req.params.value]);
+    await logAudit(req, { action: 'DELETE', tableName: 'settings', recordName: `สถานะงาน: ${req.params.value}` });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

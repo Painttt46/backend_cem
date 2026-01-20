@@ -1,5 +1,6 @@
 import express from 'express';
 import pool from '../config/database.js';
+import { logAudit } from './audit_logs.js';
 
 const router = express.Router();
 
@@ -32,6 +33,14 @@ router.post('/', async (req, res) => {
       RETURNING *
     `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description]);
     
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'task_steps',
+      recordId: result.rows[0].id,
+      recordName: step_name,
+      newData: { task_id, step_name, status }
+    });
+    
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating task step:', error);
@@ -57,6 +66,14 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Task step not found' });
     }
     
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'task_steps',
+      recordId: parseInt(id),
+      recordName: step_name,
+      newData: { step_name, status }
+    });
+    
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error updating task step:', error);
@@ -68,11 +85,22 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Get data before delete
+    const oldResult = await pool.query('SELECT step_name FROM task_steps WHERE id = $1', [id]);
+    
     const result = await pool.query('DELETE FROM task_steps WHERE id = $1 RETURNING *', [id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task step not found' });
     }
+    
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'task_steps',
+      recordId: parseInt(id),
+      recordName: oldResult.rows[0]?.step_name || 'ขั้นตอน'
+    });
     
     res.json({ message: 'Task step deleted successfully' });
   } catch (error) {
