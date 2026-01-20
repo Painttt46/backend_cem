@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
 import { sendLeaveNotificationEmail } from '../services/emailService.js';
-import { logAudit } from './audit_logs.js';
+import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
 

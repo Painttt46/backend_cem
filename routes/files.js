@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { logAudit } from './audit_logs.js';
+import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
 
@@ -36,7 +36,7 @@ router.post('/upload', (req, res) => {
   console.log('=== File Upload Request ===');
   console.log('Content-Type:', req.headers['content-type']);
   
-  upload.array('files', 5)(req, res, (err) => {
+  upload.array('files', 5)(req, res, async (err) => {
     if (err) {
       console.error('Multer error:', err);
       return res.status(400).json({ 
@@ -61,7 +61,7 @@ router.post('/upload', (req, res) => {
       console.log('Saved filenames:', fileNames);
       
       // Log audit
-      await logAudit(req, {
+      logAudit(req, {
         action: 'CREATE',
         tableName: 'files',
         recordName: `อัพโหลด ${fileNames.length} ไฟล์`,

@@ -1,6 +1,6 @@
 import express from 'express';
 import pool from '../config/database.js';
-import { logAudit } from './audit_logs.js';
+import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
 
