@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import { sendForgotPasswordEmail } from '../services/emailService.js';
 import { verifyToken } from '../middleware/auth.js';
+import { logAudit } from './audit_logs.js';
 
 const router = express.Router();
 
@@ -67,6 +68,15 @@ router.post('/login', async (req, res) => {
     delete user.password;
     
     console.log(`Login successful: ${username} (${user.role})`);
+    
+    // Log audit
+    await logAudit(req, {
+      action: 'LOGIN',
+      tableName: 'users',
+      recordId: user.id,
+      recordName: `${user.firstname} ${user.lastname}`,
+      newData: { username, role: user.role }
+    });
     
     res.json({
       success: true,

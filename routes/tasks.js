@@ -1,5 +1,6 @@
 import express from 'express';
 import pool from '../config/database.js';
+import { logAudit } from './audit_logs.js';
 
 const router = express.Router();
 
@@ -68,6 +69,15 @@ router.post('/', async (req, res) => {
       RETURNING *
     `, [task_name, so_number, contract_number, sale_owner, customer_info, project_start_date, project_end_date, description, finalCategory, JSON.stringify(files || [])]);
     
+    // Log audit
+    await logAudit(req, {
+      action: 'CREATE',
+      tableName: 'tasks',
+      recordId: result.rows[0].id,
+      recordName: task_name,
+      newData: { task_name, so_number, customer_info, category: finalCategory }
+    });
+    
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating task:', error);
@@ -119,6 +129,10 @@ router.put('/:id', async (req, res) => {
       }
     }
     
+    // Get old data for audit
+    const oldResult = await pool.query('SELECT task_name, so_number, status, category FROM tasks WHERE id = $1', [id]);
+    const oldData = oldResult.rows[0];
+    
     const result = await pool.query(`
       UPDATE tasks 
       SET task_name = $1, so_number = $2, contract_number = $3, 
@@ -131,6 +145,16 @@ router.put('/:id', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });
     }
+    
+    // Log audit
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'tasks',
+      recordId: parseInt(id),
+      recordName: task_name,
+      oldData,
+      newData: { task_name, so_number, status, category }
+    });
     
     res.json(result.rows[0]);
   } catch (error) {
@@ -147,6 +171,10 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Get task data before delete for audit
+    const oldResult = await pool.query('SELECT task_name, so_number FROM tasks WHERE id = $1', [id]);
+    const oldData = oldResult.rows[0];
+    
     // Delete related daily_work_records first
     await pool.query('DELETE FROM daily_work_records WHERE task_id = $1', [id]);
     
@@ -157,6 +185,17 @@ router.delete('/:id', async (req, res) => {
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    // Log audit
+    if (oldData) {
+      await logAudit(req, {
+        action: 'DELETE',
+        tableName: 'tasks',
+        recordId: parseInt(id),
+        recordName: oldData.task_name,
+        oldData
+      });
     }
     
     res.json({ message: 'Task deleted successfully' });

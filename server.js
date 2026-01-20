@@ -18,6 +18,7 @@ import usersRoutes from './routes/users.js';
 import carBookingRoutes from './routes/car_booking.js';
 import rolePermissionsRoutes from './routes/role_permissions.js';
 import settingsRoutes from './routes/settings.js';
+import auditLogsRoutes from './routes/audit_logs.js';
 import { startCarBookingScheduler } from './services/carBookingScheduler.js';
 import { sendDailyWorkReminder } from './services/emailService.js';
 
@@ -147,6 +148,7 @@ app.use('/api/users', verifyToken, usersRoutes);
 app.use('/api/car-booking', verifyToken, carBookingRoutes);
 app.use('/api/role-permissions', verifyToken, rolePermissionsRoutes);
 app.use('/api/settings', verifyToken, settingsRoutes);
+app.use('/api/audit-logs', verifyToken, auditLogsRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {
