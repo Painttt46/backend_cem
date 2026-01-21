@@ -68,3 +68,7 @@ services:
 
 volumes:
   postgres_data:
+
+networks:
+  default:
+    name: backend_cem_default
