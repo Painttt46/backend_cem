@@ -263,10 +263,19 @@ async function ensureLeaveApprovalTable() {
       user_id INTEGER NOT NULL,
       receive_email BOOLEAN DEFAULT true,
       can_approve BOOLEAN DEFAULT true,
+      department_ids TEXT[] DEFAULT '{}',
+      position_ids TEXT[] DEFAULT '{}',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(approval_level, user_id)
     )
+  `);
+  
+  // Add columns if not exist (for existing tables)
+  await pool.query(`
+    ALTER TABLE leave_approval_settings 
+    ADD COLUMN IF NOT EXISTS department_ids TEXT[] DEFAULT '{}',
+    ADD COLUMN IF NOT EXISTS position_ids TEXT[] DEFAULT '{}'
   `);
 }
 
@@ -334,15 +343,15 @@ router.delete('/leave-approval/:level/:userId', async (req, res) => {
 // PUT update approver settings
 router.put('/leave-approval/:level/:userId', async (req, res) => {
   const { level, userId } = req.params;
-  const { receive_email, can_approve } = req.body;
+  const { receive_email, can_approve, department_ids, position_ids } = req.body;
   
   try {
     const result = await pool.query(`
       UPDATE leave_approval_settings 
-      SET receive_email = $1, can_approve = $2, updated_at = NOW()
-      WHERE approval_level = $3 AND user_id = $4
+      SET receive_email = $1, can_approve = $2, department_ids = $3, position_ids = $4, updated_at = NOW()
+      WHERE approval_level = $5 AND user_id = $6
       RETURNING *
-    `, [receive_email, can_approve, level, userId]);
+    `, [receive_email, can_approve, department_ids || [], position_ids || [], level, userId]);
     
     res.json(result.rows[0]);
   } catch (error) {

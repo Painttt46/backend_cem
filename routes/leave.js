@@ -23,18 +23,47 @@ async function notifyApprovers(level, leaveData, notificationType) {
       return;
     }
 
+    // Get requester's department and position
+    const requesterInfo = await pool.query(`
+      SELECT department, position FROM users WHERE id = $1
+    `, [leaveData.user_id]);
+    
+    const requesterDept = requesterInfo.rows[0]?.department || null;
+    const requesterPos = requesterInfo.rows[0]?.position || null;
+
+    // Get approvers with their department/position filters
     const result = await pool.query(`
-      SELECT u.email 
+      SELECT u.email, las.department_ids, las.position_ids
       FROM leave_approval_settings las
       JOIN users u ON las.user_id = u.id
       WHERE las.approval_level = $1 AND las.receive_email = true AND u.email IS NOT NULL
     `, [level]);
     
-    const emails = result.rows.map(r => r.email).filter(e => e);
+    // Filter approvers based on department/position match
+    const emails = result.rows
+      .filter(r => {
+        const deptIds = r.department_ids || [];
+        const posIds = r.position_ids || [];
+        
+        // If no filters set, approve all
+        if (deptIds.length === 0 && posIds.length === 0) return true;
+        
+        // Check department match (if filter is set)
+        const deptMatch = deptIds.length === 0 || (requesterDept && deptIds.includes(requesterDept));
+        
+        // Check position match (if filter is set)
+        const posMatch = posIds.length === 0 || (requesterPos && posIds.includes(requesterPos));
+        
+        return deptMatch && posMatch;
+      })
+      .map(r => r.email)
+      .filter(e => e);
     
     if (emails.length > 0) {
       await sendLeaveNotificationEmail(emails, leaveData, notificationType);
       console.log(`Sent ${notificationType} notification to level ${level} approvers:`, emails);
+    } else {
+      console.log(`No matching approvers for level ${level} (dept: ${requesterDept}, pos: ${requesterPos})`);
     }
   } catch (error) {
     console.error('Error notifying approvers:', error);
