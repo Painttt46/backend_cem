@@ -912,7 +912,8 @@ router.get('/', async (req, res) => {
         l.rejected_by, l.rejected_level, l.reject_reason,
         l.created_at, l.updated_at,
         u.firstname || ' ' || u.lastname as user_name,
-        u.position as employee_position
+        u.position,
+        u.department
       FROM leave_requests l
       LEFT JOIN users u ON l.user_id = u.id
       ORDER BY l.created_at DESC
