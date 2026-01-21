@@ -39,20 +39,28 @@ async function notifyApprovers(level, leaveData, notificationType) {
       WHERE las.approval_level = $1 AND las.receive_email = true AND u.email IS NOT NULL
     `, [level]);
     
-    // Filter approvers based on department/position match
+    // Filter approvers based on department/position match (case insensitive)
     const emails = result.rows
       .filter(r => {
-        const deptIds = r.department_ids || [];
-        const posIds = r.position_ids || [];
+        const deptIds = (r.department_ids || []).map(d => d.toLowerCase());
+        const posIds = (r.position_ids || []).map(p => p.toLowerCase());
         
         // If no filters set, approve all
         if (deptIds.length === 0 && posIds.length === 0) return true;
         
+        const reqDeptLower = (requesterDept || '').toLowerCase();
+        const reqPosLower = (requesterPos || '').toLowerCase();
+        
         // Check department match (if filter is set)
-        const deptMatch = deptIds.length === 0 || (requesterDept && deptIds.includes(requesterDept));
+        const deptMatch = deptIds.length === 0 || deptIds.includes(reqDeptLower);
         
         // Check position match (if filter is set)
-        const posMatch = posIds.length === 0 || (requesterPos && posIds.includes(requesterPos));
+        const posMatch = posIds.length === 0 || posIds.includes(reqPosLower);
+        
+        // If both set, match either one
+        if (deptIds.length > 0 && posIds.length > 0) {
+          return deptMatch || posMatch;
+        }
         
         return deptMatch && posMatch;
       })
