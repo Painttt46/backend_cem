@@ -432,4 +432,32 @@ router.delete('/role-work-hours/:role', async (req, res) => {
   }
 });
 
+// GET distinct departments
+router.get('/departments', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT department as name FROM users
+       WHERE department IS NOT NULL AND department != ''
+       ORDER BY department`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET distinct positions
+router.get('/positions', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT position as name FROM users
+       WHERE position IS NOT NULL AND position != ''
+       ORDER BY position`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
