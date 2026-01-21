@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
+import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -433,7 +434,7 @@ router.delete('/role-work-hours/:role', async (req, res) => {
 });
 
 // GET distinct departments
-router.get('/departments', authenticateToken, async (req, res) => {
+router.get('/departments', verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT department as name FROM users
@@ -447,7 +448,7 @@ router.get('/departments', authenticateToken, async (req, res) => {
 });
 
 // GET distinct positions
-router.get('/positions', authenticateToken, async (req, res) => {
+router.get('/positions', verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT position as name FROM users
