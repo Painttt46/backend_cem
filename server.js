@@ -42,6 +42,19 @@ cron.schedule('0 10 * * 1-5', async () => {
   }
 }, { timezone: 'Asia/Bangkok' });
 
+// Cleanup audit logs older than 1 month - ทุกวันเวลา 02:00 น.
+cron.schedule('0 2 * * *', async () => {
+  console.log('[Scheduler] Cleaning up old audit logs...');
+  try {
+    const result = await pool.query(`
+      DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '1 month'
+    `);
+    console.log(`[Scheduler] Deleted ${result.rowCount} old audit logs`);
+  } catch (error) {
+    console.error('[Scheduler] Audit logs cleanup error:', error);
+  }
+}, { timezone: 'Asia/Bangkok' });
+
 // Trust proxy - Required for express-rate-limit when behind proxy/load balancer
 app.set('trust proxy', 1);
 
