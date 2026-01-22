@@ -45,22 +45,12 @@ async function notifyApprovers(level, leaveData, notificationType) {
         const deptIds = (r.department_ids || []).map(d => d.toLowerCase());
         const posIds = (r.position_ids || []).map(p => p.toLowerCase());
         
-        // If no filters set, approve all
-        if (deptIds.length === 0 && posIds.length === 0) return true;
-        
         const reqDeptLower = (requesterDept || '').toLowerCase();
         const reqPosLower = (requesterPos || '').toLowerCase();
         
-        // Check department match (if filter is set)
+        // dept ต้องตรง (ถ้าไม่ได้ตั้ง = ทุกแผนก), pos ต้องตรง (ถ้าไม่ได้ตั้ง = ทุกตำแหน่ง)
         const deptMatch = deptIds.length === 0 || deptIds.includes(reqDeptLower);
-        
-        // Check position match (if filter is set)
         const posMatch = posIds.length === 0 || posIds.includes(reqPosLower);
-        
-        // If both set, match either one
-        if (deptIds.length > 0 && posIds.length > 0) {
-          return deptMatch || posMatch;
-        }
         
         return deptMatch && posMatch;
       })
@@ -76,6 +66,40 @@ async function notifyApprovers(level, leaveData, notificationType) {
   } catch (error) {
     console.error('Error notifying approvers:', error);
     // Don't throw - notification failure shouldn't block approval
+  }
+}
+
+// Check if user can approve based on department/position settings
+async function canUserApprove(approverId, requesterId, level) {
+  try {
+    const approverResult = await pool.query(`
+      SELECT can_approve, department_ids, position_ids 
+      FROM leave_approval_settings 
+      WHERE user_id = $1 AND approval_level = $2
+    `, [approverId, level]);
+
+    if (approverResult.rows.length === 0) return false;
+    
+    const { can_approve, department_ids, position_ids } = approverResult.rows[0];
+    if (!can_approve) return false;
+
+    const deptIds = (department_ids || []).map(d => d.toLowerCase());
+    const posIds = (position_ids || []).map(p => p.toLowerCase());
+    if (deptIds.length === 0 && posIds.length === 0) return true;
+
+    const requesterResult = await pool.query(
+      `SELECT department, position FROM users WHERE id = $1`, [requesterId]
+    );
+    const reqDept = (requesterResult.rows[0]?.department || '').toLowerCase();
+    const reqPos = (requesterResult.rows[0]?.position || '').toLowerCase();
+
+    const deptMatch = deptIds.length === 0 || deptIds.includes(reqDept);
+    const posMatch = posIds.length === 0 || posIds.includes(reqPos);
+
+    return deptMatch && posMatch;
+  } catch (error) {
+    console.error('Error checking approval permission:', error);
+    return true;
   }
 }
 
@@ -1041,6 +1065,17 @@ router.put('/:id/status', async (req, res) => {
     }
 
     const { user_id, leave_type, total_days, status: currentStatus, current_level } = leaveRequest.rows[0];
+
+    // Check approval permission
+    if (status === 'approved' && approved_by_id) {
+      const approvalLevel = currentStatus === 'pending' ? 1 : (currentStatus === 'pending_level2' ? 2 : 0);
+      const hasPermission = await canUserApprove(approved_by_id, user_id, approvalLevel);
+      if (!hasPermission) {
+        return res.status(403).json({ 
+          error: 'คุณไม่มีสิทธิ์อนุมัติใบลานี้ (ไม่ตรงกับแผนก/ตำแหน่งที่ดูแล)' 
+        });
+      }
+    }
 
     let newStatus = status;
     let newApprovalLevel = current_level || 0;
