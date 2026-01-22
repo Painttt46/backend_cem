@@ -273,26 +273,6 @@ async function calculateRemainingLeave(userId, leaveType) {
   };
 }
 
-// Calculate leave cost based on leave type and days
-function calculateLeaveCost(leaveType, totalDays) {
-  const costPerDay = {
-    'sick': 500,        // ลาป่วย - 500 บาท/วัน
-    'personal': 800,    // ลากิจ - 800 บาท/วัน  
-    'vacation': 300,    // ลาพักร้อน - 300 บาท/วัน
-    'maternity': 0,     // ลาคลอด - ฟรี
-    'other': 600        // ลาอื่นๆ - 600 บาท/วัน
-  };
-
-  const dailyCost = costPerDay[leaveType] || 0;
-  const totalCost = dailyCost * totalDays;
-
-  return {
-    dailyCost,
-    totalCost,
-    formattedCost: totalCost.toLocaleString('th-TH') + ' บาท'
-  };
-}
-
 async function createLeaveMessage(type, data) {
   const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
   let title, color, tableData;
