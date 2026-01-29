@@ -88,7 +88,7 @@ async function sendCalendarEvent(data) {
       subject: data.task_name,
       body: {
         contentType: "HTML",
-        content: `<p><strong>รายละเอียด:</strong> ${data.work_description || 'ไม่ระบุ'}</p>${data.event_details ? `<p><strong>รายละเอียดเพิ่มเติม:</strong> ${data.event_details}</p>` : ''}`
+        content: `<p><strong>ผู้ปฏิบัติงาน:</strong> ${data.user_name}</p><p><strong>รายละเอียด:</strong> ${data.work_description || 'ไม่ระบุ'}</p>${data.event_details ? `<p><strong>รายละเอียดเพิ่มเติม:</strong> ${data.event_details}</p>` : ''}`
       },
       start: {
         dateTime: startDateTime,
