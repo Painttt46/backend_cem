@@ -331,7 +331,7 @@ function startAutoCheck() {
         console.error('Auto check error:', error);
       }
     }
-  }, 60 * 1000); // Every minute
+  }, 20 * 60 * 1000); // Every 20 minutes
 }
 
 async function checkAndNotifyMissingWork() {
@@ -346,11 +346,11 @@ async function checkAndNotifyMissingWork() {
     allCompleteNotifiedDate = null;
   }
 
-  // Get all active users
+  // Get all active users (exclude admin role)
   const activeUsersResult = await pool.query(`
     SELECT id, firstname || ' ' || lastname as name, position, department 
     FROM users 
-    WHERE is_active = true
+    WHERE is_active = true AND role != 'admin'
   `);
 
   // Get users who have submitted work today
@@ -408,11 +408,11 @@ router.post('/check-missing', async (req, res) => {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     console.log('Checking missing work for date:', today);
 
-    // Get all active users (include NULL as active)
+    // Get all active users (include NULL as active, exclude admin role)
     const activeUsersResult = await pool.query(`
       SELECT id, firstname || ' ' || lastname as name, position, department 
       FROM users 
-      WHERE is_active IS NULL OR is_active = true
+      WHERE (is_active IS NULL OR is_active = true) AND role != 'admin'
     `);
     console.log('Active users found:', activeUsersResult.rows.length);
 
