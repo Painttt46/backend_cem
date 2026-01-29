@@ -42,6 +42,7 @@ services:
     ports:
       - "3001:3001"
     environment:
+      - PORT=3001
       - DB_HOST=postgres
       - DB_USER=postgres
       - DB_PASSWORD=postgres
