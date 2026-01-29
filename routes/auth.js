@@ -53,7 +53,7 @@ router.post('/login', async (req, res) => {
         role: user.role
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
+      { expiresIn: process.env.JWT_EXPIRES_IN }
     );
     
     // Set HttpOnly Cookie
@@ -130,7 +130,7 @@ router.post('/refresh', verifyToken, async (req, res) => {
         role: req.user.role
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
+      { expiresIn: process.env.JWT_EXPIRES_IN }
     );
     
     res.cookie('token', newToken, {
