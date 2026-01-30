@@ -234,26 +234,40 @@ export async function notifyStepUpdate(stepId, taskId) {
   const today = new Date().toISOString().split('T')[0];
   
   try {
+    console.log(`🔍 notifyStepUpdate: stepId=${stepId}, taskId=${taskId}`);
+    
     // ดึงข้อมูล step ที่เปลี่ยน
     const stepResult = await pool.query(`
       SELECT ts.*, t.task_name FROM task_steps ts
       JOIN tasks t ON ts.task_id = t.id WHERE ts.id = $1
     `, [stepId]);
     
-    if (stepResult.rows.length === 0) return;
+    if (stepResult.rows.length === 0) {
+      console.log('❌ Step not found');
+      return;
+    }
     const changedStep = stepResult.rows[0];
+    console.log(`📋 Step: ${changedStep.step_name}, assigned_users:`, changedStep.assigned_users);
     
     // หา users ที่เป็นผู้รับผิดชอบ step นี้
     const assignedUsers = changedStep.assigned_users || [];
-    if (assignedUsers.length === 0) return;
+    if (assignedUsers.length === 0) {
+      console.log('❌ No assigned users');
+      return;
+    }
     
     const userIds = assignedUsers.map(u => typeof u === 'object' ? u.id : u).filter(Boolean);
-    if (userIds.length === 0) return;
+    console.log(`👥 User IDs:`, userIds);
+    if (userIds.length === 0) {
+      console.log('❌ No valid user IDs');
+      return;
+    }
     
     const usersResult = await pool.query(
       'SELECT id, firstname, lastname, email FROM users WHERE id = ANY($1) AND email IS NOT NULL',
       [userIds]
     );
+    console.log(`📧 Found ${usersResult.rows.length} users with email`);
     
     for (const user of usersResult.rows) {
       // ดึง steps ทั้งหมดของ user
@@ -267,6 +281,7 @@ export async function notifyStepUpdate(stepId, taskId) {
       `, [`%"id":${user.id}%`]);
       
       const steps = stepsResult.rows;
+      console.log(`📊 User ${user.firstname}: ${steps.length} steps`);
       if (steps.length === 0) continue;
       
       // แยกประเภท
