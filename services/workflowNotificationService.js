@@ -184,14 +184,26 @@ export async function notifyNextStep(taskId, completedStepOrder) {
   }
 }
 
-// เริ่ม cron job ตรวจสอบทุกวัน 8:00 น.
+// แจ้งเตือนผู้รับผิดชอบ step (เรียกจาก API ตอนสร้าง/แก้ไข)
+export async function notifyStepAssignees(step, task, type) {
+  try {
+    const users = await getAssignedEmails(step.assigned_users);
+    if (users.length > 0) {
+      await sendStepNotification(users, step, task, type);
+    }
+  } catch (error) {
+    console.error('Notify step assignees error:', error);
+  }
+}
+
+// เริ่ม cron job ตรวจสอบทุกวันจันทร์-ศุกร์ 9:00 น.
 export function startWorkflowScheduler() {
-  cron.schedule('0 8 * * *', () => {
+  cron.schedule('0 9 * * 1-5', () => {
     console.log('🔔 Running workflow notification check...');
     checkAndNotify();
   }, { timezone: 'Asia/Bangkok' });
   
-  console.log('✅ Workflow notification scheduler started (daily at 8:00 AM)');
+  console.log('✅ Workflow notification scheduler started (Mon-Fri at 9:00 AM)');
 }
 
 export { checkAndNotify };

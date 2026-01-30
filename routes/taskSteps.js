@@ -28,11 +28,22 @@ router.post('/', async (req, res) => {
   try {
     const { task_id, step_name, step_order, start_date, end_date, assigned_users, status, description } = req.body;
     
+    // เช็คว่า start_date เป็นวันนี้หรือก่อนหน้าไหม -> แจ้งเตือนทันที
+    const today = new Date().toISOString().split('T')[0];
+    const shouldNotifyNow = start_date && start_date <= today;
+    
     const result = await pool.query(`
-      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, notified_start)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
       RETURNING *
-    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description]);
+    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description, shouldNotifyNow]);
+    
+    // แจ้งเตือนทันทีถ้า start_date <= วันนี้ และมีผู้รับผิดชอบ
+    if (shouldNotifyNow && assigned_users && assigned_users.length > 0) {
+      const { notifyStepAssignees } = await import('../services/workflowNotificationService.js');
+      const task = await pool.query('SELECT task_name FROM tasks WHERE id = $1', [task_id]);
+      notifyStepAssignees(result.rows[0], task.rows[0], 'step_started');
+    }
     
     await logAudit(req, {
       action: 'CREATE',
