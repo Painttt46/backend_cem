@@ -21,6 +21,7 @@ import settingsRoutes from './routes/settings.js';
 import auditLogsRoutes from './routes/audit_logs.js';
 import { startCarBookingScheduler } from './services/carBookingScheduler.js';
 import { sendDailyWorkReminder } from './services/emailService.js';
+import { startWorkflowScheduler } from './services/workflowNotificationService.js';
 
 dotenv.config();
 
@@ -28,8 +29,9 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 
-// Start car booking scheduler
+// Start schedulers
 startCarBookingScheduler();
+startWorkflowScheduler();
 
 // Daily work summary - ทุกวันจันทร์-ศุกร์ เวลา 10:00 น.
 cron.schedule('0 10 * * 1-5', async () => {

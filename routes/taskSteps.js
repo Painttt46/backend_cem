@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
+import { notifyNextStep } from '../services/workflowNotificationService.js';
 
 const router = express.Router();
 
@@ -54,6 +55,10 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { step_name, step_order, start_date, end_date, assigned_users, status, description } = req.body;
     
+    // ดึงข้อมูลเดิมก่อน update
+    const oldStep = await pool.query('SELECT status, task_id, step_order FROM task_steps WHERE id = $1', [id]);
+    const wasNotCompleted = oldStep.rows[0]?.status !== 'completed';
+    
     const result = await pool.query(`
       UPDATE task_steps 
       SET step_name = $1, step_order = $2, start_date = $3, end_date = $4, 
@@ -64,6 +69,11 @@ router.put('/:id', async (req, res) => {
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task step not found' });
+    }
+    
+    // ถ้าเปลี่ยนเป็น completed ให้แจ้ง step ถัดไป
+    if (wasNotCompleted && status === 'completed' && oldStep.rows[0]) {
+      notifyNextStep(oldStep.rows[0].task_id, oldStep.rows[0].step_order);
     }
     
     await logAudit(req, {
