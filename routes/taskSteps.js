@@ -32,6 +32,8 @@ router.post('/', async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const shouldNotifyNow = start_date && start_date <= today;
     
+    console.log(`📝 Creating step: ${step_name}, start_date: ${start_date}, today: ${today}, shouldNotify: ${shouldNotifyNow}`);
+    
     const result = await pool.query(`
       INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, notified_start)
       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
@@ -40,9 +42,10 @@ router.post('/', async (req, res) => {
     
     // แจ้งเตือนทันทีถ้า start_date <= วันนี้ และมีผู้รับผิดชอบ
     if (shouldNotifyNow && assigned_users && assigned_users.length > 0) {
+      console.log(`📧 Sending notification for step: ${step_name}, assignees: ${assigned_users.length}`);
       const { notifyStepAssignees } = await import('../services/workflowNotificationService.js');
       const task = await pool.query('SELECT task_name FROM tasks WHERE id = $1', [task_id]);
-      notifyStepAssignees(result.rows[0], task.rows[0], 'step_started');
+      await notifyStepAssignees(result.rows[0], task.rows[0], 'step_started');
     }
     
     await logAudit(req, {
