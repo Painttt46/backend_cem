@@ -671,7 +671,9 @@ router.get('/', async (req, res) => {
         ts.start_date as step_start_date,
         ts.end_date as step_end_date,
         ts.assigned_users as step_assigned_users,
-        ts.status as step_status
+        ts.status as step_status,
+        ts.project_status as step_project_status,
+        ts.step_order as step_order
       FROM daily_work_records dwr
       LEFT JOIN users u ON dwr.user_id = u.id
       LEFT JOIN tasks t ON dwr.task_id = t.id
