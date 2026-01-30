@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
-import { notifyNextStep } from '../services/workflowNotificationService.js';
+import { notifyNextStep, notifyStepUpdate } from '../services/workflowNotificationService.js';
 
 const router = express.Router();
 
@@ -28,24 +28,16 @@ router.post('/', async (req, res) => {
   try {
     const { task_id, step_name, step_order, start_date, end_date, assigned_users, status, description } = req.body;
     
-    // เช็คว่า start_date เป็นวันนี้หรือก่อนหน้าไหม -> แจ้งเตือนทันที
-    const today = new Date().toISOString().split('T')[0];
-    const shouldNotifyNow = start_date && start_date <= today;
-    
-    console.log(`📝 Creating step: ${step_name}, start_date: ${start_date}, today: ${today}, shouldNotify: ${shouldNotifyNow}`);
-    
     const result = await pool.query(`
-      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, notified_start)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
+      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
       RETURNING *
-    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description, shouldNotifyNow]);
+    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description]);
     
-    // แจ้งเตือนทันทีถ้า start_date <= วันนี้ และมีผู้รับผิดชอบ
-    if (shouldNotifyNow && assigned_users && assigned_users.length > 0) {
-      console.log(`📧 Sending notification for step: ${step_name}, assignees: ${assigned_users.length}`);
-      const { notifyStepAssignees } = await import('../services/workflowNotificationService.js');
-      const task = await pool.query('SELECT task_name FROM tasks WHERE id = $1', [task_id]);
-      await notifyStepAssignees(result.rows[0], task.rows[0], 'step_started');
+    // แจ้งเตือนทันทีถ้ามีผู้รับผิดชอบ
+    if (assigned_users && assigned_users.length > 0) {
+      console.log(`📧 Sending notification for new step: ${step_name}`);
+      notifyStepUpdate(result.rows[0].id, task_id);
     }
     
     await logAudit(req, {
@@ -88,6 +80,10 @@ router.put('/:id', async (req, res) => {
     // ถ้าเปลี่ยนเป็น completed ให้แจ้ง step ถัดไป
     if (wasNotCompleted && status === 'completed' && oldStep.rows[0]) {
       notifyNextStep(oldStep.rows[0].task_id, oldStep.rows[0].step_order);
+    } 
+    // ถ้าไม่ใช่ completed แต่มีการเปลี่ยนแปลง ให้แจ้งผู้รับผิดชอบ
+    else if (status !== 'completed' && assigned_users && assigned_users.length > 0) {
+      notifyStepUpdate(parseInt(id), oldStep.rows[0]?.task_id);
     }
     
     await logAudit(req, {

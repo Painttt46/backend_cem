@@ -15,53 +15,42 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// ดึง email ของผู้รับผิดชอบจาก assigned_users
-async function getAssignedEmails(assignedUsers) {
-  if (!assignedUsers || assignedUsers.length === 0) return [];
+// ส่ง email สรุปรายวัน
+async function sendDailySummaryEmail(user, steps, highlightStepId = null) {
+  const { overdue, dueSoon, inProgress, newToday } = steps;
   
-  const userIds = assignedUsers.map(u => typeof u === 'object' ? u.id : u).filter(Boolean);
-  if (userIds.length === 0) return [];
-  
-  const result = await pool.query(
-    'SELECT id, firstname, lastname, email FROM users WHERE id = ANY($1) AND email IS NOT NULL',
-    [userIds]
-  );
-  return result.rows;
-}
+  if (overdue.length === 0 && dueSoon.length === 0 && inProgress.length === 0 && newToday.length === 0) {
+    return; // ไม่มีงาน ไม่ต้องส่ง
+  }
 
-// ส่ง email แจ้งเตือน
-async function sendStepNotification(users, step, task, type) {
-  if (!users || users.length === 0) return;
+  const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : '-';
   
-  const emails = users.map(u => u.email).filter(Boolean);
-  if (emails.length === 0) return;
-
-  const typeConfig = {
-    'step_started': {
-      subject: `🚀 Step "${step.step_name}" เริ่มต้นแล้ว - ${task.task_name}`,
-      emoji: '🚀',
-      title: 'Step เริ่มต้นแล้ว',
-      message: 'Step นี้พร้อมให้คุณดำเนินการแล้ว',
-      color: '#4A90E2'
-    },
-    'step_due_today': {
-      subject: `⏰ Step "${step.step_name}" ครบกำหนดวันนี้ - ${task.task_name}`,
-      emoji: '⏰',
-      title: 'ครบกำหนดวันนี้',
-      message: 'Step นี้ครบกำหนดวันนี้ กรุณาตรวจสอบความคืบหน้า',
-      color: '#F5A623'
-    },
-    'step_overdue': {
-      subject: `🔴 Step "${step.step_name}" เกินกำหนด - ${task.task_name}`,
-      emoji: '🔴',
-      title: 'เกินกำหนดแล้ว',
-      message: 'Step นี้เกินกำหนดแล้ว กรุณาดำเนินการโดยด่วน',
-      color: '#D73527'
-    }
+  const renderSection = (title, emoji, items, color) => {
+    if (items.length === 0) return '';
+    return `
+      <tr><td style="padding:16px 24px 8px;">
+        <div style="font-size:16px;font-weight:bold;color:${color};">${emoji} ${title} (${items.length})</div>
+      </td></tr>
+      <tr><td style="padding:0 24px 16px;">
+        <table style="width:100%;border-collapse:collapse;background:#f8f9fa;border-radius:8px;">
+          <tr style="background:#e9ecef;">
+            <td style="padding:8px 12px;font-weight:bold;font-size:12px;">โครงการ</td>
+            <td style="padding:8px 12px;font-weight:bold;font-size:12px;">Step</td>
+            <td style="padding:8px 12px;font-weight:bold;font-size:12px;">กำหนด</td>
+          </tr>
+          ${items.map(s => `
+            <tr style="border-top:1px solid #dee2e6;${s.id === highlightStepId ? 'background:#fff3cd;' : ''}">
+              <td style="padding:8px 12px;font-size:13px;">${s.task_name || '-'}${s.id === highlightStepId ? ' ⭐' : ''}</td>
+              <td style="padding:8px 12px;font-size:13px;font-weight:500;">${s.step_name}</td>
+              <td style="padding:8px 12px;font-size:13px;">${formatDate(s.end_date)}</td>
+            </tr>
+          `).join('')}
+        </table>
+      </td></tr>`;
   };
 
-  const config = typeConfig[type];
-  const assigneeNames = users.map(u => `${u.firstname} ${u.lastname}`).join(', ');
+  const isUpdate = highlightStepId !== null;
+  const headerText = isUpdate ? 'อัปเดต Workflow' : 'สรุป Workflow ประจำวัน';
 
   const html = `<!DOCTYPE html>
 <html lang="th">
@@ -69,31 +58,23 @@ async function sendStepNotification(users, step, task, type) {
 <body style="margin:0;padding:0;background:#f2f3f5;font-family:Arial,sans-serif;">
   <center style="width:100%;padding:24px 12px;">
     <table width="600" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden;">
-      <tr><td style="background:${config.color};padding:24px;text-align:center;">
-        <div style="font-size:48px;">${config.emoji}</div>
-        <div style="color:#fff;font-size:24px;font-weight:bold;margin-top:12px;">${config.title}</div>
+      <tr><td style="background:linear-gradient(135deg,${isUpdate ? '#fd7e14,#dc3545' : '#4A90E2,#2563eb'});padding:24px;text-align:center;">
+        <div style="font-size:32px;">${isUpdate ? '🔔' : '📋'}</div>
+        <div style="color:#fff;font-size:20px;font-weight:bold;margin-top:8px;">${headerText}</div>
+        <div style="color:rgba(255,255,255,0.8);font-size:14px;margin-top:4px;">${new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
       </td></tr>
-      <tr><td style="padding:24px;">
-        <p style="color:#666;margin:0 0 16px;">${config.message}</p>
-        <table style="width:100%;border-collapse:collapse;">
-          <tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#888;">โครงการ</td>
-              <td style="padding:8px 0;border-bottom:1px solid #eee;font-weight:bold;">${task.task_name}</td></tr>
-          <tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#888;">Step</td>
-              <td style="padding:8px 0;border-bottom:1px solid #eee;font-weight:bold;">${step.step_name}</td></tr>
-          <tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#888;">ผู้รับผิดชอบ</td>
-              <td style="padding:8px 0;border-bottom:1px solid #eee;">${assigneeNames}</td></tr>
-          ${step.end_date ? `<tr><td style="padding:8px 0;color:#888;">กำหนดเสร็จ</td>
-              <td style="padding:8px 0;font-weight:bold;color:${type === 'step_overdue' ? '#D73527' : '#333'};">${new Date(step.end_date).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}</td></tr>` : ''}
-        </table>
-        <div style="margin-top:24px;text-align:center;">
-          <a href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/daily-work" 
-             style="background:${config.color};color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
-            ดูรายละเอียด
-          </a>
-        </div>
+      
+      <tr><td style="padding:16px 24px 8px;">
+        <div style="font-size:14px;color:#666;">สวัสดีครับ คุณ${user.firstname},${isUpdate ? ' <span style="color:#fd7e14;font-weight:bold;">มีการอัปเดตใหม่ (⭐)</span>' : ''}</div>
       </td></tr>
-      <tr><td style="background:#f8f9fa;padding:16px;text-align:center;color:#888;font-size:12px;">
-        GenT-CEM Workflow Notification
+      
+      ${renderSection('เกินกำหนดแล้ว', '🔴', overdue, '#dc3545')}
+      ${renderSection('ใกล้ครบกำหนด (1-4 วัน)', '🟠', dueSoon, '#fd7e14')}
+      ${renderSection('กำลังดำเนินการ', '🔵', inProgress, '#0d6efd')}
+      ${renderSection('งานใหม่วันนี้', '🟢', newToday, '#198754')}
+      
+      <tr><td style="padding:24px;text-align:center;border-top:1px solid #e9ecef;">
+        <div style="color:#888;font-size:12px;">GenT-CEM Workflow Notification</div>
       </td></tr>
     </table>
   </center>
@@ -103,80 +84,134 @@ async function sendStepNotification(users, step, task, type) {
   try {
     await transporter.sendMail({
       from: process.env.EMAIL_FROM,
-      to: emails.join(','),
-      subject: config.subject,
+      to: user.email,
+      subject: `${isUpdate ? '🔔 อัปเดต' : '📋 สรุป'} Workflow - ${overdue.length > 0 ? `🔴 เกินกำหนด ${overdue.length}` : `${inProgress.length + dueSoon.length + newToday.length} รายการ`}`,
       html
     });
-    console.log(`📧 Sent ${type} notification for step "${step.step_name}" to ${emails.join(', ')}`);
+    console.log(`📧 Sent ${isUpdate ? 'update' : 'daily'} summary to ${user.email}`);
   } catch (error) {
     console.error('Email send error:', error);
   }
 }
 
-// ตรวจสอบและส่งแจ้งเตือน
-async function checkAndNotify() {
+// ตรวจสอบและส่งสรุปรายวัน
+async function checkAndNotifyDaily() {
   const today = new Date().toISOString().split('T')[0];
   
   try {
-    // ดึง steps ที่มีผู้รับผิดชอบและยังไม่เสร็จ
-    const result = await pool.query(`
-      SELECT ts.*, t.task_name, t.so_number
-      FROM task_steps ts
-      JOIN tasks t ON ts.task_id = t.id
-      WHERE ts.assigned_users IS NOT NULL 
-        AND jsonb_array_length(ts.assigned_users) > 0
-        AND (ts.status IS NULL OR ts.status != 'completed')
-    `);
-
-    for (const step of result.rows) {
-      const users = await getAssignedEmails(step.assigned_users);
-      if (users.length === 0) continue;
-
-      const task = { task_name: step.task_name, so_number: step.so_number };
+    // ดึง users ทั้งหมดที่มี email
+    const usersResult = await pool.query('SELECT id, firstname, lastname, email FROM users WHERE email IS NOT NULL');
+    
+    for (const user of usersResult.rows) {
+      // ดึง steps ที่ user เป็นผู้รับผิดชอบ
+      const stepsResult = await pool.query(`
+        SELECT ts.*, t.task_name, t.so_number
+        FROM task_steps ts
+        JOIN tasks t ON ts.task_id = t.id
+        WHERE ts.assigned_users @> $1::jsonb
+          AND (ts.status IS NULL OR ts.status != 'completed')
+        ORDER BY ts.end_date ASC NULLS LAST
+      `, [JSON.stringify([{ id: user.id }])]);
       
-      // เช็ค start_date = วันนี้ (แจ้งเริ่มงาน)
-      if (step.start_date) {
-        const startDate = new Date(step.start_date).toISOString().split('T')[0];
-        if (startDate === today && !step.notified_start) {
-          await sendStepNotification(users, step, task, 'step_started');
-          await pool.query('UPDATE task_steps SET notified_start = true WHERE id = $1', [step.id]);
+      // ถ้าไม่เจอแบบ object ลองแบบ id ตรงๆ
+      let steps = stepsResult.rows;
+      if (steps.length === 0) {
+        const stepsResult2 = await pool.query(`
+          SELECT ts.*, t.task_name, t.so_number
+          FROM task_steps ts
+          JOIN tasks t ON ts.task_id = t.id
+          WHERE ts.assigned_users::text LIKE $1
+            AND (ts.status IS NULL OR ts.status != 'completed')
+          ORDER BY ts.end_date ASC NULLS LAST
+        `, [`%"id":${user.id}%`]);
+        steps = stepsResult2.rows;
+      }
+      
+      if (steps.length === 0) continue;
+      
+      // แยกประเภท
+      const overdue = [];
+      const dueSoon = [];
+      const inProgress = [];
+      const newToday = [];
+      
+      for (const step of steps) {
+        const startDate = step.start_date ? new Date(step.start_date).toISOString().split('T')[0] : null;
+        const endDate = step.end_date ? new Date(step.end_date).toISOString().split('T')[0] : null;
+        
+        // งานใหม่วันนี้
+        if (startDate === today) {
+          newToday.push(step);
+        }
+        
+        if (endDate) {
+          const daysLeft = Math.ceil((new Date(endDate) - new Date(today)) / (1000 * 60 * 60 * 24));
+          
+          if (daysLeft < 0) {
+            overdue.push(step);
+          } else if (daysLeft <= 4) {
+            dueSoon.push(step);
+          } else {
+            inProgress.push(step);
+          }
+        } else {
+          inProgress.push(step);
         }
       }
-
-      // เช็ค end_date = วันนี้ (แจ้งครบกำหนด)
-      if (step.end_date) {
-        const endDate = new Date(step.end_date).toISOString().split('T')[0];
-        if (endDate === today && !step.notified_due) {
-          await sendStepNotification(users, step, task, 'step_due_today');
-          await pool.query('UPDATE task_steps SET notified_due = true WHERE id = $1', [step.id]);
-        }
-        // เช็ค overdue (เกินกำหนด)
-        else if (endDate < today && !step.notified_overdue) {
-          await sendStepNotification(users, step, task, 'step_overdue');
-          await pool.query('UPDATE task_steps SET notified_overdue = true WHERE id = $1', [step.id]);
-        }
-      }
+      
+      await sendDailySummaryEmail(user, { overdue, dueSoon, inProgress, newToday });
     }
   } catch (error) {
-    console.error('Workflow notification check error:', error);
+    console.error('Daily workflow notification error:', error);
   }
 }
 
-// แจ้งเตือนเมื่อ step ก่อนหน้าเสร็จ (เรียกจาก API)
+// แจ้งเตือนเมื่อ step ก่อนหน้าเสร็จ
 export async function notifyNextStep(taskId, completedStepOrder) {
   try {
     const result = await pool.query(`
-      SELECT ts.*, t.task_name, t.so_number
+      SELECT ts.*, t.task_name, u.email, u.firstname
       FROM task_steps ts
       JOIN tasks t ON ts.task_id = t.id
+      CROSS JOIN LATERAL jsonb_array_elements(ts.assigned_users) AS au
+      JOIN users u ON (au->>'id')::int = u.id
       WHERE ts.task_id = $1 AND ts.step_order = $2
     `, [taskId, completedStepOrder + 1]);
 
     if (result.rows.length > 0) {
-      const nextStep = result.rows[0];
-      const users = await getAssignedEmails(nextStep.assigned_users);
-      if (users.length > 0) {
-        await sendStepNotification(users, nextStep, { task_name: nextStep.task_name }, 'step_started');
+      const step = result.rows[0];
+      const emails = [...new Set(result.rows.map(r => r.email).filter(Boolean))];
+      
+      if (emails.length > 0) {
+        const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f2f3f5;font-family:Arial,sans-serif;">
+  <center style="padding:24px;">
+    <table width="500" style="background:#fff;border-radius:8px;overflow:hidden;">
+      <tr><td style="background:#198754;padding:20px;text-align:center;">
+        <div style="font-size:36px;">🚀</div>
+        <div style="color:#fff;font-size:18px;font-weight:bold;">ถึงคิวงานของคุณแล้ว!</div>
+      </td></tr>
+      <tr><td style="padding:24px;">
+        <p style="margin:0 0 12px;color:#666;">Step ก่อนหน้าเสร็จแล้ว งานต่อไปนี้พร้อมให้คุณดำเนินการ:</p>
+        <table style="width:100%;background:#f8f9fa;border-radius:6px;padding:12px;">
+          <tr><td style="padding:8px;color:#888;">โครงการ</td><td style="padding:8px;font-weight:bold;">${step.task_name}</td></tr>
+          <tr><td style="padding:8px;color:#888;">Step</td><td style="padding:8px;font-weight:bold;">${step.step_name}</td></tr>
+          ${step.end_date ? `<tr><td style="padding:8px;color:#888;">กำหนดเสร็จ</td><td style="padding:8px;">${new Date(step.end_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</td></tr>` : ''}
+        </table>
+      </td></tr>
+      <tr><td style="padding:16px 24px;text-align:center;border-top:1px solid #e9ecef;color:#888;font-size:12px;">GenT-CEM</td></tr>
+    </table>
+  </center>
+</body></html>`;
+
+        await transporter.sendMail({
+          from: process.env.EMAIL_FROM,
+          to: emails.join(','),
+          subject: `🚀 ถึงคิวงานของคุณ: ${step.step_name} - ${step.task_name}`,
+          html
+        });
+        console.log(`📧 Sent next step notification to ${emails.join(', ')}`);
       }
     }
   } catch (error) {
@@ -184,26 +219,80 @@ export async function notifyNextStep(taskId, completedStepOrder) {
   }
 }
 
-// แจ้งเตือนผู้รับผิดชอบ step (เรียกจาก API ตอนสร้าง/แก้ไข)
-export async function notifyStepAssignees(step, task, type) {
-  try {
-    const users = await getAssignedEmails(step.assigned_users);
-    if (users.length > 0) {
-      await sendStepNotification(users, step, task, type);
-    }
-  } catch (error) {
-    console.error('Notify step assignees error:', error);
-  }
-}
-
-// เริ่ม cron job ตรวจสอบทุกวันจันทร์-ศุกร์ 9:00 น.
+// เริ่ม cron job ทุกวันจันทร์-ศุกร์ 9:00 น.
 export function startWorkflowScheduler() {
   cron.schedule('0 9 * * 1-5', () => {
-    console.log('🔔 Running workflow notification check...');
-    checkAndNotify();
+    console.log('🔔 Running daily workflow summary...');
+    checkAndNotifyDaily();
   }, { timezone: 'Asia/Bangkok' });
   
   console.log('✅ Workflow notification scheduler started (Mon-Fri at 9:00 AM)');
 }
 
-export { checkAndNotify };
+// ส่งแจ้งเตือนทันทีเมื่อมีการสร้าง/เปลี่ยนแปลง step (เรียกจาก API)
+export async function notifyStepUpdate(stepId, taskId) {
+  const today = new Date().toISOString().split('T')[0];
+  
+  try {
+    // ดึงข้อมูล step ที่เปลี่ยน
+    const stepResult = await pool.query(`
+      SELECT ts.*, t.task_name FROM task_steps ts
+      JOIN tasks t ON ts.task_id = t.id WHERE ts.id = $1
+    `, [stepId]);
+    
+    if (stepResult.rows.length === 0) return;
+    const changedStep = stepResult.rows[0];
+    
+    // หา users ที่เป็นผู้รับผิดชอบ step นี้
+    const assignedUsers = changedStep.assigned_users || [];
+    if (assignedUsers.length === 0) return;
+    
+    const userIds = assignedUsers.map(u => typeof u === 'object' ? u.id : u).filter(Boolean);
+    if (userIds.length === 0) return;
+    
+    const usersResult = await pool.query(
+      'SELECT id, firstname, lastname, email FROM users WHERE id = ANY($1) AND email IS NOT NULL',
+      [userIds]
+    );
+    
+    for (const user of usersResult.rows) {
+      // ดึง steps ทั้งหมดของ user
+      const stepsResult = await pool.query(`
+        SELECT ts.*, t.task_name, t.so_number
+        FROM task_steps ts
+        JOIN tasks t ON ts.task_id = t.id
+        WHERE ts.assigned_users::text LIKE $1
+          AND (ts.status IS NULL OR ts.status != 'completed')
+        ORDER BY ts.end_date ASC NULLS LAST
+      `, [`%"id":${user.id}%`]);
+      
+      const steps = stepsResult.rows;
+      if (steps.length === 0) continue;
+      
+      // แยกประเภท
+      const overdue = [], dueSoon = [], inProgress = [], newToday = [];
+      
+      for (const step of steps) {
+        const startDate = step.start_date ? new Date(step.start_date).toISOString().split('T')[0] : null;
+        const endDate = step.end_date ? new Date(step.end_date).toISOString().split('T')[0] : null;
+        
+        if (startDate === today) newToday.push(step);
+        
+        if (endDate) {
+          const daysLeft = Math.ceil((new Date(endDate) - new Date(today)) / (1000 * 60 * 60 * 24));
+          if (daysLeft < 0) overdue.push(step);
+          else if (daysLeft <= 4) dueSoon.push(step);
+          else inProgress.push(step);
+        } else {
+          inProgress.push(step);
+        }
+      }
+      
+      await sendDailySummaryEmail(user, { overdue, dueSoon, inProgress, newToday }, stepId);
+    }
+  } catch (error) {
+    console.error('Notify step update error:', error);
+  }
+}
+
+export { checkAndNotifyDaily };
