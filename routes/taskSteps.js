@@ -26,13 +26,13 @@ router.get('/task/:taskId', async (req, res) => {
 // Create new step
 router.post('/', async (req, res) => {
   try {
-    const { task_id, step_name, step_order, start_date, end_date, assigned_users, status, description } = req.body;
+    const { task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, project_status } = req.body;
     
     const result = await pool.query(`
-      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, project_status)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
       RETURNING *
-    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description]);
+    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description, project_status]);
     
     // แจ้งเตือนทันทีถ้ามีผู้รับผิดชอบ
     if (assigned_users && assigned_users.length > 0) {
@@ -59,7 +59,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { step_name, step_order, start_date, end_date, assigned_users, status, description } = req.body;
+    const { step_name, step_order, start_date, end_date, assigned_users, status, description, project_status } = req.body;
     
     // ดึงข้อมูลเดิมก่อน update
     const oldStep = await pool.query('SELECT status, task_id, step_order FROM task_steps WHERE id = $1', [id]);
@@ -68,10 +68,10 @@ router.put('/:id', async (req, res) => {
     const result = await pool.query(`
       UPDATE task_steps 
       SET step_name = $1, step_order = $2, start_date = $3, end_date = $4, 
-          assigned_users = $5::jsonb, status = $6, description = $7, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8
+          assigned_users = $5::jsonb, status = $6, description = $7, project_status = $8, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $9
       RETURNING *
-    `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status, description, id]);
+    `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status, description, project_status, id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task step not found' });
