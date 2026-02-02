@@ -773,6 +773,28 @@ router.post('/', async (req, res) => {
       work_status, location, work_description, JSON.stringify(files || []), user_id, submitted_at
     ]);
 
+    // Auto-add user to assigned_users if not already assigned
+    if (user_id && finalStepIds.length > 0) {
+      const userResult = await pool.query('SELECT id, firstname, lastname FROM users WHERE id = $1', [user_id]);
+      if (userResult.rows.length > 0) {
+        const user = userResult.rows[0];
+        const userData = { id: user.id, name: `${user.firstname} ${user.lastname}` };
+        
+        for (const stepId of finalStepIds.filter(id => id !== null)) {
+          const stepResult = await pool.query('SELECT assigned_users FROM task_steps WHERE id = $1', [stepId]);
+          if (stepResult.rows.length > 0) {
+            let assignedUsers = stepResult.rows[0].assigned_users || [];
+            const isAssigned = assignedUsers.some(u => u.id === user.id);
+            if (!isAssigned) {
+              assignedUsers.push(userData);
+              await pool.query('UPDATE task_steps SET assigned_users = $1::jsonb WHERE id = $2', 
+                [JSON.stringify(assignedUsers), stepId]);
+            }
+          }
+        }
+      }
+    }
+
     // Create calendar event if requested
     if (create_calendar_event && event_title && (meeting_start_time || start_time) && (meeting_end_time || end_time)) {
       const eventStartTime = meeting_start_time || start_time;
