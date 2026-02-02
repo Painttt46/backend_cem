@@ -11,7 +11,8 @@ router.get('/task/:taskId', async (req, res) => {
     const { taskId } = req.params;
     const result = await pool.query(`
       SELECT ts.*, 
-        EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id) as has_work_logged
+        EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as has_work_logged,
+        (SELECT MAX(work_date) FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as latest_work_date
       FROM task_steps ts
       WHERE ts.task_id = $1 
       ORDER BY ts.step_order ASC
