@@ -765,7 +765,7 @@ router.post('/', async (req, res) => {
         task_id, step_id, step_ids, task_name, so_number, contract_number, sale_owner,
         work_date, start_time, end_time, total_hours,
         work_status, location, work_description, files, user_id, submitted_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) 
+      ) VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17) 
       RETURNING *
     `, [
       task_id, finalStepIds[0], JSON.stringify(finalStepIds.filter(id => id !== null)), task_name, so_number, contract_number, sale_owner,
@@ -931,9 +931,43 @@ router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    // Get data before delete for audit
-    const oldResult = await pool.query('SELECT task_name, work_date FROM daily_work_records WHERE id = $1', [id]);
+    // Get data before delete for audit and rollback
+    const oldResult = await pool.query('SELECT * FROM daily_work_records WHERE id = $1', [id]);
     const oldData = oldResult.rows[0];
+    
+    if (oldData) {
+      const userId = oldData.user_id;
+      let stepIds = [];
+      
+      // รวบรวม step_ids ที่ต้อง rollback
+      if (oldData.step_ids && oldData.step_ids.length > 0) {
+        stepIds = oldData.step_ids;
+      } else if (oldData.step_id) {
+        stepIds = [oldData.step_id];
+      }
+      
+      // ลบ user ออกจาก assigned_users ถ้าไม่มีงานอื่นใน step นั้น
+      for (const stepId of stepIds) {
+        // เช็คว่ามีงานอื่นของ user ใน step นี้หรือไม่
+        const otherWork = await pool.query(
+          `SELECT id FROM daily_work_records 
+           WHERE id != $1 AND user_id = $2 
+           AND (step_id = $3 OR step_ids @> to_jsonb($3::int))`,
+          [id, userId, stepId]
+        );
+        
+        // ถ้าไม่มีงานอื่น ให้ลบ user ออกจาก assigned_users
+        if (otherWork.rows.length === 0) {
+          const stepResult = await pool.query('SELECT assigned_users FROM task_steps WHERE id = $1', [stepId]);
+          if (stepResult.rows.length > 0) {
+            let assignedUsers = stepResult.rows[0].assigned_users || [];
+            assignedUsers = assignedUsers.filter(u => u.id !== userId);
+            await pool.query('UPDATE task_steps SET assigned_users = $1::jsonb WHERE id = $2',
+              [JSON.stringify(assignedUsers), stepId]);
+          }
+        }
+      }
+    }
     
     await pool.query('DELETE FROM daily_work_records WHERE id = $1', [id]);
     
