@@ -652,7 +652,7 @@ router.get('/', async (req, res) => {
 
     let query = `
       SELECT 
-        dwr.id, dwr.task_id, dwr.step_id,
+        dwr.id, dwr.task_id, dwr.step_id, dwr.step_ids,
         TO_CHAR(dwr.work_date, 'YYYY-MM-DD') as work_date,
         dwr.start_time, dwr.end_time, dwr.total_hours,
         dwr.work_status, dwr.location, dwr.work_description, dwr.files, dwr.submitted_at,
@@ -673,7 +673,26 @@ router.get('/', async (req, res) => {
         ts.assigned_users as step_assigned_users,
         ts.status as step_status,
         ts.project_status as step_project_status,
-        ts.step_order as step_order
+        ts.step_order as step_order,
+        (
+          SELECT json_agg(json_build_object(
+            'id', s.id,
+            'step_name', s.step_name,
+            'step_order', s.step_order,
+            'status', s.status,
+            'end_date', s.end_date,
+            'has_work_logged', EXISTS(SELECT 1 FROM daily_work_records d WHERE d.step_id = s.id OR d.step_ids @> to_jsonb(s.id))
+          ) ORDER BY s.step_order)
+          FROM task_steps s
+          WHERE s.id = ANY(
+            CASE 
+              WHEN dwr.step_ids IS NOT NULL AND jsonb_array_length(dwr.step_ids) > 0 
+              THEN ARRAY(SELECT jsonb_array_elements_text(dwr.step_ids)::int)
+              WHEN dwr.step_id IS NOT NULL THEN ARRAY[dwr.step_id]
+              ELSE ARRAY[]::int[]
+            END
+          )
+        ) as steps_data
       FROM daily_work_records dwr
       LEFT JOIN users u ON dwr.user_id = u.id
       LEFT JOIN tasks t ON dwr.task_id = t.id
@@ -709,16 +728,19 @@ router.get('/', async (req, res) => {
 // Create daily work record
 router.post('/', async (req, res) => {
   const {
-    task_id, step_id, work_date, start_time, end_time, total_hours,
+    task_id, step_id, step_ids, work_date, start_time, end_time, total_hours,
     location, work_description, files, user_id, submitted_at,
     create_calendar_event, event_title, meeting_start_time, meeting_end_time, 
     attendees, create_teams_meeting, meeting_room, event_details
   } = req.body;
 
+  // รองรับทั้ง step_id (single) และ step_ids (array)
+  const finalStepIds = step_ids || (step_id ? [step_id] : [null]);
+
   // ดึง work_status จาก task.status
   let work_status = null;
 
-  console.log('Daily work POST request:', { task_id, step_id, work_date, work_status, user_id });
+  console.log('Daily work POST request:', { task_id, step_ids: finalStepIds, work_date, work_status, user_id });
 
   try {
     // ดึง task_name จาก tasks table
@@ -740,13 +762,13 @@ router.post('/', async (req, res) => {
 
     const result = await pool.query(`
       INSERT INTO daily_work_records (
-        task_id, step_id, task_name, so_number, contract_number, sale_owner,
+        task_id, step_id, step_ids, task_name, so_number, contract_number, sale_owner,
         work_date, start_time, end_time, total_hours,
         work_status, location, work_description, files, user_id, submitted_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) 
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) 
       RETURNING *
     `, [
-      task_id, step_id, task_name, so_number, contract_number, sale_owner,
+      task_id, finalStepIds[0], JSON.stringify(finalStepIds.filter(id => id !== null)), task_name, so_number, contract_number, sale_owner,
       work_date, start_time, end_time, total_hours,
       work_status, location, work_description, JSON.stringify(files || []), user_id, submitted_at
     ]);
