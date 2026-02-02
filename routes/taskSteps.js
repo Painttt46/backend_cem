@@ -62,8 +62,17 @@ router.put('/:id', async (req, res) => {
     const { step_name, step_order, start_date, end_date, assigned_users, status, description, project_statuses } = req.body;
     
     // ดึงข้อมูลเดิมก่อน update
-    const oldStep = await pool.query('SELECT status, task_id, step_order FROM task_steps WHERE id = $1', [id]);
-    const wasNotCompleted = oldStep.rows[0]?.status !== 'completed';
+    const oldStep = await pool.query('SELECT * FROM task_steps WHERE id = $1', [id]);
+    if (oldStep.rows.length === 0) {
+      return res.status(404).json({ error: 'Task step not found' });
+    }
+    
+    const existing = oldStep.rows[0];
+    const wasNotCompleted = existing.status !== 'completed';
+    
+    // รักษาค่าเดิมถ้าไม่ได้ส่งมา
+    const finalStatus = status !== undefined ? status : existing.status;
+    const finalProjectStatuses = project_statuses !== undefined ? project_statuses : existing.project_statuses;
     
     const result = await pool.query(`
       UPDATE task_steps 
@@ -71,19 +80,15 @@ router.put('/:id', async (req, res) => {
           assigned_users = $5::jsonb, status = $6, description = $7, project_statuses = $8::jsonb, updated_at = CURRENT_TIMESTAMP
       WHERE id = $9
       RETURNING *
-    `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status, description, JSON.stringify(project_statuses || []), id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Task step not found' });
-    }
+    `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), id]);
     
     // ถ้าเปลี่ยนเป็น completed ให้แจ้ง step ถัดไป
-    if (wasNotCompleted && status === 'completed' && oldStep.rows[0]) {
-      notifyNextStep(oldStep.rows[0].task_id, oldStep.rows[0].step_order);
+    if (wasNotCompleted && finalStatus === 'completed') {
+      notifyNextStep(existing.task_id, existing.step_order);
     } 
     // ถ้าไม่ใช่ completed แต่มีการเปลี่ยนแปลง ให้แจ้งผู้รับผิดชอบ
-    else if (status !== 'completed' && assigned_users && assigned_users.length > 0) {
-      notifyStepUpdate(parseInt(id), oldStep.rows[0]?.task_id);
+    else if (finalStatus !== 'completed' && assigned_users && assigned_users.length > 0) {
+      notifyStepUpdate(parseInt(id), existing.task_id);
     }
     
     await logAudit(req, {
@@ -91,7 +96,7 @@ router.put('/:id', async (req, res) => {
       tableName: 'task_steps',
       recordId: parseInt(id),
       recordName: step_name,
-      newData: { step_name, status }
+      newData: { step_name, status: finalStatus }
     });
     
     res.json(result.rows[0]);
