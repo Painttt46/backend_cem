@@ -655,11 +655,14 @@ router.get('/leave-types', async (req, res) => {
     await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);
 
     const result = await pool.query(`
-      SELECT DISTINCT leave_type, color, advance_days, display_name,
-        (SELECT annual_quota FROM user_leave_quotas uq2 
-         WHERE uq2.leave_type = user_leave_quotas.leave_type AND uq2.year = $1 LIMIT 1) as default_quota
+      SELECT leave_type, 
+        MAX(color) as color, 
+        MAX(advance_days) as advance_days, 
+        MAX(display_name) as display_name,
+        MAX(annual_quota) as default_quota
       FROM user_leave_quotas 
       WHERE year = $1
+      GROUP BY leave_type
       ORDER BY leave_type
     `, [currentYear]);
 
