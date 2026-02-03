@@ -349,11 +349,11 @@ async function sendAssignmentEmail(user, step) {
   const html = `<!DOCTYPE html>
 <html lang="th">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+<body style="margin:0;padding:0;background:linear-gradient(135deg,#4A90E2,#D73527);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
   <center style="width:100%;padding:40px 16px;">
     <table width="520" style="max-width:520px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
       <tr><td style="padding:40px 32px 24px;text-align:center;">
-        <div style="width:80px;height:80px;background:linear-gradient(135deg,#667eea,#764ba2);border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;">
+        <div style="width:80px;height:80px;background:linear-gradient(135deg,#4A90E2,#D73527);border-radius:50%;margin:0 auto 20px;">
           <span style="font-size:40px;line-height:80px;">📋</span>
         </div>
         <h1 style="margin:0;font-size:24px;color:#1a1a2e;font-weight:700;">งานใหม่สำหรับคุณ!</h1>
@@ -361,8 +361,8 @@ async function sendAssignmentEmail(user, step) {
       </td></tr>
       
       <tr><td style="padding:0 32px;">
-        <div style="background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border-radius:12px;padding:24px;border-left:4px solid #667eea;">
-          <div style="font-size:12px;color:#667eea;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">โครงการ</div>
+        <div style="background:linear-gradient(135deg,#e8f4fc,#fef2f2);border-radius:12px;padding:24px;border-left:4px solid #4A90E2;">
+          <div style="font-size:12px;color:#4A90E2;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">โครงการ</div>
           <div style="font-size:18px;color:#1a1a2e;font-weight:700;">${step.task_name || '-'}</div>
           ${step.so_number ? `<div style="font-size:13px;color:#888;margin-top:4px;">SO: ${step.so_number}</div>` : ''}
         </div>
@@ -370,27 +370,31 @@ async function sendAssignmentEmail(user, step) {
       
       <tr><td style="padding:16px 32px;">
         <div style="background:#fff;border:2px solid #e8e8e8;border-radius:12px;padding:20px;">
-          <div style="display:flex;align-items:center;margin-bottom:16px;">
-            <span style="font-size:24px;margin-right:12px;">🎯</span>
-            <div>
+          <table style="width:100%;"><tr>
+            <td style="width:36px;vertical-align:top;"><span style="font-size:24px;">🎯</span></td>
+            <td>
               <div style="font-size:12px;color:#888;font-weight:500;">ขั้นตอนที่ได้รับมอบหมาย</div>
-              <div style="font-size:16px;color:#667eea;font-weight:700;">${step.step_name}</div>
-            </div>
-          </div>
+              <div style="font-size:16px;color:#4A90E2;font-weight:700;">${step.step_name}</div>
+            </td>
+          </tr></table>
           
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <table style="width:100%;margin-top:16px;"><tr>
             ${step.start_date ? `
-            <div style="background:#f0fdf4;border-radius:8px;padding:12px;">
-              <div style="font-size:11px;color:#16a34a;font-weight:600;">📅 เริ่มต้น</div>
-              <div style="font-size:14px;color:#166534;font-weight:600;margin-top:4px;">${formatDate(step.start_date)}</div>
-            </div>` : ''}
+            <td style="width:50%;padding-right:6px;">
+              <div style="background:#f0fdf4;border-radius:8px;padding:12px;">
+                <div style="font-size:11px;color:#16a34a;font-weight:600;">📅 เริ่มต้น</div>
+                <div style="font-size:14px;color:#166534;font-weight:600;margin-top:4px;">${formatDate(step.start_date)}</div>
+              </div>
+            </td>` : ''}
             ${step.end_date ? `
-            <div style="background:${daysLeft <= 3 ? '#fef2f2' : '#fff7ed'};border-radius:8px;padding:12px;">
-              <div style="font-size:11px;color:${daysLeft <= 3 ? '#dc2626' : '#ea580c'};font-weight:600;">⏰ กำหนดเสร็จ</div>
-              <div style="font-size:14px;color:${daysLeft <= 3 ? '#991b1b' : '#9a3412'};font-weight:600;margin-top:4px;">${formatDate(step.end_date)}</div>
-              ${daysLeft !== null ? `<div style="font-size:11px;color:#888;margin-top:2px;">(อีก ${daysLeft} วัน)</div>` : ''}
-            </div>` : ''}
-          </div>
+            <td style="width:50%;padding-left:6px;">
+              <div style="background:${daysLeft <= 3 ? '#fef2f2' : '#fff7ed'};border-radius:8px;padding:12px;">
+                <div style="font-size:11px;color:${daysLeft <= 3 ? '#dc2626' : '#ea580c'};font-weight:600;">⏰ กำหนดเสร็จ</div>
+                <div style="font-size:14px;color:${daysLeft <= 3 ? '#991b1b' : '#9a3412'};font-weight:600;margin-top:4px;">${formatDate(step.end_date)}</div>
+                ${daysLeft !== null ? `<div style="font-size:11px;color:#888;margin-top:2px;">(อีก ${daysLeft} วัน)</div>` : ''}
+              </div>
+            </td>` : ''}
+          </tr></table>
           
           ${step.description ? `
           <div style="margin-top:16px;padding-top:16px;border-top:1px dashed #e8e8e8;">
@@ -401,7 +405,7 @@ async function sendAssignmentEmail(user, step) {
       </td></tr>
       
       <tr><td style="padding:24px 32px 32px;text-align:center;">
-        <div style="color:#888;font-size:11px;margin-top:16px;">
+        <div style="color:#888;font-size:11px;">
           <div style="margin-bottom:4px;">GenT-CEM • Workflow Management</div>
           <div style="color:#bbb;">อีเมลนี้ส่งอัตโนมัติ กรุณาอย่าตอบกลับ</div>
         </div>
@@ -487,43 +491,43 @@ async function sendDueTomorrowEmail(user, steps) {
   const html = `<!DOCTYPE html>
 <html lang="th">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:linear-gradient(135deg,#ff6b6b 0%,#feca57 100%);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+<body style="margin:0;padding:0;background:linear-gradient(135deg,#4A90E2,#D73527);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
   <center style="width:100%;padding:40px 16px;">
     <table width="560" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-      <tr><td style="padding:40px 32px 24px;text-align:center;background:linear-gradient(180deg,#fff8f0 0%,#fff 100%);">
-        <div style="width:90px;height:90px;background:linear-gradient(135deg,#ff6b6b,#feca57);border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;animation:pulse 2s infinite;">
+      <tr><td style="padding:40px 32px 24px;text-align:center;">
+        <div style="width:90px;height:90px;background:linear-gradient(135deg,#4A90E2,#D73527);border-radius:50%;margin:0 auto 20px;">
           <span style="font-size:45px;line-height:90px;">⏰</span>
         </div>
         <h1 style="margin:0;font-size:26px;color:#1a1a2e;font-weight:700;">งานครบกำหนดพรุ่งนี้!</h1>
-        <p style="margin:12px 0 0;color:#ff6b6b;font-size:15px;font-weight:600;">${formatDate(tomorrow)}</p>
+        <p style="margin:12px 0 0;color:#D73527;font-size:15px;font-weight:600;">${formatDate(tomorrow)}</p>
       </td></tr>
       
       <tr><td style="padding:8px 32px 24px;">
-        <div style="background:linear-gradient(135deg,#fff5f5,#fff0e6);border-radius:12px;padding:16px;text-align:center;border:2px dashed #ffb8b8;">
-          <span style="font-size:32px;font-weight:700;color:#ff6b6b;">${steps.length}</span>
+        <div style="background:linear-gradient(135deg,#e8f4fc,#fef2f2);border-radius:12px;padding:16px;text-align:center;border:2px dashed #D73527;">
+          <span style="font-size:32px;font-weight:700;color:#D73527;">${steps.length}</span>
           <span style="font-size:14px;color:#666;margin-left:8px;">งานที่ต้องเสร็จ</span>
         </div>
       </td></tr>
       
       <tr><td style="padding:0 32px 24px;">
         ${steps.map((s, i) => `
-        <div style="background:#fff;border:2px solid #f0f0f0;border-radius:12px;padding:16px;margin-bottom:${i < steps.length - 1 ? '12px' : '0'};border-left:4px solid #ff6b6b;">
-          <div style="display:flex;align-items:flex-start;">
-            <div style="width:36px;height:36px;background:linear-gradient(135deg,#ff6b6b,#feca57);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-right:12px;flex-shrink:0;">
-              <span style="color:#fff;font-weight:700;font-size:14px;">${i + 1}</span>
+        <table style="width:100%;background:#fff;border:2px solid #f0f0f0;border-radius:12px;border-left:4px solid #D73527;margin-bottom:${i < steps.length - 1 ? '12px' : '0'};"><tr>
+          <td style="width:48px;padding:16px;vertical-align:top;">
+            <div style="width:36px;height:36px;background:linear-gradient(135deg,#4A90E2,#D73527);border-radius:8px;text-align:center;">
+              <span style="color:#fff;font-weight:700;font-size:14px;line-height:36px;">${i + 1}</span>
             </div>
-            <div style="flex:1;">
-              <div style="font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">${s.task_name || 'โครงการ'}</div>
-              <div style="font-size:16px;color:#1a1a2e;font-weight:700;margin-top:4px;">${s.step_name}</div>
-              ${s.description ? `<div style="font-size:12px;color:#666;margin-top:6px;line-height:1.4;">${s.description}</div>` : ''}
-            </div>
-          </div>
-        </div>
+          </td>
+          <td style="padding:16px 16px 16px 0;">
+            <div style="font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">${s.task_name || 'โครงการ'}</div>
+            <div style="font-size:16px;color:#1a1a2e;font-weight:700;margin-top:4px;">${s.step_name}</div>
+            ${s.description ? `<div style="font-size:12px;color:#666;margin-top:6px;line-height:1.4;">${s.description}</div>` : ''}
+          </td>
+        </tr></table>
         `).join('')}
       </td></tr>
       
       <tr><td style="padding:0 32px 32px;">
-        <div style="background:linear-gradient(135deg,#667eea,#764ba2);border-radius:12px;padding:20px;text-align:center;">
+        <div style="background:linear-gradient(135deg,#4A90E2,#D73527);border-radius:12px;padding:20px;text-align:center;">
           <div style="color:#fff;font-size:14px;font-weight:500;">💪 กรุณาดำเนินการให้แล้วเสร็จภายในกำหนด</div>
         </div>
       </td></tr>
