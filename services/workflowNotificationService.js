@@ -91,6 +91,70 @@ async function sendDailySummaryEmail(user, steps) {
   }
 }
 
+// ส่ง email แจ้งเตือนงานเกินกำหนด
+async function sendOverdueEmail(user, overdueSteps) {
+  if (overdueSteps.length === 0) return;
+
+  const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+  const today = new Date();
+
+  const html = `<!DOCTYPE html>
+<html lang="th">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f2f3f5;font-family:Arial,sans-serif;">
+  <center style="width:100%;padding:24px 12px;">
+    <table width="600" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden;border:2px solid #dc3545;">
+      <tr><td style="background:#dc3545;padding:24px;text-align:center;">
+        <div style="font-size:40px;">⚠️</div>
+        <div style="color:#fff;font-size:22px;font-weight:bold;margin-top:8px;">งานเกินกำหนด!</div>
+        <div style="color:rgba(255,255,255,0.9);font-size:14px;margin-top:4px;">${overdueSteps.length} รายการต้องดำเนินการด่วน</div>
+      </td></tr>
+      
+      <tr><td style="padding:20px 24px;">
+        <div style="font-size:14px;color:#666;margin-bottom:16px;">สวัสดีครับ คุณ${user.firstname},</div>
+        <div style="font-size:14px;color:#dc3545;font-weight:bold;margin-bottom:12px;">งานต่อไปนี้เกินกำหนดแล้ว กรุณาดำเนินการโดยด่วน:</div>
+        
+        <table style="width:100%;border-collapse:collapse;background:#fff5f5;border-radius:8px;border:1px solid #f5c6cb;">
+          <tr style="background:#f8d7da;">
+            <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#721c24;">โครงการ</td>
+            <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#721c24;">Step</td>
+            <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#721c24;">กำหนดเดิม</td>
+            <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#721c24;">เกินมาแล้ว</td>
+          </tr>
+          ${overdueSteps.map(s => {
+            const daysOverdue = Math.ceil((today - new Date(s.end_date)) / (1000 * 60 * 60 * 24));
+            return `
+            <tr style="border-top:1px solid #f5c6cb;">
+              <td style="padding:10px 12px;font-size:13px;">${s.task_name || '-'}<br><span style="color:#888;font-size:11px;">${s.so_number || ''}</span></td>
+              <td style="padding:10px 12px;font-size:13px;font-weight:600;">${s.step_name}</td>
+              <td style="padding:10px 12px;font-size:13px;">${formatDate(s.end_date)}</td>
+              <td style="padding:10px 12px;font-size:13px;color:#dc3545;font-weight:bold;">${daysOverdue} วัน</td>
+            </tr>`;
+          }).join('')}
+        </table>
+      </td></tr>
+      
+      <tr><td style="padding:16px 24px;text-align:center;border-top:1px solid #e9ecef;">
+        <div style="color:#888;font-size:12px;">GenT-CEM Workflow - แจ้งเตือนงานเกินกำหนด</div>
+      </td></tr>
+    </table>
+  </center>
+</body>
+</html>`;
+
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM,
+      to: user.email,
+      subject: `🔴 ด่วน! งานเกินกำหนด ${overdueSteps.length} รายการ - กรุณาดำเนินการ`,
+      html
+    });
+    console.log(`📧 Sent overdue alert to ${user.email} (${overdueSteps.length} items)`);
+  } catch (error) {
+    console.error('Overdue email send error:', error);
+  }
+}
+
 // ตรวจสอบและส่งสรุปรายวัน
 async function checkAndNotifyDaily() {
   const today = new Date().toISOString().split('T')[0];
@@ -156,6 +220,11 @@ async function checkAndNotifyDaily() {
         }
       }
       
+      // ส่ง email แจ้งเตือนงานเกินกำหนดแยกต่างหาก
+      if (overdue.length > 0) {
+        await sendOverdueEmail(user, overdue);
+      }
+      
       await sendDailySummaryEmail(user, { overdue, dueSoon, inProgress, newToday });
     }
   } catch (error) {
@@ -216,6 +285,100 @@ export async function notifyNextStep(taskId, completedStepOrder) {
   }
 }
 
+// ส่งสรุป workflow ไป MS Teams
+async function sendWorkflowSummaryToTeams() {
+  const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/772efa7dba4846248602bec0f4ec9adf/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=u_vIlVoRaHZOEJ-gEE6SXcdJ-HZPpp3KN6-y1WSoGRI';
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // ดึง workflow steps ที่ยังไม่เสร็จ
+    const result = await pool.query(`
+      SELECT ts.*, t.task_name, t.so_number,
+        TO_CHAR(ts.start_date, 'DD/MM') as start_fmt,
+        TO_CHAR(ts.end_date, 'DD/MM') as end_fmt,
+        (SELECT string_agg(u.firstname || ' ' || u.lastname, ', ')
+         FROM unnest(ts.assignees) AS aid JOIN users u ON u.id = aid) as assignee_names,
+        (SELECT COUNT(*) FROM daily_work_records dwr 
+         WHERE dwr.step_id = ts.id AND dwr.work_date = $1) as work_count
+      FROM task_steps ts
+      JOIN tasks t ON ts.task_id = t.id
+      WHERE (ts.status IS NULL OR ts.status NOT IN ('completed', 'cancelled'))
+        AND t.status NOT IN ('completed', 'cancelled', 'closed')
+      ORDER BY ts.end_date ASC NULLS LAST
+    `, [today]);
+
+    if (result.rows.length === 0) {
+      console.log('No active workflow steps');
+      return;
+    }
+
+    // แยกประเภท
+    const overdue = [], urgent = [], inProgress = [];
+    
+    for (const step of result.rows) {
+      if (step.end_date) {
+        const daysLeft = Math.ceil((new Date(step.end_date) - new Date(today)) / (1000 * 60 * 60 * 24));
+        if (daysLeft < 0) overdue.push({ ...step, daysLeft });
+        else if (daysLeft <= 3) urgent.push({ ...step, daysLeft });
+        else inProgress.push({ ...step, daysLeft });
+      } else {
+        inProgress.push({ ...step, daysLeft: null });
+      }
+    }
+
+    const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+    
+    const buildSection = (title, emoji, items, style) => {
+      if (items.length === 0) return [];
+      return [{
+        type: "Container",
+        style: style,
+        items: [
+          { type: "TextBlock", text: `${emoji} ${title} (${items.length})`, weight: "Bolder", size: "Medium" },
+          ...items.map(s => ({
+            type: "Container",
+            items: [
+              { type: "TextBlock", text: `📋 ${s.task_name}${s.so_number ? ` (${s.so_number})` : ''} | ⚙️ ${s.step_name}`, weight: "Bolder", size: "Small", wrap: true },
+              { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'}${s.daysLeft !== null ? ` | ${s.daysLeft < 0 ? `เกิน ${Math.abs(s.daysLeft)} วัน` : `เหลือ ${s.daysLeft} วัน`}` : ''}`, size: "Small", spacing: "None" },
+              { type: "TextBlock", text: `👥 ${s.assignee_names || '-'} | ${s.work_count > 0 ? `✅ ลงงานแล้ว ${s.work_count} คน` : '⏳ ยังไม่มีคนลงงาน'}`, size: "Small", spacing: "None", isSubtle: true }
+            ],
+            spacing: "Small"
+          }))
+        ],
+        spacing: "Medium"
+      }];
+    };
+
+    const message = {
+      type: "AdaptiveCard",
+      version: "1.5",
+      body: [
+        { type: "TextBlock", text: "📊 สรุป Workflow ประจำวัน", size: "Large", weight: "Bolder", color: "Accent" },
+        { type: "TextBlock", text: `🕐 ${currentTime}`, size: "Small", isSubtle: true, spacing: "None" },
+        ...buildSection("เกินกำหนดแล้ว!", "🔴", overdue, "attention"),
+        ...buildSection("ต้องเร่ง (1-3 วัน)", "🟠", urgent, "warning"),
+        ...buildSection("กำลังดำเนินการ", "🔵", inProgress, "default")
+      ],
+      msteams: { width: "Full" }
+    };
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+
+    if (!response.ok) {
+      console.error('Teams workflow summary failed:', response.status);
+    } else {
+      console.log('✅ Workflow summary sent to Teams');
+    }
+  } catch (error) {
+    console.error('Teams workflow summary error:', error);
+  }
+}
+
 // เริ่ม cron job ทุกวันจันทร์-ศุกร์ 9:00 น.
 export function startWorkflowScheduler() {
   // สรุปรายวัน + แจ้งเตือนก่อน 1 วัน 9:00 น.
@@ -224,9 +387,23 @@ export function startWorkflowScheduler() {
     checkAndNotifyDaily();
     console.log('⏰ Running due tomorrow reminder...');
     notifyDueTomorrow();
+    console.log('📢 Sending workflow summary to Teams...');
+    sendWorkflowSummaryToTeams();
   }, { timezone: 'Asia/Bangkok' });
   
-  console.log('✅ Workflow notification scheduler started (Mon-Fri at 9:00 AM)');
+  // แจ้ง Teams ทุก 1 ชม. (10:00-17:00)
+  cron.schedule('0 10-17 * * 1-5', () => {
+    console.log('📢 Hourly workflow summary to Teams...');
+    sendWorkflowSummaryToTeams();
+  }, { timezone: 'Asia/Bangkok' });
+  
+  // แจ้ง Teams รอบสุดท้าย 18:00
+  cron.schedule('0 18 * * 1-5', () => {
+    console.log('📢 Final workflow summary to Teams...');
+    sendWorkflowSummaryToTeams();
+  }, { timezone: 'Asia/Bangkok' });
+  
+  console.log('✅ Workflow notification scheduler started (Mon-Fri 9:00-18:00)');
 }
 
 // แจ้งเตือนเฉพาะผู้รับผิดชอบใหม่ที่ถูกเพิ่ม
@@ -243,9 +420,18 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds, isNewStep =
     if (stepResult.rows.length === 0) return;
     const step = stepResult.rows[0];
     
-    // คำนวณวันที่เหลือ (สำหรับ step ใหม่เท่านั้น)
-    const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
-    const isUrgent = isNewStep && daysLeft !== null && daysLeft >= 1 && daysLeft <= 3;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // เช็คว่า start_date ถึงแล้วหรือยัง (ถ้ามี)
+    const startDate = step.start_date ? new Date(step.start_date) : null;
+    const hasStarted = !startDate || startDate <= today;
+    
+    // คำนวณวันที่เหลือ
+    const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - today) / (1000 * 60 * 60 * 24)) : null;
+    
+    // urgent เฉพาะ: step ใหม่ + เริ่มงานแล้ว + เหลือ 1-3 วัน
+    const isUrgent = isNewStep && hasStarted && daysLeft !== null && daysLeft >= 1 && daysLeft <= 3;
     
     // ดึงข้อมูล users
     const usersResult = await pool.query(

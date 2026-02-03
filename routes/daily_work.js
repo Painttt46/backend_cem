@@ -221,7 +221,12 @@ async function sendDailyWorkSummaryToTeams() {
         d.work_description,
         d.submitted_at,
         d.updated_at,
-        ts.step_name
+        ts.step_name,
+        TO_CHAR(ts.start_date, 'DD/MM/YY') as step_start_date,
+        TO_CHAR(ts.end_date, 'DD/MM/YY') as step_end_date,
+        (SELECT string_agg(u2.firstname || ' ' || u2.lastname, ', ')
+         FROM unnest(ts.assignees) AS aid
+         JOIN users u2 ON u2.id = aid) as step_assignees
       FROM daily_work_records d
       JOIN users u ON d.user_id = u.id
       LEFT JOIN task_steps ts ON d.step_id = ts.id
@@ -260,10 +265,13 @@ async function sendDailyWorkSummaryToTeams() {
         task_name: row.task_name,
         so_number: row.so_number,
         step_name: row.step_name,
+        step_start_date: row.step_start_date,
+        step_end_date: row.step_end_date,
+        step_assignees: row.step_assignees,
         start_time: row.start_time?.substring(0, 5) || '',
         end_time: row.end_time?.substring(0, 5) || '',
         total_hours: row.total_hours,
-        work_status: row.work_status,
+        work_status: row.work_status || '-',
         location: row.location,
         work_description: row.work_description,
         isLatest: row.id === latestId
@@ -287,14 +295,26 @@ async function sendDailyWorkSummaryToTeams() {
         const containerStyle = isCancelled ? "attention" : (user.isLatestUser ? "warning" : "default");
         const textColor = isCancelled ? "Attention" : (user.isLatestUser ? "Warning" : "Default");
         
+        // Build items array
+        const items = [
+          { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}${w.isLatest ? ' ✨' : ''}`, weight: "Bolder", size: "Small", wrap: true, color: textColor },
+          // Workflow step box
+          ...(w.step_name ? [{
+            type: "Container",
+            style: "accent",
+            items: [
+              { type: "TextBlock", text: `⚙️ Step: ${w.step_name}${w.step_start_date ? ` | 📅 ${w.step_start_date}-${w.step_end_date}` : ''}${w.step_assignees ? ` | 👥 ${w.step_assignees}` : ''}`, size: "Small", wrap: true }
+            ],
+            spacing: "Small"
+          }] : []),
+          { type: "TextBlock", text: `⏰ ${w.start_time}-${w.end_time} (${w.total_hours} ชม.) | ${w.work_status}${w.location ? ` | 📍 ${w.location}` : ''}`, size: "Small", spacing: "Small", color: textColor },
+          ...(w.work_description ? [{ type: "TextBlock", text: `📝 ${w.work_description}`, size: "Small", spacing: "None", wrap: true, isSubtle: true }] : [])
+        ];
+        
         return {
           type: "Container",
           style: containerStyle,
-          items: [
-            { type: "TextBlock", text: `📋 ${w.task_name}${w.so_number ? ` (${w.so_number})` : ''}${w.step_name ? ` | ⚙️ ${w.step_name}` : ''}${w.isLatest ? ' ✨' : ''}`, weight: "Bolder", size: "Small", wrap: true, color: textColor },
-            { type: "TextBlock", text: `⏰ ${w.start_time}-${w.end_time} (${w.total_hours} ชม.) | ${w.work_status}${w.location ? ` | 📍 ${w.location}` : ''}`, size: "Small", spacing: "None", color: textColor },
-            ...(w.work_description ? [{ type: "TextBlock", text: `📝 ${w.work_description}`, size: "Small", spacing: "None", wrap: true, isSubtle: true }] : [])
-          ],
+          items: items,
           spacing: "Small"
         };
       });
