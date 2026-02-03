@@ -318,6 +318,15 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
     const projects = {};
     const actionText = action === 'create' ? '🆕' : action === 'update' ? '✏️' : '';
     
+    // แปลงสถานะ step จาก DB เป็นภาษาไทย
+    const stepStatusMap = {
+      'completed': 'เสร็จสิ้น',
+      'in_progress': 'กำลังดำเนินการ',
+      'pending': 'รอดำเนินการ',
+      'on_hold': 'พักไว้',
+      'cancelled': 'ยกเลิก'
+    };
+    
     for (const step of result.rows) {
       const isHighlighted = step.id === highlightStepId;
       let daysLeft = null;
@@ -401,7 +410,7 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
               type: "Container",
               style: s.isHighlighted ? "accent" : undefined,
               items: [
-                { type: "TextBlock", text: `${stepNum}. ⚙️ ${s.step_name}${s.actionText ? ` ${s.actionText}` : ''} | ${s.stepStatus}${s.daysLeft !== null && s.daysLeft >= 0 ? ` (${s.daysLeft} วัน)` : s.daysLeft < 0 ? ` (${Math.abs(s.daysLeft)} วัน)` : ''}`, size: "Small", wrap: true },
+                { type: "TextBlock", text: `${stepNum}. ⚙️ ${s.step_name}${s.actionText ? ` ${s.actionText}` : ''} | ${s.stepStatus}${s.daysLeft !== null && s.daysLeft >= 0 ? ` (${s.daysLeft} วัน)` : s.daysLeft < 0 ? ` (${Math.abs(s.daysLeft)} วัน)` : ''} | ${s.status}`, size: "Small", wrap: true },
                 { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'} | 👥 ${s.assignee_names || '-'}${s.work_count > 0 ? ` | ✅ ลงงาน ${s.work_count} คน` : ''}`, size: "Small", spacing: "None", isSubtle: true, wrap: true }
               ],
               spacing: "Small"
