@@ -5,6 +5,23 @@ import { notifyNextStep, notifyStepUpdate } from '../services/workflowNotificati
 
 const router = express.Router();
 
+// Get all steps (for dashboard)
+router.get('/all', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT ts.*, 
+        EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as has_work_logged,
+        (SELECT MAX(work_date) FROM daily_work_records dwr WHERE (dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) AND work_date <= CURRENT_DATE) as latest_work_date
+      FROM task_steps ts
+      ORDER BY ts.task_id, ts.step_order ASC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching all steps:', error);
+    res.status(500).json({ error: 'Failed to fetch steps' });
+  }
+});
+
 // Get all steps for a task
 router.get('/task/:taskId', async (req, res) => {
   try {
