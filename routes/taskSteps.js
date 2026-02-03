@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
-import { notifyNextStep, notifyStepUpdate } from '../services/workflowNotificationService.js';
+import { notifyNextStep, notifyStepUpdate, notifyNewAssignees } from '../services/workflowNotificationService.js';
 
 const router = express.Router();
 
@@ -61,10 +61,10 @@ router.post('/', async (req, res) => {
       }
     }
     
-    // แจ้งเตือนทันทีถ้ามีผู้รับผิดชอบ
+    // แจ้งเตือนผู้รับผิดชอบใหม่
     if (assigned_users && assigned_users.length > 0) {
-      console.log(`📧 Sending notification for new step: ${step_name}`);
-      notifyStepUpdate(result.rows[0].id, task_id);
+      const newUserIds = assigned_users.map(u => typeof u === 'object' ? u.id : u).filter(Boolean);
+      notifyNewAssignees(result.rows[0].id, task_id, newUserIds);
     }
     
     await logAudit(req, {
@@ -130,9 +130,14 @@ router.put('/:id', async (req, res) => {
     if (wasNotCompleted && finalStatus === 'completed') {
       notifyNextStep(existing.task_id, existing.step_order);
     } 
-    // ถ้าไม่ใช่ completed แต่มีการเปลี่ยนแปลง ให้แจ้งผู้รับผิดชอบ
-    else if (finalStatus !== 'completed' && assigned_users && assigned_users.length > 0) {
-      notifyStepUpdate(parseInt(id), existing.task_id);
+    // แจ้งเฉพาะผู้รับผิดชอบใหม่ที่ถูกเพิ่ม
+    else if (assigned_users && assigned_users.length > 0) {
+      const oldUserIds = (existing.assigned_users || []).map(u => typeof u === 'object' ? u.id : u);
+      const newUserIds = assigned_users.map(u => typeof u === 'object' ? u.id : u).filter(Boolean);
+      const addedUserIds = newUserIds.filter(id => !oldUserIds.includes(id));
+      if (addedUserIds.length > 0) {
+        notifyNewAssignees(parseInt(id), existing.task_id, addedUserIds);
+      }
     }
     
     await logAudit(req, {
