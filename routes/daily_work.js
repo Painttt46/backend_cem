@@ -1011,5 +1011,16 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Manual trigger workflow summary to Teams
+router.post('/trigger-workflow-summary', async (req, res) => {
+  try {
+    const { sendWorkflowSummaryToTeams } = await import('../services/workflowNotificationService.js');
+    await sendWorkflowSummaryToTeams();
+    res.json({ success: true, message: 'Workflow summary sent to Teams' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export { sendDailyWorkSummaryToTeams };
 export default router;

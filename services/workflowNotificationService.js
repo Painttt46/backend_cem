@@ -381,6 +381,10 @@ async function sendWorkflowSummaryToTeams() {
 
 // เริ่ม cron job ทุกวันจันทร์-ศุกร์ 9:00 น.
 export function startWorkflowScheduler() {
+  // ส่งทันทีเมื่อ server start
+  console.log('📢 Sending initial workflow summary to Teams...');
+  sendWorkflowSummaryToTeams();
+  
   // สรุปรายวัน + แจ้งเตือนก่อน 1 วัน 9:00 น.
   cron.schedule('0 9 * * 1-5', () => {
     console.log('🔔 Running daily workflow summary...');
@@ -803,4 +807,4 @@ async function sendDueTomorrowEmail(user, steps) {
   }
 }
 
-export { checkAndNotifyDaily, notifyDueTomorrow };
+export { checkAndNotifyDaily, notifyDueTomorrow, sendWorkflowSummaryToTeams };
