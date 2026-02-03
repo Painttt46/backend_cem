@@ -83,6 +83,23 @@ router.put('/:id', async (req, res) => {
       RETURNING *
     `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), id]);
     
+    // เช็คว่า steps ทั้งหมดเสร็จหรือยัง
+    const allSteps = await pool.query('SELECT status FROM task_steps WHERE task_id = $1', [existing.task_id]);
+    const allCompleted = allSteps.rows.length > 0 && allSteps.rows.every(s => s.status === 'completed');
+    
+    // ดึงสถานะปัจจุบันของ task
+    const taskResult = await pool.query('SELECT status, previous_status FROM tasks WHERE id = $1', [existing.task_id]);
+    const currentTaskStatus = taskResult.rows[0]?.status;
+    
+    if (allCompleted && currentTaskStatus !== 'completed') {
+      // ทุก step เสร็จ -> เปลี่ยน task เป็น completed และเก็บสถานะก่อนหน้า
+      await pool.query('UPDATE tasks SET previous_status = status, status = $1 WHERE id = $2', ['completed', existing.task_id]);
+    } else if (!allCompleted && currentTaskStatus === 'completed') {
+      // มี step ที่ยังไม่เสร็จ -> เปลี่ยนกลับเป็นสถานะก่อนหน้า
+      const prevStatus = taskResult.rows[0]?.previous_status || 'in_progress';
+      await pool.query('UPDATE tasks SET status = $1 WHERE id = $2', [prevStatus, existing.task_id]);
+    }
+    
     // ถ้าเปลี่ยนเป็น completed ให้แจ้ง step ถัดไป
     if (wasNotCompleted && finalStatus === 'completed') {
       notifyNextStep(existing.task_id, existing.step_order);
