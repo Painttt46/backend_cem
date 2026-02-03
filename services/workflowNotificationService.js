@@ -294,7 +294,7 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
     
     // ดึง workflow steps ที่ยังไม่เสร็จ
     const result = await pool.query(`
-      SELECT ts.*, t.task_name, t.so_number,
+      SELECT ts.*, t.task_name, t.so_number, t.id as task_id,
         TO_CHAR(ts.start_date, 'DD/MM') as start_fmt,
         TO_CHAR(ts.end_date, 'DD/MM') as end_fmt,
         (SELECT string_agg(u.firstname || ' ' || u.lastname, ', ')
@@ -306,7 +306,7 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       JOIN tasks t ON ts.task_id = t.id
       WHERE (ts.status IS NULL OR ts.status NOT IN ('completed', 'cancelled'))
         AND t.status NOT IN ('completed', 'cancelled', 'closed')
-      ORDER BY ts.end_date ASC NULLS LAST
+      ORDER BY t.task_name, ts.step_order ASC
     `, [today]);
 
     if (result.rows.length === 0) {
@@ -314,58 +314,72 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       return;
     }
 
-    // แยกประเภท
-    const overdue = [], urgent = [], inProgress = [];
+    // จัดกลุ่มตามโครงการ และหา priority สูงสุดของแต่ละโครงการ
+    const projects = {};
+    const actionText = action === 'create' ? '🆕 เพิ่มใหม่' : action === 'update' ? '✏️ แก้ไขล่าสุด' : '';
     
     for (const step of result.rows) {
       const isHighlighted = step.id === highlightStepId;
-      const stepData = { ...step, isHighlighted };
+      let daysLeft = null;
+      let priority = 'normal'; // normal, urgent, overdue
       
       if (step.end_date) {
-        const daysLeft = Math.ceil((new Date(step.end_date) - new Date(today)) / (1000 * 60 * 60 * 24));
-        if (daysLeft < 0) overdue.push({ ...stepData, daysLeft });
-        else if (daysLeft <= 3) urgent.push({ ...stepData, daysLeft });
-        else inProgress.push({ ...stepData, daysLeft });
-      } else {
-        inProgress.push({ ...stepData, daysLeft: null });
+        daysLeft = Math.ceil((new Date(step.end_date) - new Date(today)) / (1000 * 60 * 60 * 24));
+        if (daysLeft < 0) priority = 'overdue';
+        else if (daysLeft <= 3) priority = 'urgent';
       }
+      
+      if (!projects[step.task_id]) {
+        projects[step.task_id] = {
+          task_name: step.task_name,
+          so_number: step.so_number,
+          steps: [],
+          maxPriority: 'normal'
+        };
+      }
+      
+      // อัพเดท priority สูงสุดของโครงการ
+      if (priority === 'overdue') projects[step.task_id].maxPriority = 'overdue';
+      else if (priority === 'urgent' && projects[step.task_id].maxPriority !== 'overdue') projects[step.task_id].maxPriority = 'urgent';
+      
+      projects[step.task_id].steps.push({
+        ...step, isHighlighted, daysLeft, priority, actionText: isHighlighted ? actionText : ''
+      });
     }
 
     const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
-    const actionText = action === 'create' ? '🆕 เพิ่มใหม่' : action === 'update' ? '✏️ แก้ไขล่าสุด' : '';
     
-    const buildSection = (title, emoji, items, style) => {
-      if (items.length === 0) return [];
-      return [{
+    // สร้าง containers สำหรับแต่ละโครงการ
+    const projectContainers = Object.values(projects).map(proj => {
+      const priorityEmoji = proj.maxPriority === 'overdue' ? '🔴' : proj.maxPriority === 'urgent' ? '🟠' : '🔵';
+      const containerStyle = proj.maxPriority === 'overdue' ? 'attention' : proj.maxPriority === 'urgent' ? 'warning' : 'default';
+      
+      return {
         type: "Container",
-        style: style,
+        style: containerStyle,
         items: [
-          { type: "TextBlock", text: `${emoji} ${title} (${items.length})`, weight: "Bolder", size: "Medium" },
-          ...items.map(s => ({
+          { type: "TextBlock", text: `${priorityEmoji} ${proj.task_name}${proj.so_number ? ` (${proj.so_number})` : ''}`, weight: "Bolder", size: "Medium", wrap: true },
+          ...proj.steps.map(s => ({
             type: "Container",
             style: s.isHighlighted ? "accent" : undefined,
-            bleed: s.isHighlighted,
             items: [
-              { type: "TextBlock", text: `📋 ${s.task_name}${s.so_number ? ` (${s.so_number})` : ''} | ⚙️ ${s.step_name}${s.isHighlighted ? ` ${actionText}` : ''}`, weight: "Bolder", size: "Small", wrap: true, color: s.isHighlighted ? "Accent" : undefined },
-              { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'}${s.daysLeft !== null ? ` | ${s.daysLeft < 0 ? `เกิน ${Math.abs(s.daysLeft)} วัน` : `เหลือ ${s.daysLeft} วัน`}` : ''}`, size: "Small", spacing: "None" },
-              { type: "TextBlock", text: `👥 ${s.assignee_names || '-'} | ${s.work_count > 0 ? `✅ ลงงานแล้ว ${s.work_count} คน` : '⏳ ยังไม่มีคนลงงาน'}`, size: "Small", spacing: "None", isSubtle: true }
+              { type: "TextBlock", text: `⚙️ ${s.step_name}${s.actionText ? ` ${s.actionText}` : ''}${s.daysLeft !== null ? ` | ${s.daysLeft < 0 ? `⚠️ เกิน ${Math.abs(s.daysLeft)} วัน` : `⏳ ${s.daysLeft} วัน`}` : ''}`, weight: "Bolder", size: "Small", wrap: true, color: s.isHighlighted ? "Accent" : undefined },
+              { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'} | 👥 ${s.assignee_names || '-'} | ${s.work_count > 0 ? `✅ ${s.work_count} คน` : '⏳ รอลงงาน'}`, size: "Small", spacing: "None", isSubtle: true, wrap: true }
             ],
             spacing: "Small"
           }))
         ],
         spacing: "Medium"
-      }];
-    };
+      };
+    });
 
     const message = {
       type: "AdaptiveCard",
       version: "1.5",
       body: [
         { type: "TextBlock", text: "📊 สรุป Workflow ประจำวัน", size: "Large", weight: "Bolder", color: "Accent" },
-        { type: "TextBlock", text: `🕐 ${currentTime}`, size: "Small", isSubtle: true, spacing: "None" },
-        ...buildSection("เกินกำหนดแล้ว!", "🔴", overdue, "attention"),
-        ...buildSection("ต้องเร่ง (1-3 วัน)", "🟠", urgent, "warning"),
-        ...buildSection("กำลังดำเนินการ", "🔵", inProgress, "default")
+        { type: "TextBlock", text: `🕐 ${currentTime} | ${Object.keys(projects).length} โครงการ, ${result.rows.length} steps`, size: "Small", isSubtle: true, spacing: "None" },
+        ...projectContainers
       ],
       msteams: { width: "Full" }
     };
