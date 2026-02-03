@@ -35,6 +35,15 @@ router.post('/', async (req, res) => {
       RETURNING *
     `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description, JSON.stringify(project_statuses || [])]);
     
+    // ถ้า task เป็น completed และเพิ่ม step ใหม่ที่ยังไม่เสร็จ -> เปลี่ยนกลับเป็นสถานะก่อนหน้า
+    if (status !== 'completed') {
+      const taskResult = await pool.query('SELECT status, previous_status FROM tasks WHERE id = $1', [task_id]);
+      if (taskResult.rows[0]?.status === 'completed') {
+        const prevStatus = taskResult.rows[0]?.previous_status || 'in_progress';
+        await pool.query('UPDATE tasks SET status = $1 WHERE id = $2', [prevStatus, task_id]);
+      }
+    }
+    
     // แจ้งเตือนทันทีถ้ามีผู้รับผิดชอบ
     if (assigned_users && assigned_users.length > 0) {
       console.log(`📧 Sending notification for new step: ${step_name}`);
