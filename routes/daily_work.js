@@ -692,7 +692,7 @@ router.get('/', async (req, res) => {
         ts.end_date as step_end_date,
         ts.assigned_users as step_assigned_users,
         ts.status as step_status,
-        ts.project_status as step_project_status,
+        ts.project_statuses as step_project_statuses,
         ts.step_order as step_order,
         (
           SELECT json_agg(json_build_object(
@@ -701,7 +701,6 @@ router.get('/', async (req, res) => {
             'step_order', s.step_order,
             'status', s.status,
             'end_date', s.end_date,
-            'project_status', s.project_status,
             'project_statuses', s.project_statuses,
             'has_work_logged', EXISTS(SELECT 1 FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND d.step_ids ? s.id::text)) AND d.work_date <= CURRENT_DATE),
             'latest_work_date', (SELECT MAX(work_date) FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND d.step_ids ? s.id::text)) AND d.work_date <= CURRENT_DATE)

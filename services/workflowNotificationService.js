@@ -368,7 +368,7 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       projects[step.task_id].steps.push({
         step_name: step.step_name,
         step_order: step.step_order,
-        status: step.status || '-',
+        project_statuses: step.project_statuses || [],
         stepStatus,
         stepPriority,
         start_fmt: step.start_fmt,
@@ -406,12 +406,13 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
           { type: "TextBlock", text: `📋 ${proj.task_name}${proj.so_number ? ` (${proj.so_number})` : ''}`, weight: "Bolder", size: "Medium", wrap: true },
           ...proj.steps.map((s, idx) => {
             const stepNum = s.step_order || (idx + 1);
+            const statusText = s.project_statuses && s.project_statuses.length > 0 ? s.project_statuses.join(', ') : '-';
             return {
               type: "Container",
               style: s.isHighlighted ? "accent" : undefined,
               items: [
-                { type: "TextBlock", text: `${stepNum}. ⚙️ ${s.step_name}${s.actionText ? ` ${s.actionText}` : ''} | ${s.stepStatus}${s.daysLeft !== null && s.daysLeft >= 0 ? ` (${s.daysLeft} วัน)` : s.daysLeft < 0 ? ` (${Math.abs(s.daysLeft)} วัน)` : ''} | ${s.status}`, size: "Small", wrap: true },
-                { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'} | 👥 ${s.assignee_names || '-'}${s.work_count > 0 ? ` | ✅ ลงงาน ${s.work_count} คน` : ''}`, size: "Small", spacing: "None", isSubtle: true, wrap: true }
+                { type: "TextBlock", text: `${stepNum}. ⚙️ ${s.step_name}${s.actionText ? ` ${s.actionText}` : ''} | ${s.stepStatus}${s.daysLeft !== null && s.daysLeft >= 0 ? ` (${s.daysLeft} วัน)` : s.daysLeft < 0 ? ` (${Math.abs(s.daysLeft)} วัน)` : ''}`, size: "Small", wrap: true },
+                { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'} | 👥 ${s.assignee_names || '-'}${s.work_count > 0 ? ` | ✅ ลงงาน ${s.work_count} คน` : ''} | 📌 ${statusText}`, size: "Small", spacing: "None", isSubtle: true, wrap: true }
               ],
               spacing: "Small"
             };
