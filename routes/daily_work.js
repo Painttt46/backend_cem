@@ -681,6 +681,8 @@ router.get('/', async (req, res) => {
             'step_order', s.step_order,
             'status', s.status,
             'end_date', s.end_date,
+            'project_status', s.project_status,
+            'project_statuses', s.project_statuses,
             'has_work_logged', EXISTS(SELECT 1 FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND d.step_ids ? s.id::text)) AND d.work_date <= CURRENT_DATE),
             'latest_work_date', (SELECT MAX(work_date) FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND d.step_ids ? s.id::text)) AND d.work_date <= CURRENT_DATE)
           ) ORDER BY s.step_order)
