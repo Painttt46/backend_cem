@@ -470,4 +470,57 @@ router.get('/positions', verifyToken, async (req, res) => {
   }
 });
 
+// ========== WORKFLOW TEMPLATES ==========
+
+const ensureTemplateTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workflow_templates (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      steps JSONB NOT NULL DEFAULT '[]',
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+};
+
+router.get('/workflow-templates', async (req, res) => {
+  try {
+    await ensureTemplateTable();
+    const result = await pool.query(`
+      SELECT wt.*, u.firstname || ' ' || u.lastname as created_by_name
+      FROM workflow_templates wt
+      LEFT JOIN users u ON wt.created_by = u.id
+      ORDER BY wt.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/workflow-templates', verifyToken, async (req, res) => {
+  const { name, description, steps } = req.body;
+  try {
+    await ensureTemplateTable();
+    const result = await pool.query(
+      'INSERT INTO workflow_templates (name, description, steps, created_by) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, description, JSON.stringify(steps), req.user?.id]
+    );
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/workflow-templates/:id', verifyToken, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM workflow_templates WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
