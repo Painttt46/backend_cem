@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
-import { notifyNextStep, notifyStepUpdate, notifyNewAssignees } from '../services/workflowNotificationService.js';
+import { notifyNextStep, notifyNewAssignees } from '../services/workflowNotificationService.js';
 
 const router = express.Router();
 
