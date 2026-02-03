@@ -230,7 +230,7 @@ export function startWorkflowScheduler() {
 }
 
 // แจ้งเตือนเฉพาะผู้รับผิดชอบใหม่ที่ถูกเพิ่ม
-export async function notifyNewAssignees(stepId, taskId, newUserIds) {
+export async function notifyNewAssignees(stepId, taskId, newUserIds, isNewStep = false) {
   if (!newUserIds || newUserIds.length === 0) return;
   
   try {
@@ -243,9 +243,9 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds) {
     if (stepResult.rows.length === 0) return;
     const step = stepResult.rows[0];
     
-    // คำนวณวันที่เหลือ
+    // คำนวณวันที่เหลือ (สำหรับ step ใหม่เท่านั้น)
     const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
-    const isUrgent = daysLeft !== null && daysLeft >= 1 && daysLeft <= 3;
+    const isUrgent = isNewStep && daysLeft !== null && daysLeft >= 1 && daysLeft <= 3;
     
     // ดึงข้อมูล users
     const usersResult = await pool.query(
@@ -254,8 +254,13 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds) {
     );
     
     for (const user of usersResult.rows) {
-      // ส่ง email แจ้งงานใหม่ (ปกติ หรือ ด่วน ขึ้นอยู่กับ daysLeft)
-      await sendAssignmentEmail(user, step, isUrgent);
+      // ส่ง email แจ้งงานใหม่ (ปกติ)
+      await sendAssignmentEmail(user, step, false);
+      
+      // ถ้าเป็น step ใหม่และ urgent ส่ง email ด่วนเพิ่ม
+      if (isUrgent) {
+        await sendAssignmentEmail(user, step, true);
+      }
     }
   } catch (error) {
     console.error('Notify new assignees error:', error);

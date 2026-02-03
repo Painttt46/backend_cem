@@ -61,10 +61,10 @@ router.post('/', async (req, res) => {
       }
     }
     
-    // แจ้งเตือนผู้รับผิดชอบใหม่
+    // แจ้งเตือนผู้รับผิดชอบใหม่ (isNewStep = true เพื่อส่ง urgent email ถ้า 1-3 วัน)
     if (assigned_users && assigned_users.length > 0) {
       const newUserIds = assigned_users.map(u => typeof u === 'object' ? u.id : u).filter(Boolean);
-      notifyNewAssignees(result.rows[0].id, task_id, newUserIds);
+      notifyNewAssignees(result.rows[0].id, task_id, newUserIds, true);
     }
     
     await logAudit(req, {
