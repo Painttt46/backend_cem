@@ -314,19 +314,31 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       return;
     }
 
-    // จัดกลุ่มตามโครงการ และหา priority สูงสุดของแต่ละโครงการ
+    // จัดกลุ่มตามโครงการ
     const projects = {};
-    const actionText = action === 'create' ? '🆕 เพิ่มใหม่' : action === 'update' ? '✏️ แก้ไขล่าสุด' : '';
+    const actionText = action === 'create' ? '🆕' : action === 'update' ? '✏️' : '';
     
     for (const step of result.rows) {
       const isHighlighted = step.id === highlightStepId;
       let daysLeft = null;
-      let priority = 'normal'; // normal, urgent, overdue
+      let stepStatus = '⏳ รอดำเนินการ'; // default
+      let stepPriority = 'pending';
       
       if (step.end_date) {
         daysLeft = Math.ceil((new Date(step.end_date) - new Date(today)) / (1000 * 60 * 60 * 24));
-        if (daysLeft < 0) priority = 'overdue';
-        else if (daysLeft <= 3) priority = 'urgent';
+        if (daysLeft < 0) {
+          stepStatus = '🔴 เกินกำหนด';
+          stepPriority = 'overdue';
+        } else if (daysLeft <= 3) {
+          stepStatus = '🟠 ใกล้ครบกำหนด';
+          stepPriority = 'urgent';
+        } else if (step.work_count > 0) {
+          stepStatus = '🔄 กำลังดำเนินการ';
+          stepPriority = 'in_progress';
+        }
+      } else if (step.work_count > 0) {
+        stepStatus = '🔄 กำลังดำเนินการ';
+        stepPriority = 'in_progress';
       }
       
       if (!projects[step.task_id]) {
@@ -334,40 +346,65 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
           task_name: step.task_name,
           so_number: step.so_number,
           steps: [],
-          maxPriority: 'normal'
+          maxPriority: 'pending'
         };
       }
       
       // อัพเดท priority สูงสุดของโครงการ
-      if (priority === 'overdue') projects[step.task_id].maxPriority = 'overdue';
-      else if (priority === 'urgent' && projects[step.task_id].maxPriority !== 'overdue') projects[step.task_id].maxPriority = 'urgent';
+      const priorityOrder = { overdue: 4, urgent: 3, in_progress: 2, pending: 1 };
+      if (priorityOrder[stepPriority] > priorityOrder[projects[step.task_id].maxPriority]) {
+        projects[step.task_id].maxPriority = stepPriority;
+      }
       
       projects[step.task_id].steps.push({
-        ...step, isHighlighted, daysLeft, priority, actionText: isHighlighted ? actionText : ''
+        step_name: step.step_name,
+        step_order: step.step_order,
+        status: step.status || '-',
+        stepStatus,
+        stepPriority,
+        start_fmt: step.start_fmt,
+        end_fmt: step.end_fmt,
+        daysLeft,
+        assignee_names: step.assignee_names,
+        work_count: step.work_count,
+        isHighlighted,
+        actionText: isHighlighted ? actionText : ''
       });
     }
 
     const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
     
+    // กำหนดสีและ emoji ตาม priority
+    const getPriorityStyle = (priority) => {
+      switch(priority) {
+        case 'overdue': return { emoji: '🔴', style: 'attention', label: 'เกินกำหนด' };
+        case 'urgent': return { emoji: '🟠', style: 'warning', label: 'ใกล้ครบกำหนด' };
+        case 'in_progress': return { emoji: '🔵', style: 'accent', label: 'กำลังดำเนินการ' };
+        default: return { emoji: '⚪', style: 'default', label: 'รอดำเนินการ' };
+      }
+    };
+    
     // สร้าง containers สำหรับแต่ละโครงการ
     const projectContainers = Object.values(projects).map(proj => {
-      const priorityEmoji = proj.maxPriority === 'overdue' ? '🔴' : proj.maxPriority === 'urgent' ? '🟠' : '🔵';
-      const containerStyle = proj.maxPriority === 'overdue' ? 'attention' : proj.maxPriority === 'urgent' ? 'warning' : 'default';
+      const { emoji, style, label } = getPriorityStyle(proj.maxPriority);
       
       return {
         type: "Container",
-        style: containerStyle,
+        style: style,
         items: [
-          { type: "TextBlock", text: `${priorityEmoji} ${proj.task_name}${proj.so_number ? ` (${proj.so_number})` : ''}`, weight: "Bolder", size: "Medium", wrap: true },
-          ...proj.steps.map(s => ({
-            type: "Container",
-            style: s.isHighlighted ? "accent" : undefined,
-            items: [
-              { type: "TextBlock", text: `⚙️ ${s.step_name}${s.actionText ? ` ${s.actionText}` : ''}${s.daysLeft !== null ? ` | ${s.daysLeft < 0 ? `⚠️ เกิน ${Math.abs(s.daysLeft)} วัน` : `⏳ ${s.daysLeft} วัน`}` : ''}`, weight: "Bolder", size: "Small", wrap: true, color: s.isHighlighted ? "Accent" : undefined },
-              { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'} | 👥 ${s.assignee_names || '-'} | ${s.work_count > 0 ? `✅ ${s.work_count} คน` : '⏳ รอลงงาน'}`, size: "Small", spacing: "None", isSubtle: true, wrap: true }
-            ],
-            spacing: "Small"
-          }))
+          { type: "TextBlock", text: `${emoji} ${proj.task_name}${proj.so_number ? ` (${proj.so_number})` : ''} | ${label}`, weight: "Bolder", size: "Medium", wrap: true },
+          ...proj.steps.map(s => {
+            const stepStyle = s.stepPriority === 'overdue' ? 'Attention' : s.stepPriority === 'urgent' ? 'Warning' : s.isHighlighted ? 'Accent' : 'Default';
+            return {
+              type: "Container",
+              style: s.isHighlighted ? "accent" : undefined,
+              items: [
+                { type: "TextBlock", text: `${s.step_order}. ⚙️ ${s.step_name}${s.actionText ? ` ${s.actionText}` : ''} | ${s.stepStatus}${s.daysLeft !== null && s.daysLeft >= 0 ? ` (${s.daysLeft} วัน)` : s.daysLeft < 0 ? ` (${Math.abs(s.daysLeft)} วัน)` : ''}`, weight: "Bolder", size: "Small", wrap: true, color: stepStyle },
+                { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'} | 👥 ${s.assignee_names || '-'} | สถานะ: ${s.status}${s.work_count > 0 ? ` | ✅ ลงงาน ${s.work_count} คน` : ''}`, size: "Small", spacing: "None", isSubtle: true, wrap: true }
+              ],
+              spacing: "Small"
+            };
+          })
         ],
         spacing: "Medium"
       };
