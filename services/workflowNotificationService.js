@@ -343,31 +343,68 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds) {
 
 // ส่ง email แจ้งเตือนเมื่อถูกเพิ่มเป็นผู้รับผิดชอบ
 async function sendAssignmentEmail(user, step) {
-  const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+  const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
+  const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
   
   const html = `<!DOCTYPE html>
 <html lang="th">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f2f3f5;font-family:Arial,sans-serif;">
-  <center style="width:100%;padding:24px 12px;">
-    <table width="500" style="max-width:500px;background:#fff;border-radius:8px;overflow:hidden;">
-      <tr><td style="background:linear-gradient(135deg,#198754,#20c997);padding:24px;text-align:center;">
-        <div style="font-size:36px;">📋</div>
-        <div style="color:#fff;font-size:18px;font-weight:bold;margin-top:8px;">คุณได้รับมอบหมายงานใหม่!</div>
+<body style="margin:0;padding:0;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+  <center style="width:100%;padding:40px 16px;">
+    <table width="520" style="max-width:520px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <tr><td style="padding:40px 32px 24px;text-align:center;">
+        <div style="width:80px;height:80px;background:linear-gradient(135deg,#667eea,#764ba2);border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;">
+          <span style="font-size:40px;line-height:80px;">📋</span>
+        </div>
+        <h1 style="margin:0;font-size:24px;color:#1a1a2e;font-weight:700;">งานใหม่สำหรับคุณ!</h1>
+        <p style="margin:8px 0 0;color:#666;font-size:14px;">คุณได้รับมอบหมายงานใหม่</p>
       </td></tr>
-      <tr><td style="padding:24px;">
-        <p style="margin:0 0 16px;color:#666;">สวัสดีครับ คุณ${user.firstname},</p>
-        <p style="margin:0 0 16px;color:#333;">คุณได้รับมอบหมายให้รับผิดชอบงานต่อไปนี้:</p>
-        <table style="width:100%;background:#f8f9fa;border-radius:8px;border:1px solid #dee2e6;">
-          <tr><td style="padding:12px;color:#888;width:100px;">โครงการ</td><td style="padding:12px;font-weight:bold;">${step.task_name || '-'}</td></tr>
-          <tr style="border-top:1px solid #dee2e6;"><td style="padding:12px;color:#888;">ขั้นตอน</td><td style="padding:12px;font-weight:bold;color:#198754;">${step.step_name}</td></tr>
-          ${step.start_date ? `<tr style="border-top:1px solid #dee2e6;"><td style="padding:12px;color:#888;">เริ่มต้น</td><td style="padding:12px;">${formatDate(step.start_date)}</td></tr>` : ''}
-          ${step.end_date ? `<tr style="border-top:1px solid #dee2e6;"><td style="padding:12px;color:#888;">กำหนดเสร็จ</td><td style="padding:12px;font-weight:bold;color:#dc3545;">${formatDate(step.end_date)}</td></tr>` : ''}
-          ${step.description ? `<tr style="border-top:1px solid #dee2e6;"><td style="padding:12px;color:#888;">รายละเอียด</td><td style="padding:12px;">${step.description}</td></tr>` : ''}
-        </table>
+      
+      <tr><td style="padding:0 32px;">
+        <div style="background:linear-gradient(135deg,#f8f9ff,#f0f4ff);border-radius:12px;padding:24px;border-left:4px solid #667eea;">
+          <div style="font-size:12px;color:#667eea;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">โครงการ</div>
+          <div style="font-size:18px;color:#1a1a2e;font-weight:700;">${step.task_name || '-'}</div>
+          ${step.so_number ? `<div style="font-size:13px;color:#888;margin-top:4px;">SO: ${step.so_number}</div>` : ''}
+        </div>
       </td></tr>
-      <tr><td style="padding:24px;text-align:center;border-top:1px solid #e9ecef;">
-        <div style="color:#888;font-size:12px;">GenT-CEM Workflow Notification</div>
+      
+      <tr><td style="padding:16px 32px;">
+        <div style="background:#fff;border:2px solid #e8e8e8;border-radius:12px;padding:20px;">
+          <div style="display:flex;align-items:center;margin-bottom:16px;">
+            <span style="font-size:24px;margin-right:12px;">🎯</span>
+            <div>
+              <div style="font-size:12px;color:#888;font-weight:500;">ขั้นตอนที่ได้รับมอบหมาย</div>
+              <div style="font-size:16px;color:#667eea;font-weight:700;">${step.step_name}</div>
+            </div>
+          </div>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            ${step.start_date ? `
+            <div style="background:#f0fdf4;border-radius:8px;padding:12px;">
+              <div style="font-size:11px;color:#16a34a;font-weight:600;">📅 เริ่มต้น</div>
+              <div style="font-size:14px;color:#166534;font-weight:600;margin-top:4px;">${formatDate(step.start_date)}</div>
+            </div>` : ''}
+            ${step.end_date ? `
+            <div style="background:${daysLeft <= 3 ? '#fef2f2' : '#fff7ed'};border-radius:8px;padding:12px;">
+              <div style="font-size:11px;color:${daysLeft <= 3 ? '#dc2626' : '#ea580c'};font-weight:600;">⏰ กำหนดเสร็จ</div>
+              <div style="font-size:14px;color:${daysLeft <= 3 ? '#991b1b' : '#9a3412'};font-weight:600;margin-top:4px;">${formatDate(step.end_date)}</div>
+              ${daysLeft !== null ? `<div style="font-size:11px;color:#888;margin-top:2px;">(อีก ${daysLeft} วัน)</div>` : ''}
+            </div>` : ''}
+          </div>
+          
+          ${step.description ? `
+          <div style="margin-top:16px;padding-top:16px;border-top:1px dashed #e8e8e8;">
+            <div style="font-size:11px;color:#888;font-weight:600;margin-bottom:6px;">📝 รายละเอียด</div>
+            <div style="font-size:13px;color:#444;line-height:1.5;">${step.description}</div>
+          </div>` : ''}
+        </div>
+      </td></tr>
+      
+      <tr><td style="padding:24px 32px 32px;text-align:center;">
+        <div style="color:#888;font-size:11px;margin-top:16px;">
+          <div style="margin-bottom:4px;">GenT-CEM • Workflow Management</div>
+          <div style="color:#bbb;">อีเมลนี้ส่งอัตโนมัติ กรุณาอย่าตอบกลับ</div>
+        </div>
       </td></tr>
     </table>
   </center>
@@ -444,50 +481,58 @@ async function notifyDueTomorrow() {
 
 // ส่ง email แจ้งเตือนก่อน 1 วัน
 async function sendDueTomorrowEmail(user, steps) {
-  const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+  const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '-';
+  const tomorrow = new Date(Date.now() + 86400000);
   
   const html = `<!DOCTYPE html>
 <html lang="th">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f2f3f5;font-family:Arial,sans-serif;">
-  <center style="width:100%;padding:24px 12px;">
-    <table width="600" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden;">
-      <tr><td style="background:linear-gradient(135deg,#fd7e14,#dc3545);padding:24px;text-align:center;">
-        <div style="font-size:32px;">⏰</div>
-        <div style="color:#fff;font-size:20px;font-weight:bold;margin-top:8px;">แจ้งเตือน: งานครบกำหนดพรุ่งนี้!</div>
-        <div style="color:rgba(255,255,255,0.8);font-size:14px;margin-top:4px;">${formatDate(new Date(Date.now() + 86400000))}</div>
+<body style="margin:0;padding:0;background:linear-gradient(135deg,#ff6b6b 0%,#feca57 100%);font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+  <center style="width:100%;padding:40px 16px;">
+    <table width="560" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <tr><td style="padding:40px 32px 24px;text-align:center;background:linear-gradient(180deg,#fff8f0 0%,#fff 100%);">
+        <div style="width:90px;height:90px;background:linear-gradient(135deg,#ff6b6b,#feca57);border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;animation:pulse 2s infinite;">
+          <span style="font-size:45px;line-height:90px;">⏰</span>
+        </div>
+        <h1 style="margin:0;font-size:26px;color:#1a1a2e;font-weight:700;">งานครบกำหนดพรุ่งนี้!</h1>
+        <p style="margin:12px 0 0;color:#ff6b6b;font-size:15px;font-weight:600;">${formatDate(tomorrow)}</p>
       </td></tr>
       
-      <tr><td style="padding:16px 24px 8px;">
-        <div style="font-size:14px;color:#666;">สวัสดีครับ คุณ${user.firstname},</div>
-        <div style="font-size:14px;color:#333;margin-top:8px;">งานต่อไปนี้จะครบกำหนดในวันพรุ่งนี้:</div>
-      </td></tr>
-      
-      <tr><td style="padding:0 24px 16px;">
-        <table style="width:100%;border-collapse:collapse;background:#fff3cd;border-radius:8px;border:1px solid #ffc107;">
-          <tr style="background:#ffc107;">
-            <td style="padding:10px 12px;font-weight:bold;font-size:13px;color:#856404;">โครงการ</td>
-            <td style="padding:10px 12px;font-weight:bold;font-size:13px;color:#856404;">ขั้นตอน</td>
-            <td style="padding:10px 12px;font-weight:bold;font-size:13px;color:#856404;">กำหนดเสร็จ</td>
-          </tr>
-          ${steps.map(s => `
-            <tr style="border-top:1px solid #ffc107;">
-              <td style="padding:10px 12px;font-size:13px;">${s.task_name || '-'}</td>
-              <td style="padding:10px 12px;font-size:13px;font-weight:600;">${s.step_name}</td>
-              <td style="padding:10px 12px;font-size:13px;">${formatDate(s.end_date)}</td>
-            </tr>
-          `).join('')}
-        </table>
-      </td></tr>
-      
-      <tr><td style="padding:16px 24px;">
-        <div style="background:#f8f9fa;border-radius:6px;padding:12px;text-align:center;">
-          <span style="color:#666;font-size:13px;">กรุณาดำเนินการให้แล้วเสร็จภายในกำหนด</span>
+      <tr><td style="padding:8px 32px 24px;">
+        <div style="background:linear-gradient(135deg,#fff5f5,#fff0e6);border-radius:12px;padding:16px;text-align:center;border:2px dashed #ffb8b8;">
+          <span style="font-size:32px;font-weight:700;color:#ff6b6b;">${steps.length}</span>
+          <span style="font-size:14px;color:#666;margin-left:8px;">งานที่ต้องเสร็จ</span>
         </div>
       </td></tr>
       
-      <tr><td style="padding:24px;text-align:center;border-top:1px solid #e9ecef;">
-        <div style="color:#888;font-size:12px;">GenT-CEM Workflow Notification</div>
+      <tr><td style="padding:0 32px 24px;">
+        ${steps.map((s, i) => `
+        <div style="background:#fff;border:2px solid #f0f0f0;border-radius:12px;padding:16px;margin-bottom:${i < steps.length - 1 ? '12px' : '0'};border-left:4px solid #ff6b6b;">
+          <div style="display:flex;align-items:flex-start;">
+            <div style="width:36px;height:36px;background:linear-gradient(135deg,#ff6b6b,#feca57);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-right:12px;flex-shrink:0;">
+              <span style="color:#fff;font-weight:700;font-size:14px;">${i + 1}</span>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">${s.task_name || 'โครงการ'}</div>
+              <div style="font-size:16px;color:#1a1a2e;font-weight:700;margin-top:4px;">${s.step_name}</div>
+              ${s.description ? `<div style="font-size:12px;color:#666;margin-top:6px;line-height:1.4;">${s.description}</div>` : ''}
+            </div>
+          </div>
+        </div>
+        `).join('')}
+      </td></tr>
+      
+      <tr><td style="padding:0 32px 32px;">
+        <div style="background:linear-gradient(135deg,#667eea,#764ba2);border-radius:12px;padding:20px;text-align:center;">
+          <div style="color:#fff;font-size:14px;font-weight:500;">💪 กรุณาดำเนินการให้แล้วเสร็จภายในกำหนด</div>
+        </div>
+      </td></tr>
+      
+      <tr><td style="padding:20px 32px;text-align:center;background:#f8f9fa;">
+        <div style="color:#888;font-size:11px;">
+          <div style="margin-bottom:4px;">GenT-CEM • Workflow Management</div>
+          <div style="color:#bbb;">อีเมลนี้ส่งอัตโนมัติ กรุณาอย่าตอบกลับ</div>
+        </div>
       </td></tr>
     </table>
   </center>
@@ -498,7 +543,7 @@ async function sendDueTomorrowEmail(user, steps) {
     await transporter.sendMail({
       from: process.env.EMAIL_FROM,
       to: user.email,
-      subject: `⏰ แจ้งเตือน: ${steps.length} งานครบกำหนดพรุ่งนี้!`,
+      subject: `⏰ ด่วน! ${steps.length} งานครบกำหนดพรุ่งนี้`,
       html
     });
     console.log(`📧 Sent due tomorrow reminder to ${user.email} (${steps.length} steps)`);
