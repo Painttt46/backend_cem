@@ -286,7 +286,7 @@ export async function notifyNextStep(taskId, completedStepOrder) {
 }
 
 // ส่งสรุป workflow ไป MS Teams
-async function sendWorkflowSummaryToTeams() {
+async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null) {
   const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/772efa7dba4846248602bec0f4ec9adf/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=u_vIlVoRaHZOEJ-gEE6SXcdJ-HZPpp3KN6-y1WSoGRI';
   
   try {
@@ -298,7 +298,8 @@ async function sendWorkflowSummaryToTeams() {
         TO_CHAR(ts.start_date, 'DD/MM') as start_fmt,
         TO_CHAR(ts.end_date, 'DD/MM') as end_fmt,
         (SELECT string_agg(u.firstname || ' ' || u.lastname, ', ')
-         FROM unnest(ts.assignees) AS aid JOIN users u ON u.id = aid) as assignee_names,
+         FROM jsonb_array_elements(ts.assigned_users) AS au
+         JOIN users u ON u.id = (au->>'id')::int) as assignee_names,
         (SELECT COUNT(*) FROM daily_work_records dwr 
          WHERE dwr.step_id = ts.id AND dwr.work_date = $1) as work_count
       FROM task_steps ts
@@ -317,17 +318,21 @@ async function sendWorkflowSummaryToTeams() {
     const overdue = [], urgent = [], inProgress = [];
     
     for (const step of result.rows) {
+      const isHighlighted = step.id === highlightStepId;
+      const stepData = { ...step, isHighlighted };
+      
       if (step.end_date) {
         const daysLeft = Math.ceil((new Date(step.end_date) - new Date(today)) / (1000 * 60 * 60 * 24));
-        if (daysLeft < 0) overdue.push({ ...step, daysLeft });
-        else if (daysLeft <= 3) urgent.push({ ...step, daysLeft });
-        else inProgress.push({ ...step, daysLeft });
+        if (daysLeft < 0) overdue.push({ ...stepData, daysLeft });
+        else if (daysLeft <= 3) urgent.push({ ...stepData, daysLeft });
+        else inProgress.push({ ...stepData, daysLeft });
       } else {
-        inProgress.push({ ...step, daysLeft: null });
+        inProgress.push({ ...stepData, daysLeft: null });
       }
     }
 
     const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+    const actionText = action === 'create' ? '🆕 เพิ่มใหม่' : action === 'update' ? '✏️ แก้ไขล่าสุด' : '';
     
     const buildSection = (title, emoji, items, style) => {
       if (items.length === 0) return [];
@@ -338,8 +343,10 @@ async function sendWorkflowSummaryToTeams() {
           { type: "TextBlock", text: `${emoji} ${title} (${items.length})`, weight: "Bolder", size: "Medium" },
           ...items.map(s => ({
             type: "Container",
+            style: s.isHighlighted ? "accent" : undefined,
+            bleed: s.isHighlighted,
             items: [
-              { type: "TextBlock", text: `📋 ${s.task_name}${s.so_number ? ` (${s.so_number})` : ''} | ⚙️ ${s.step_name}`, weight: "Bolder", size: "Small", wrap: true },
+              { type: "TextBlock", text: `📋 ${s.task_name}${s.so_number ? ` (${s.so_number})` : ''} | ⚙️ ${s.step_name}${s.isHighlighted ? ` ${actionText}` : ''}`, weight: "Bolder", size: "Small", wrap: true, color: s.isHighlighted ? "Accent" : undefined },
               { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'}${s.daysLeft !== null ? ` | ${s.daysLeft < 0 ? `เกิน ${Math.abs(s.daysLeft)} วัน` : `เหลือ ${s.daysLeft} วัน`}` : ''}`, size: "Small", spacing: "None" },
               { type: "TextBlock", text: `👥 ${s.assignee_names || '-'} | ${s.work_count > 0 ? `✅ ลงงานแล้ว ${s.work_count} คน` : '⏳ ยังไม่มีคนลงงาน'}`, size: "Small", spacing: "None", isSubtle: true }
             ],

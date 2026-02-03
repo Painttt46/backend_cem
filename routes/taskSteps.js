@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
-import { notifyNextStep, notifyNewAssignees } from '../services/workflowNotificationService.js';
+import { notifyNextStep, notifyNewAssignees, sendWorkflowSummaryToTeams } from '../services/workflowNotificationService.js';
 
 const router = express.Router();
 
@@ -66,6 +66,9 @@ router.post('/', async (req, res) => {
       const newUserIds = assigned_users.map(u => typeof u === 'object' ? u.id : u).filter(Boolean);
       notifyNewAssignees(result.rows[0].id, task_id, newUserIds, true);
     }
+    
+    // แจ้ง MS Teams พร้อม mark ว่าเพิ่มใหม่
+    sendWorkflowSummaryToTeams(result.rows[0].id, 'create');
     
     await logAudit(req, {
       action: 'CREATE',
@@ -139,6 +142,9 @@ router.put('/:id', async (req, res) => {
         notifyNewAssignees(parseInt(id), existing.task_id, addedUserIds);
       }
     }
+    
+    // แจ้ง MS Teams พร้อม mark ว่าแก้ไขล่าสุด
+    sendWorkflowSummaryToTeams(parseInt(id), 'update');
     
     await logAudit(req, {
       action: 'UPDATE',
