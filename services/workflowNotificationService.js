@@ -384,29 +384,32 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       }
     };
     
-    // สร้าง containers สำหรับแต่ละโครงการ
-    const projectContainers = Object.values(projects).map(proj => {
-      const { emoji, style, label } = getPriorityStyle(proj.maxPriority);
-      
+    // สร้าง containers สำหรับแต่ละโครงการ - เรียงตาม priority
+    const sortedProjects = Object.values(projects).sort((a, b) => {
+      const order = { overdue: 1, urgent: 2, in_progress: 3, pending: 4 };
+      return order[a.maxPriority] - order[b.maxPriority];
+    });
+    
+    const projectContainers = sortedProjects.map(proj => {
       return {
         type: "Container",
-        style: style,
         items: [
-          { type: "TextBlock", text: `${emoji} ${proj.task_name}${proj.so_number ? ` (${proj.so_number})` : ''} | ${label}`, weight: "Bolder", size: "Medium", wrap: true },
-          ...proj.steps.map(s => {
-            const stepStyle = s.stepPriority === 'overdue' ? 'Attention' : s.stepPriority === 'urgent' ? 'Warning' : s.isHighlighted ? 'Accent' : 'Default';
+          { type: "TextBlock", text: `📋 ${proj.task_name}${proj.so_number ? ` (${proj.so_number})` : ''}`, weight: "Bolder", size: "Medium", wrap: true },
+          ...proj.steps.map((s, idx) => {
+            const stepNum = s.step_order || (idx + 1);
             return {
               type: "Container",
               style: s.isHighlighted ? "accent" : undefined,
               items: [
-                { type: "TextBlock", text: `${s.step_order}. ⚙️ ${s.step_name}${s.actionText ? ` ${s.actionText}` : ''} | ${s.stepStatus}${s.daysLeft !== null && s.daysLeft >= 0 ? ` (${s.daysLeft} วัน)` : s.daysLeft < 0 ? ` (${Math.abs(s.daysLeft)} วัน)` : ''}`, weight: "Bolder", size: "Small", wrap: true, color: stepStyle },
-                { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'} | 👥 ${s.assignee_names || '-'} | สถานะ: ${s.status}${s.work_count > 0 ? ` | ✅ ลงงาน ${s.work_count} คน` : ''}`, size: "Small", spacing: "None", isSubtle: true, wrap: true }
+                { type: "TextBlock", text: `${stepNum}. ⚙️ ${s.step_name}${s.actionText ? ` ${s.actionText}` : ''} | ${s.stepStatus}${s.daysLeft !== null && s.daysLeft >= 0 ? ` (${s.daysLeft} วัน)` : s.daysLeft < 0 ? ` (${Math.abs(s.daysLeft)} วัน)` : ''}`, size: "Small", wrap: true },
+                { type: "TextBlock", text: `📅 ${s.start_fmt || '-'} - ${s.end_fmt || '-'} | 👥 ${s.assignee_names || '-'}${s.work_count > 0 ? ` | ✅ ลงงาน ${s.work_count} คน` : ''}`, size: "Small", spacing: "None", isSubtle: true, wrap: true }
               ],
               spacing: "Small"
             };
           })
         ],
-        spacing: "Medium"
+        spacing: "Medium",
+        separator: true
       };
     });
 
