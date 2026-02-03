@@ -103,6 +103,20 @@ async function canUserApprove(approverId, requesterId, level) {
   }
 }
 
+// Check if user is level 2 approver
+router.get('/is-level2-approver/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const result = await pool.query(`
+      SELECT 1 FROM leave_approval_settings 
+      WHERE user_id = $1 AND approval_level = 2 AND can_approve = true
+    `, [userId]);
+    res.json({ isLevel2Approver: result.rows.length > 0 });
+  } catch (error) {
+    res.json({ isLevel2Approver: false });
+  }
+});
+
 // Teams notification function
 async function sendTeamsNotification(type, data) {
   const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/5a51a63928354152a300aa86dd237a77/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=RTyDkT4FoSgIlqjbLVUx7hkJgUl4DODurrfM1f5howw';
