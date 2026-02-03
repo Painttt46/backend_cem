@@ -243,6 +243,10 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds) {
     if (stepResult.rows.length === 0) return;
     const step = stepResult.rows[0];
     
+    // คำนวณวันที่เหลือ
+    const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+    const isUrgent = daysLeft !== null && daysLeft >= 1 && daysLeft <= 3;
+    
     // ดึงข้อมูล users
     const usersResult = await pool.query(
       'SELECT id, firstname, lastname, email FROM users WHERE id = ANY($1) AND email IS NOT NULL',
@@ -250,7 +254,8 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds) {
     );
     
     for (const user of usersResult.rows) {
-      await sendAssignmentEmail(user, step);
+      // ส่ง email แจ้งงานใหม่ (ปกติ หรือ ด่วน ขึ้นอยู่กับ daysLeft)
+      await sendAssignmentEmail(user, step, isUrgent);
     }
   } catch (error) {
     console.error('Notify new assignees error:', error);
@@ -258,13 +263,12 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds) {
 }
 
 // ส่ง email แจ้งเตือนเมื่อถูกเพิ่มเป็นผู้รับผิดชอบ
-async function sendAssignmentEmail(user, step) {
+async function sendAssignmentEmail(user, step, isUrgent = false) {
   const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
   const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
-  const urgentBg = daysLeft <= 3 ? '#fef2f2' : '#fff7ed';
-  const urgentBorder = daysLeft <= 3 ? '#fee2e2' : '#ffedd5';
-  const urgentColor = daysLeft <= 3 ? '#dc2626' : '#ea580c';
-  const urgentTextColor = daysLeft <= 3 ? '#991b1b' : '#9a3412';
+  
+  const headerIcon = isUrgent ? '🚨' : '📋';
+  const headerText = isUrgent ? `งานด่วน! เหลือ ${daysLeft} วัน` : 'งานใหม่สำหรับคุณ!';
 
   const html = `<!DOCTYPE html>
 <html lang="th">
@@ -272,152 +276,153 @@ async function sendAssignmentEmail(user, step) {
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <!--[if mso]>
-  <noscript>
-    <xml>
-      <o:OfficeDocumentSettings>
-        <o:PixelsPerInch>96</o:PixelsPerInch>
-      </o:OfficeDocumentSettings>
-    </xml>
-  </noscript>
-  <![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#f4f7f9;font-family:Tahoma,Arial,sans-serif;">
-  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#f4f7f9;">
-    <tr>
-      <td align="center" style="padding:40px 10px;">
-        <table role="presentation" width="550" border="0" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-collapse:collapse;">
-          
-          <!-- Header -->
-          <tr>
-            <td align="center" style="background-color:#4A90E2;padding:40px 20px;">
-              <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                <tr><td align="center" style="font-size:45px;line-height:1;">📋</td></tr>
-                <tr><td align="center" style="color:#ffffff;font-size:24px;font-weight:bold;padding-top:10px;">งานใหม่สำหรับคุณ!</td></tr>
-                <tr><td align="center" style="color:#ffffff;font-size:14px;padding-top:5px;">มอบหมายโดยระบบ GenT-CEM</td></tr>
-              </table>
-            </td>
-          </tr>
+<body style="margin:0;padding:0;background:#f2f3f5;">
+  <center style="width:100%;background:#f2f3f5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;">
+            
+            <!-- Logo -->
+            <tr>
+              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:28px;color:#190c86;">
+                <div>Gen T Excellency Management</div>
+              </td>
+            </tr>
 
-          <!-- Project Info -->
-          <tr>
-            <td style="padding:30px 32px 10px;">
-              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#f8faff;border-left:4px solid #4A90E2;">
-                <tr>
-                  <td style="padding:20px;">
-                    <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                      <tr><td style="font-size:11px;color:#4A90E2;font-weight:bold;text-transform:uppercase;">โครงการ</td></tr>
-                      <tr><td style="font-size:18px;color:#1a1a2e;font-weight:bold;padding-top:4px;">${step.task_name || '-'}</td></tr>
-                      ${step.so_number ? `<tr><td style="font-size:13px;color:#666666;padding-top:2px;">SO: ${step.so_number}</td></tr>` : ''}
-                    </table>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+            <!-- Header with gradient -->
+            <tr>
+              <td align="center" style="padding:0;background-color:#4A90E2;background:linear-gradient(135deg,#4A90E2,#D73527);">
+                <!--[if gte mso 9]>
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;height:120px;">
+                  <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
+                  <v:textbox inset="0,0,0,0">
+                    <div>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="120" align="center">
+                        <tr>
+                          <td align="center" valign="middle">
+                            <div style="font-family:Arial,sans-serif;font-size:40px;color:#ffffff;">${headerIcon}</div>
+                            <div style="font-family:Arial,sans-serif;font-size:24px;color:#ffffff;font-weight:bold;">${headerText}</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+                  </v:textbox>
+                </v:rect>
+                <![endif]-->
+                <!--[if !mso]><!-->
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td align="center" style="padding:25px 18px;">
+                      <div style="font-family:Arial,sans-serif;font-size:40px;color:#ffffff;">${headerIcon}</div>
+                      <div style="height:8px;"></div>
+                      <div style="font-family:Arial,sans-serif;font-size:24px;color:#ffffff;font-weight:bold;">${headerText}</div>
+                      <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;margin-top:5px;">มอบหมายโดยระบบ GenT-CEM</div>
+                    </td>
+                  </tr>
+                </table>
+                <!--<![endif]-->
+              </td>
+            </tr>
 
-          <!-- Step Details -->
-          <tr>
-            <td style="padding:10px 32px;">
-              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="border:1px solid #eef0f2;">
-                <tr>
-                  <td style="padding:20px;">
-                    <!-- Step Name -->
-                    <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td width="40" valign="top" style="font-size:24px;">🎯</td>
-                        <td valign="top">
-                          <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                            <tr><td style="font-size:12px;color:#888888;">ขั้นตอนที่ได้รับมอบหมาย</td></tr>
-                            <tr><td style="font-size:17px;color:#D73527;font-weight:bold;">${step.step_name}</td></tr>
-                          </table>
-                        </td>
-                      </tr>
-                    </table>
+            ${isUrgent ? `
+            <!-- Urgent Banner -->
+            <tr>
+              <td style="padding:15px 32px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fef2f2;border:2px solid #D73527;">
+                  <tr>
+                    <td align="center" style="padding:12px;">
+                      <div style="font-family:Arial,sans-serif;font-size:15px;color:#D73527;font-weight:bold;">⚠️ งานนี้ใกล้ครบกำหนด - เหลือเวลาอีก ${daysLeft} วัน!</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>` : ''}
 
-                    <!-- Dates -->
-                    <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:20px;">
-                      <tr>
-                        ${step.start_date ? `
-                        <td width="50%" valign="top" style="padding-right:8px;">
-                          <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#f0fdf4;border:1px solid #dcfce7;">
-                            <tr><td style="padding:12px;">
-                              <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                                <tr><td style="font-size:11px;color:#16a34a;font-weight:bold;">📅 วันที่เริ่ม</td></tr>
-                                <tr><td style="font-size:14px;color:#166534;font-weight:bold;padding-top:4px;">${formatDate(step.start_date)}</td></tr>
-                              </table>
-                            </td></tr>
-                          </table>
-                        </td>` : ''}
-                        ${step.end_date ? `
-                        <td width="50%" valign="top" style="padding-left:8px;">
-                          <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:${urgentBg};border:1px solid ${urgentBorder};">
-                            <tr><td style="padding:12px;">
-                              <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                                <tr><td style="font-size:11px;color:${urgentColor};font-weight:bold;">⏰ กำหนดส่ง</td></tr>
-                                <tr><td style="font-size:14px;color:${urgentTextColor};font-weight:bold;padding-top:4px;">${formatDate(step.end_date)}</td></tr>
-                              </table>
-                            </td></tr>
-                          </table>
-                        </td>` : ''}
-                      </tr>
-                    </table>
+            <!-- Content -->
+            <tr>
+              <td style="padding:${isUrgent ? '15px' : '28px'} 42px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b;">
+                
+                <!-- Project -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8faff;border-left:4px solid #4A90E2;margin-bottom:20px;">
+                  <tr>
+                    <td style="padding:15px;">
+                      <div style="font-size:11px;color:#4A90E2;font-weight:bold;text-transform:uppercase;">โครงการ</div>
+                      <div style="font-size:18px;color:#1a1a2e;font-weight:bold;margin-top:4px;">${step.task_name || '-'}</div>
+                      ${step.so_number ? `<div style="font-size:13px;color:#666666;margin-top:2px;">SO: ${step.so_number}</div>` : ''}
+                    </td>
+                  </tr>
+                </table>
 
-                    ${step.description ? `
-                    <!-- Description -->
-                    <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:15px;border-top:1px dashed #e2e8f0;">
-                      <tr><td style="padding-top:15px;">
-                        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                          <tr><td style="font-size:11px;color:#94a3b8;font-weight:bold;text-transform:uppercase;">📝 รายละเอียดงาน</td></tr>
-                          <tr><td style="font-size:13px;color:#475569;line-height:1.6;padding-top:5px;">${step.description}</td></tr>
-                        </table>
-                      </td></tr>
-                    </table>` : ''}
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+                <!-- Step Name -->
+                <p style="margin:0 0 8px;font-size:12px;color:#888888;">🎯 ขั้นตอนที่ได้รับมอบหมาย</p>
+                <p style="margin:0 0 18px;font-size:18px;color:#D73527;font-weight:bold;">${step.step_name}</p>
 
-          <!-- CTA -->
-          <tr>
-            <td align="center" style="padding:20px 32px 40px;">
-              <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                <tr><td style="color:#888888;font-size:12px;padding-bottom:20px;">กรุณาเข้าสู่ระบบเพื่อดำเนินการหรืออัปเดตสถานะงาน</td></tr>
-                <tr>
-                  <td align="center" style="background-color:#4A90E2;padding:12px 30px;">
-                    <a href="#" style="color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;">เข้าสู่ระบบ GenT-CEM</a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+                <!-- Dates -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    ${step.start_date ? `
+                    <td width="50%" valign="top" style="padding-right:8px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0fdf4;border:1px solid #dcfce7;">
+                        <tr><td style="padding:12px;">
+                          <div style="font-size:11px;color:#16a34a;font-weight:bold;">📅 วันที่เริ่ม</div>
+                          <div style="font-size:14px;color:#166534;font-weight:bold;margin-top:4px;">${formatDate(step.start_date)}</div>
+                        </td></tr>
+                      </table>
+                    </td>` : ''}
+                    ${step.end_date ? `
+                    <td width="50%" valign="top" style="padding-left:8px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${isUrgent ? '#fef2f2' : '#fff7ed'};border:1px solid ${isUrgent ? '#fee2e2' : '#ffedd5'};">
+                        <tr><td style="padding:12px;">
+                          <div style="font-size:11px;color:${isUrgent ? '#dc2626' : '#ea580c'};font-weight:bold;">⏰ กำหนดส่ง</div>
+                          <div style="font-size:14px;color:${isUrgent ? '#991b1b' : '#9a3412'};font-weight:bold;margin-top:4px;">${formatDate(step.end_date)}</div>
+                        </td></tr>
+                      </table>
+                    </td>` : ''}
+                  </tr>
+                </table>
 
-          <!-- Footer -->
-          <tr>
-            <td align="center" style="padding:20px;background-color:#f9fafb;border-top:1px solid #edf2f7;">
-              <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                <tr><td align="center" style="color:#999999;font-size:11px;">GenT-CEM • Workflow Management Solution</td></tr>
-                <tr><td align="center" style="color:#999999;font-size:11px;">Automated Notification - Please do not reply</td></tr>
-              </table>
-            </td>
-          </tr>
+                ${step.description ? `
+                <div style="margin-top:18px;padding-top:15px;border-top:1px dashed #e2e8f0;">
+                  <div style="font-size:11px;color:#94a3b8;font-weight:bold;text-transform:uppercase;">📝 รายละเอียดงาน</div>
+                  <div style="font-size:13px;color:#475569;line-height:1.6;margin-top:5px;">${step.description}</div>
+                </div>` : ''}
 
-        </table>
-      </td>
-    </tr>
-  </table>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="background:#14143a;padding:18px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td style="padding:6px 8px;">
+                      <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;font-weight:bold;">GenT-CEM • Workflow Management Solution</div>
+                      <div style="font-family:Arial,sans-serif;font-size:12px;color:#aaaaaa;margin-top:4px;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับ</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </center>
 </body>
 </html>`;
 
   try {
+    const subjectPrefix = isUrgent ? '🚨 ด่วน!' : '📋';
     await transporter.sendMail({
       from: process.env.EMAIL_FROM,
       to: user.email,
-      subject: `📋 งานใหม่: ${step.step_name} - ${step.task_name}`,
+      subject: `${subjectPrefix} งานใหม่: ${step.step_name} - ${step.task_name}`,
       html
     });
-    console.log(`📧 Sent assignment notification to ${user.email}`);
+    console.log(`📧 Sent ${isUrgent ? 'URGENT ' : ''}assignment notification to ${user.email}`);
   } catch (error) {
     console.error('Email send error:', error);
   }
@@ -484,22 +489,16 @@ async function sendDueTomorrowEmail(user, steps) {
   const tomorrow = new Date(Date.now() + 86400000);
   
   const stepsHtml = steps.map(s => `
-          <tr>
-            <td style="padding:0 0 15px 0;">
-              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="border:1px solid #eeeeee;">
-                <tr>
-                  <td width="5" style="background-color:#4A90E2;"></td>
-                  <td style="padding:15px 20px;">
-                    <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                      <tr><td style="font-size:11px;color:#4A90E2;font-weight:bold;text-transform:uppercase;">${s.task_name || 'Workflow'}</td></tr>
-                      <tr><td style="font-size:17px;color:#1a1a2e;font-weight:bold;padding-top:4px;">${s.step_name}</td></tr>
-                      ${s.description ? `<tr><td style="font-size:13px;color:#666666;padding-top:6px;">${s.description}</td></tr>` : ''}
-                    </table>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>`).join('');
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:15px;border:1px solid #eeeeee;">
+                  <tr>
+                    <td width="5" style="background-color:#D73527;"></td>
+                    <td style="padding:15px 20px;">
+                      <div style="font-size:11px;color:#4A90E2;font-weight:bold;text-transform:uppercase;">${s.task_name || 'Workflow'}</div>
+                      <div style="font-size:17px;color:#1a1a2e;font-weight:bold;margin-top:4px;">${s.step_name}</div>
+                      ${s.description ? `<div style="font-size:13px;color:#666666;margin-top:6px;">${s.description}</div>` : ''}
+                    </td>
+                  </tr>
+                </table>`).join('');
 
   const html = `<!DOCTYPE html>
 <html lang="th">
@@ -507,84 +506,96 @@ async function sendDueTomorrowEmail(user, steps) {
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <!--[if mso]>
-  <noscript>
-    <xml>
-      <o:OfficeDocumentSettings>
-        <o:PixelsPerInch>96</o:PixelsPerInch>
-      </o:OfficeDocumentSettings>
-    </xml>
-  </noscript>
-  <![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#f0f2f5;font-family:Tahoma,Arial,sans-serif;">
-  <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#f0f2f5;">
-    <tr>
-      <td align="center" style="padding:40px 10px;">
-        <table role="presentation" width="600" border="0" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-collapse:collapse;">
-          
-          <!-- Header -->
-          <tr>
-            <td align="center" style="background-color:#D73527;padding:45px 40px;">
-              <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                <tr><td align="center" style="font-size:50px;line-height:1;">⏰</td></tr>
-                <tr><td align="center" style="color:#ffffff;font-size:26px;font-weight:bold;padding-top:15px;">งานครบกำหนดพรุ่งนี้!</td></tr>
-                <tr><td align="center" style="color:#ffffff;font-size:16px;padding-top:10px;">${formatDate(tomorrow)}</td></tr>
-              </table>
-            </td>
-          </tr>
+<body style="margin:0;padding:0;background:#f2f3f5;">
+  <center style="width:100%;background:#f2f3f5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;">
+            
+            <!-- Logo -->
+            <tr>
+              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:28px;color:#190c86;">
+                <div>Gen T Excellency Management</div>
+              </td>
+            </tr>
 
-          <!-- Count Badge -->
-          <tr>
-            <td style="padding:30px 35px;">
-              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center" style="padding:20px;background-color:#fff5f5;border:2px dashed #D73527;">
-                    <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td style="font-size:32px;font-weight:bold;color:#D73527;">${steps.length}</td>
-                        <td style="font-size:16px;color:#666666;font-weight:bold;padding-left:10px;">รายการที่ต้องส่ง</td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
+            <!-- Header with gradient -->
+            <tr>
+              <td align="center" style="padding:0;background-color:#4A90E2;background:linear-gradient(135deg,#4A90E2,#D73527);">
+                <!--[if gte mso 9]>
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;height:130px;">
+                  <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
+                  <v:textbox inset="0,0,0,0">
+                    <div>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="130" align="center">
+                        <tr>
+                          <td align="center" valign="middle">
+                            <div style="font-family:Arial,sans-serif;font-size:44px;color:#ffffff;">⏰</div>
+                            <div style="font-family:Arial,sans-serif;font-size:24px;color:#ffffff;font-weight:bold;">งานครบกำหนดพรุ่งนี้!</div>
+                            <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;">${formatDate(tomorrow)}</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+                  </v:textbox>
+                </v:rect>
+                <![endif]-->
+                <!--[if !mso]><!-->
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td align="center" style="padding:30px 18px;">
+                      <div style="font-family:Arial,sans-serif;font-size:44px;color:#ffffff;">⏰</div>
+                      <div style="height:8px;"></div>
+                      <div style="font-family:Arial,sans-serif;font-size:24px;color:#ffffff;font-weight:bold;">งานครบกำหนดพรุ่งนี้!</div>
+                      <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;margin-top:5px;">${formatDate(tomorrow)}</div>
+                    </td>
+                  </tr>
+                </table>
+                <!--<![endif]-->
+              </td>
+            </tr>
 
-              <!-- Steps List -->
-              <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:25px;">
+            <!-- Content -->
+            <tr>
+              <td style="padding:28px 42px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b;">
+                
+                <!-- Count Badge -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:25px;">
+                  <tr>
+                    <td align="center" style="padding:20px;background-color:#fff5f5;border:2px dashed #D73527;">
+                      <span style="font-size:32px;font-weight:bold;color:#D73527;">${steps.length}</span>
+                      <span style="font-size:16px;color:#666666;font-weight:bold;margin-left:10px;">รายการที่ต้องส่ง</span>
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Steps List -->
                 ${stepsHtml}
-              </table>
-            </td>
-          </tr>
 
-          <!-- CTA -->
-          <tr>
-            <td align="center" style="padding:0 35px 40px;">
-              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
-                <tr>
-                  <td align="center" style="background-color:#4A90E2;padding:15px 30px;">
-                    <a href="#" style="color:#ffffff;font-size:17px;font-weight:bold;text-decoration:none;">💪 ตรวจสอบงานในระบบ</a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+              </td>
+            </tr>
 
-          <!-- Footer -->
-          <tr>
-            <td align="center" style="padding:25px;background-color:#f9f9f9;border-top:1px solid #f0f0f0;">
-              <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-                <tr><td align="center" style="color:#a0a0a0;font-size:12px;font-weight:bold;">GenT-CEM</td></tr>
-                <tr><td align="center" style="color:#a0a0a0;font-size:12px;">Digital Workflow Solution</td></tr>
-                <tr><td align="center" style="color:#a0a0a0;font-size:11px;padding-top:5px;">อีเมลฉบับนี้เป็นการแจ้งเตือนอัตโนมัติ กรุณาอย่าตอบกลับ</td></tr>
-              </table>
-            </td>
-          </tr>
+            <!-- Footer -->
+            <tr>
+              <td style="background:#14143a;padding:18px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td style="padding:6px 8px;">
+                      <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;font-weight:bold;">GenT-CEM • Digital Workflow Solution</div>
+                      <div style="font-family:Arial,sans-serif;font-size:12px;color:#aaaaaa;margin-top:4px;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับ</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
 
-        </table>
-      </td>
-    </tr>
-  </table>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </center>
 </body>
 </html>`;
 
