@@ -20,7 +20,6 @@ import rolePermissionsRoutes from './routes/role_permissions.js';
 import settingsRoutes from './routes/settings.js';
 import auditLogsRoutes from './routes/audit_logs.js';
 import { startCarBookingScheduler } from './services/carBookingScheduler.js';
-import { sendDailyWorkReminder } from './services/emailService.js';
 import { startWorkflowScheduler } from './services/workflowNotificationService.js';
 import { sendPendingLeaveReminders } from './services/leaveReminderService.js';
 

@@ -391,119 +391,139 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 };
 
 
-// Send daily work reminder email
-export const sendDailyWorkReminder = async (user) => {
-  const mailOptions = {
-    from: process.env.EMAIL_FROM,
-    to: user.email,
-    subject: '⏰ แจ้งเตือน: กรุณาลงบันทึกการทำงานประจำวัน - GenT-CEM',
-    html: `<!DOCTYPE html>
-<html lang="th">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-</head>
-<body style="margin:0;padding:0;background-color:#f4f4f4;">
-  <center>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
-      <tr>
-        <td align="center" style="padding:40px 20px;">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-            <tr>
-              <td style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:30px;border-radius:8px 8px 0 0;">
-                <h1 style="margin:0;color:#ffffff;font-family:Arial,sans-serif;font-size:24px;">⏰ แจ้งเตือนลงบันทึกการทำงาน</h1>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:30px;font-family:Arial,sans-serif;">
-                <p style="margin:0 0 20px;font-size:16px;color:#333;">สวัสดีคุณ <b>${user.firstname} ${user.lastname}</b>,</p>
-                <p style="margin:0 0 20px;font-size:16px;color:#333;">ระบบตรวจพบว่าคุณยังไม่ได้ลงบันทึกการทำงานประจำวันนี้</p>
-                <p style="margin:0 0 20px;font-size:16px;color:#333;">กรุณาเข้าสู่ระบบเพื่อบันทึกการทำงานของคุณ</p>
-                <div style="text-align:center;margin:30px 0;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:8080'}/daily-work" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">ลงบันทึกการทำงาน</a>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td style="background-color:#f8f9fa;padding:20px;border-radius:0 0 8px 8px;text-align:center;">
-                <p style="margin:0;font-size:12px;color:#6c757d;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับ</p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </center>
-</body>
-</html>`
-  };
-
-  try {
-    const result = await transporter.sendMail(mailOptions);
-    console.log(`Daily work reminder sent to ${user.email}:`, result.messageId);
-    return { success: true, messageId: result.messageId };
-  } catch (error) {
-    console.error(`Error sending daily work reminder to ${user.email}:`, error);
-    return { success: false, error: error.message };
-  }
-};
-
-
 // Send pending leave approval reminder to approver
 export const sendPendingLeaveReminder = async (approver, pendingLeaves) => {
   const leaveRows = pendingLeaves.map(leave => {
     const waitingDays = Math.floor((Date.now() - new Date(leave.created_at)) / (1000 * 60 * 60 * 24));
-    const urgencyColor = waitingDays >= 3 ? '#dc3545' : waitingDays >= 2 ? '#fd7e14' : '#ffc107';
+    const urgencyBg = waitingDays >= 3 ? '#fef2f2' : waitingDays >= 2 ? '#fff7ed' : '#fefce8';
+    const urgencyBorder = waitingDays >= 3 ? '#fecaca' : waitingDays >= 2 ? '#fed7aa' : '#fef08a';
+    const urgencyColor = waitingDays >= 3 ? '#dc2626' : waitingDays >= 2 ? '#ea580c' : '#ca8a04';
+    const urgencyIcon = waitingDays >= 3 ? '🔴' : waitingDays >= 2 ? '🟠' : '🟡';
+    
     return `
       <tr>
-        <td style="padding:12px;border-bottom:1px solid #eee;">${leave.employee_name}</td>
-        <td style="padding:12px;border-bottom:1px solid #eee;">${leave.leave_type_label}</td>
-        <td style="padding:12px;border-bottom:1px solid #eee;">${leave.total_days} วัน</td>
-        <td style="padding:12px;border-bottom:1px solid #eee;"><span style="background:${urgencyColor};color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold;">${waitingDays} วัน</span></td>
+        <td style="padding:0 0 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${urgencyBg};border:1px solid ${urgencyBorder};border-radius:8px;">
+            <tr>
+              <td style="padding:14px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td width="60%">
+                      <div style="font-size:15px;color:#1a1a2e;font-weight:bold;">${leave.employee_name}</div>
+                      <div style="font-size:13px;color:#666;margin-top:4px;">${leave.leave_type_label} • ${leave.total_days} วัน</div>
+                    </td>
+                    <td width="40%" align="right">
+                      <div style="display:inline-block;background:${urgencyColor};color:#fff;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:bold;">
+                        ${urgencyIcon} รอ ${waitingDays} วัน
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
       </tr>`;
   }).join('');
+
+  const hasUrgent = pendingLeaves.some(l => {
+    const days = Math.floor((Date.now() - new Date(l.created_at)) / (1000 * 60 * 60 * 24));
+    return days >= 3;
+  });
 
   const mailOptions = {
     from: process.env.EMAIL_FROM,
     to: approver.email,
-    subject: `🔔 มีใบลารออนุมัติ ${pendingLeaves.length} รายการ - GenT-CEM`,
+    subject: `${hasUrgent ? '🚨' : '🔔'} มีใบลารออนุมัติ ${pendingLeaves.length} รายการ - GenT-CEM`,
     html: `<!DOCTYPE html>
 <html lang="th">
-<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
-<body style="margin:0;padding:0;background-color:#f4f4f4;">
-  <center>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="margin:0;padding:0;background:#f2f3f5;">
+  <center style="width:100%;background:#f2f3f5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
       <tr>
-        <td align="center" style="padding:40px 20px;">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;">
+            
+            <!-- Logo -->
             <tr>
-              <td style="background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);padding:30px;border-radius:8px 8px 0 0;">
-                <h1 style="margin:0;color:#ffffff;font-family:Arial,sans-serif;font-size:24px;">🔔 แจ้งเตือนใบลารออนุมัติ</h1>
+              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:28px;color:#190c86;">
+                <div>Gen T Excellency Management</div>
               </td>
             </tr>
+
+            <!-- Header with gradient -->
             <tr>
-              <td style="padding:30px;font-family:Arial,sans-serif;">
-                <p style="margin:0 0 20px;font-size:16px;color:#333;">สวัสดีคุณ <b>${approver.firstname} ${approver.lastname}</b>,</p>
-                <p style="margin:0 0 20px;font-size:16px;color:#333;">คุณมีใบลารออนุมัติ <b style="color:#f5576c;">${pendingLeaves.length}</b> รายการ:</p>
-                <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eee;border-radius:8px;margin:20px 0;">
-                  <tr style="background:#f8f9fa;">
-                    <th style="padding:12px;text-align:left;border-bottom:2px solid #eee;">พนักงาน</th>
-                    <th style="padding:12px;text-align:left;border-bottom:2px solid #eee;">ประเภท</th>
-                    <th style="padding:12px;text-align:left;border-bottom:2px solid #eee;">จำนวน</th>
-                    <th style="padding:12px;text-align:left;border-bottom:2px solid #eee;">รอมาแล้ว</th>
+              <td align="center" style="padding:0;background-color:#f093fb;background:linear-gradient(135deg,#f093fb,#f5576c);">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td align="center" style="padding:25px 18px;">
+                      <div style="font-family:Arial,sans-serif;font-size:40px;color:#ffffff;">📋</div>
+                      <div style="height:8px;"></div>
+                      <div style="font-family:Arial,sans-serif;font-size:24px;color:#ffffff;font-weight:bold;">ใบลารออนุมัติ</div>
+                      <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;margin-top:5px;">แจ้งเตือนจากระบบ GenT-CEM</div>
+                    </td>
                   </tr>
+                </table>
+              </td>
+            </tr>
+
+            ${hasUrgent ? `
+            <!-- Urgent Banner -->
+            <tr>
+              <td style="padding:15px 32px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fef2f2;border:2px solid #dc2626;border-radius:8px;">
+                  <tr>
+                    <td align="center" style="padding:12px;">
+                      <div style="font-family:Arial,sans-serif;font-size:15px;color:#dc2626;font-weight:bold;">⚠️ มีใบลาที่รอนานเกิน 3 วัน กรุณาตรวจสอบ!</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>` : ''}
+
+            <!-- Content -->
+            <tr>
+              <td style="padding:${hasUrgent ? '15px' : '28px'} 32px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b;">
+                
+                <!-- Summary Card -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8faff;border-left:4px solid #f5576c;margin-bottom:20px;border-radius:0 8px 8px 0;">
+                  <tr>
+                    <td style="padding:15px;">
+                      <div style="font-size:11px;color:#f5576c;font-weight:bold;text-transform:uppercase;">สรุป</div>
+                      <div style="font-size:18px;color:#1a1a2e;font-weight:bold;margin-top:4px;">คุณมีใบลารออนุมัติ ${pendingLeaves.length} รายการ</div>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:0 0 8px;font-size:12px;color:#888888;">📝 รายการใบลาที่รออนุมัติ</p>
+                
+                <!-- Leave Items -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;">
                   ${leaveRows}
                 </table>
-                <div style="text-align:center;margin:30px 0;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:8080'}/leave-approval" style="background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">ไปหน้าอนุมัติใบลา</a>
-                </div>
+
               </td>
             </tr>
+
+            <!-- Footer -->
             <tr>
-              <td style="background-color:#f8f9fa;padding:20px;border-radius:0 0 8px 8px;text-align:center;">
-                <p style="margin:0;font-size:12px;color:#6c757d;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับ</p>
+              <td style="padding:20px 32px;background-color:#f8f9fa;border-top:1px solid #e9ecef;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center">
+                      <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#6c757d;">อีเมลนี้ถูกส่งโดยอัตโนมัติจากระบบ GenT-CEM</p>
+                      <p style="margin:4px 0 0;font-family:Arial,sans-serif;font-size:11px;color:#adb5bd;">โปรดอย่าตอบกลับอีเมลนี้</p>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
+
           </table>
         </td>
       </tr>
