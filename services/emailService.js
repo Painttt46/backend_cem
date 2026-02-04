@@ -447,3 +447,78 @@ export const sendDailyWorkReminder = async (user) => {
     return { success: false, error: error.message };
   }
 };
+
+
+// Send pending leave approval reminder to approver
+export const sendPendingLeaveReminder = async (approver, pendingLeaves) => {
+  const leaveRows = pendingLeaves.map(leave => {
+    const waitingDays = Math.floor((Date.now() - new Date(leave.created_at)) / (1000 * 60 * 60 * 24));
+    const urgencyColor = waitingDays >= 3 ? '#dc3545' : waitingDays >= 2 ? '#fd7e14' : '#ffc107';
+    return `
+      <tr>
+        <td style="padding:12px;border-bottom:1px solid #eee;">${leave.employee_name}</td>
+        <td style="padding:12px;border-bottom:1px solid #eee;">${leave.leave_type_label}</td>
+        <td style="padding:12px;border-bottom:1px solid #eee;">${leave.total_days} วัน</td>
+        <td style="padding:12px;border-bottom:1px solid #eee;"><span style="background:${urgencyColor};color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold;">${waitingDays} วัน</span></td>
+      </tr>`;
+  }).join('');
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to: approver.email,
+    subject: `🔔 มีใบลารออนุมัติ ${pendingLeaves.length} รายการ - GenT-CEM`,
+    html: `<!DOCTYPE html>
+<html lang="th">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;">
+  <center>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+      <tr>
+        <td align="center" style="padding:40px 20px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+            <tr>
+              <td style="background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);padding:30px;border-radius:8px 8px 0 0;">
+                <h1 style="margin:0;color:#ffffff;font-family:Arial,sans-serif;font-size:24px;">🔔 แจ้งเตือนใบลารออนุมัติ</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px;font-family:Arial,sans-serif;">
+                <p style="margin:0 0 20px;font-size:16px;color:#333;">สวัสดีคุณ <b>${approver.firstname} ${approver.lastname}</b>,</p>
+                <p style="margin:0 0 20px;font-size:16px;color:#333;">คุณมีใบลารออนุมัติ <b style="color:#f5576c;">${pendingLeaves.length}</b> รายการ:</p>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eee;border-radius:8px;margin:20px 0;">
+                  <tr style="background:#f8f9fa;">
+                    <th style="padding:12px;text-align:left;border-bottom:2px solid #eee;">พนักงาน</th>
+                    <th style="padding:12px;text-align:left;border-bottom:2px solid #eee;">ประเภท</th>
+                    <th style="padding:12px;text-align:left;border-bottom:2px solid #eee;">จำนวน</th>
+                    <th style="padding:12px;text-align:left;border-bottom:2px solid #eee;">รอมาแล้ว</th>
+                  </tr>
+                  ${leaveRows}
+                </table>
+                <div style="text-align:center;margin:30px 0;">
+                  <a href="${process.env.FRONTEND_URL || 'http://localhost:8080'}/leave-approval" style="background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);color:#ffffff;padding:12px 30px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">ไปหน้าอนุมัติใบลา</a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background-color:#f8f9fa;padding:20px;border-radius:0 0 8px 8px;text-align:center;">
+                <p style="margin:0;font-size:12px;color:#6c757d;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับ</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </center>
+</body>
+</html>`
+  };
+
+  try {
+    const result = await transporter.sendMail(mailOptions);
+    console.log(`Pending leave reminder sent to ${approver.email}:`, result.messageId);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error(`Error sending pending leave reminder to ${approver.email}:`, error);
+    return { success: false, error: error.message };
+  }
+};

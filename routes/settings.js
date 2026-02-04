@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { verifyToken } from '../middleware/auth.js';
+import { sendPendingLeaveReminders } from '../services/leaveReminderService.js';
 
 const router = express.Router();
 
@@ -519,6 +520,20 @@ router.delete('/workflow-templates/:id', verifyToken, async (req, res) => {
     await pool.query('DELETE FROM workflow_templates WHERE id = $1', [req.params.id]);
     res.json({ success: true });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manual trigger for pending leave reminders (admin only)
+router.post('/leave-approval/send-reminders', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const result = await sendPendingLeaveReminders();
+    res.json(result);
+  } catch (error) {
+    console.error('Error sending leave reminders:', error);
     res.status(500).json({ error: error.message });
   }
 });

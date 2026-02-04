@@ -22,6 +22,7 @@ import auditLogsRoutes from './routes/audit_logs.js';
 import { startCarBookingScheduler } from './services/carBookingScheduler.js';
 import { sendDailyWorkReminder } from './services/emailService.js';
 import { startWorkflowScheduler } from './services/workflowNotificationService.js';
+import { sendPendingLeaveReminders } from './services/leaveReminderService.js';
 
 dotenv.config();
 
@@ -54,6 +55,17 @@ cron.schedule('0 2 * * *', async () => {
     console.log(`[Scheduler] Deleted ${result.rowCount} old audit logs`);
   } catch (error) {
     console.error('[Scheduler] Audit logs cleanup error:', error);
+  }
+}, { timezone: 'Asia/Bangkok' });
+
+// Pending leave approval reminder - ทุกวันจันทร์-ศุกร์ เวลา 09:00 น.
+cron.schedule('0 9 * * 1-5', async () => {
+  console.log('[Scheduler] Sending pending leave reminders...');
+  try {
+    const result = await sendPendingLeaveReminders();
+    console.log(`[Scheduler] Pending leave reminders: ${result.sent || 0} sent`);
+  } catch (error) {
+    console.error('[Scheduler] Pending leave reminder error:', error);
   }
 }, { timezone: 'Asia/Bangkok' });
 
