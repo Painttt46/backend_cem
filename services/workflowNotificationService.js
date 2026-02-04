@@ -20,59 +20,150 @@ async function sendDailySummaryEmail(user, steps) {
   const { overdue, dueSoon, inProgress, newToday } = steps;
   
   if (overdue.length === 0 && dueSoon.length === 0 && inProgress.length === 0 && newToday.length === 0) {
-    return; // ไม่มีงาน ไม่ต้องส่ง
+    return;
   }
 
   const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : '-';
+  const thaiDate = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   
-  const renderSection = (title, emoji, items, color) => {
+  const renderSection = (title, emoji, items, bgColor, borderColor, textColor) => {
     if (items.length === 0) return '';
     return `
-      <tr><td style="padding:16px 24px 8px;">
-        <div style="font-size:16px;font-weight:bold;color:${color};">${emoji} ${title} (${items.length})</div>
-      </td></tr>
-      <tr><td style="padding:0 24px 16px;">
-        <table style="width:100%;border-collapse:collapse;background:#f8f9fa;border-radius:8px;">
-          <tr style="background:#e9ecef;">
-            <td style="padding:8px 12px;font-weight:bold;font-size:12px;">โครงการ</td>
-            <td style="padding:8px 12px;font-weight:bold;font-size:12px;">Step</td>
-            <td style="padding:8px 12px;font-weight:bold;font-size:12px;">กำหนด</td>
-          </tr>
-          ${items.map(s => `
-            <tr style="border-top:1px solid #dee2e6;">
-              <td style="padding:8px 12px;font-size:13px;">${s.task_name || '-'}</td>
-              <td style="padding:8px 12px;font-size:13px;font-weight:500;">${s.step_name}</td>
-              <td style="padding:8px 12px;font-size:13px;">${formatDate(s.end_date)}</td>
+      <tr>
+        <td style="padding:20px 32px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${bgColor};border-left:4px solid ${borderColor};border-radius:0 8px 8px 0;">
+            <tr>
+              <td style="padding:16px 20px;">
+                <div style="font-size:15px;font-weight:bold;color:${textColor};margin-bottom:12px;">${emoji} ${title} (${items.length})</div>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr style="background:rgba(0,0,0,0.05);">
+                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:45%;">โครงการ</td>
+                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:35%;">Step</td>
+                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:20%;text-align:center;">กำหนด</td>
+                  </tr>
+                  ${items.map(s => `
+                  <tr style="border-top:1px solid rgba(0,0,0,0.08);">
+                    <td style="padding:10px 12px;font-size:13px;color:#333;">${s.task_name || '-'}</td>
+                    <td style="padding:10px 12px;font-size:13px;color:#333;font-weight:600;">${s.step_name}</td>
+                    <td style="padding:10px 12px;font-size:13px;color:${textColor};font-weight:bold;text-align:center;">${formatDate(s.end_date)}</td>
+                  </tr>`).join('')}
+                </table>
+              </td>
             </tr>
-          `).join('')}
-        </table>
-      </td></tr>`;
+          </table>
+        </td>
+      </tr>`;
   };
+
+  const totalTasks = overdue.length + dueSoon.length + inProgress.length + newToday.length;
 
   const html = `<!DOCTYPE html>
 <html lang="th">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f2f3f5;font-family:Arial,sans-serif;">
-  <center style="width:100%;padding:24px 12px;">
-    <table width="600" style="max-width:600px;background:#fff;border-radius:8px;overflow:hidden;">
-      <tr><td style="background:linear-gradient(135deg,#4A90E2,#2563eb);padding:24px;text-align:center;">
-        <div style="font-size:32px;">📋</div>
-        <div style="color:#fff;font-size:20px;font-weight:bold;margin-top:8px;">สรุป Workflow ประจำวัน</div>
-        <div style="color:rgba(255,255,255,0.8);font-size:14px;margin-top:4px;">${new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
-      </td></tr>
-      
-      <tr><td style="padding:16px 24px 8px;">
-        <div style="font-size:14px;color:#666;">สวัสดีครับ คุณ${user.firstname},</div>
-      </td></tr>
-      
-      ${renderSection('เกินกำหนดแล้ว', '🔴', overdue, '#dc3545')}
-      ${renderSection('ใกล้ครบกำหนด (1-4 วัน)', '🟠', dueSoon, '#fd7e14')}
-      ${renderSection('กำลังดำเนินการ', '🔵', inProgress, '#0d6efd')}
-      ${renderSection('งานใหม่วันนี้', '🟢', newToday, '#198754')}
-      
-      <tr><td style="padding:24px;text-align:center;border-top:1px solid #e9ecef;">
-        <div style="color:#888;font-size:12px;">GenT-CEM Workflow Notification</div>
-      </td></tr>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="margin:0;padding:0;background:#f2f3f5;">
+  <center style="width:100%;background:#f2f3f5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+            
+            <!-- Logo -->
+            <tr>
+              <td align="center" style="padding:15px;font-family:Arial,Helvetica,sans-serif;font-size:22px;color:#190c86;border-bottom:1px solid #eee;">
+                <div>Gen T Excellency Management</div>
+              </td>
+            </tr>
+
+            <!-- Header -->
+            <tr>
+              <td align="center" style="padding:0;background-color:#4A90E2;background:linear-gradient(135deg,#4A90E2,#D73527);">
+                <!--[if gte mso 9]>
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;height:140px;">
+                  <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
+                  <v:textbox inset="0,0,0,0">
+                    <div>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="140" align="center">
+                        <tr>
+                          <td align="center" valign="middle">
+                            <div style="font-family:Arial,sans-serif;font-size:44px;color:#ffffff;">📋</div>
+                            <div style="font-family:Arial,sans-serif;font-size:24px;color:#ffffff;font-weight:bold;">สรุป Workflow ประจำวัน</div>
+                            <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;">${thaiDate}</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+                  </v:textbox>
+                </v:rect>
+                <![endif]-->
+                <!--[if !mso]><!-->
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td align="center" style="padding:30px 18px;">
+                      <div style="font-family:Arial,sans-serif;font-size:44px;color:#ffffff;">📋</div>
+                      <div style="height:8px;"></div>
+                      <div style="font-family:Arial,sans-serif;font-size:24px;color:#ffffff;font-weight:bold;">สรุป Workflow ประจำวัน</div>
+                      <div style="font-family:Arial,sans-serif;font-size:14px;color:rgba(255,255,255,0.9);margin-top:6px;">${thaiDate}</div>
+                    </td>
+                  </tr>
+                </table>
+                <!--<![endif]-->
+              </td>
+            </tr>
+
+            <!-- Greeting -->
+            <tr>
+              <td style="padding:24px 32px 0;font-family:Arial,Helvetica,sans-serif;">
+                <div style="font-size:15px;color:#555;">สวัสดีครับ <span style="color:#1a1a2e;font-weight:bold;">คุณ${user.firstname}</span>,</div>
+              </td>
+            </tr>
+
+            <!-- Summary Stats -->
+            <tr>
+              <td style="padding:16px 32px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    ${overdue.length > 0 ? `<td align="center" style="padding:8px;"><div style="background:#fee2e2;border-radius:8px;padding:12px 8px;"><div style="font-size:24px;font-weight:bold;color:#dc2626;">${overdue.length}</div><div style="font-size:11px;color:#991b1b;">เกินกำหนด</div></div></td>` : ''}
+                    ${dueSoon.length > 0 ? `<td align="center" style="padding:8px;"><div style="background:#ffedd5;border-radius:8px;padding:12px 8px;"><div style="font-size:24px;font-weight:bold;color:#ea580c;">${dueSoon.length}</div><div style="font-size:11px;color:#9a3412;">ใกล้ครบกำหนด</div></div></td>` : ''}
+                    ${inProgress.length > 0 ? `<td align="center" style="padding:8px;"><div style="background:#dbeafe;border-radius:8px;padding:12px 8px;"><div style="font-size:24px;font-weight:bold;color:#2563eb;">${inProgress.length}</div><div style="font-size:11px;color:#1e40af;">กำลังดำเนินการ</div></div></td>` : ''}
+                    ${newToday.length > 0 ? `<td align="center" style="padding:8px;"><div style="background:#dcfce7;border-radius:8px;padding:12px 8px;"><div style="font-size:24px;font-weight:bold;color:#16a34a;">${newToday.length}</div><div style="font-size:11px;color:#166534;">งานใหม่วันนี้</div></div></td>` : ''}
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Sections -->
+            ${renderSection('เกินกำหนดแล้ว', '🔴', overdue, '#fef2f2', '#dc2626', '#dc2626')}
+            ${renderSection('ใกล้ครบกำหนด (1-4 วัน)', '🟠', dueSoon, '#fff7ed', '#ea580c', '#ea580c')}
+            ${renderSection('กำลังดำเนินการ', '🔵', inProgress, '#eff6ff', '#2563eb', '#2563eb')}
+            ${renderSection('งานใหม่วันนี้', '🟢', newToday, '#f0fdf4', '#16a34a', '#16a34a')}
+
+            <!-- Spacer -->
+            <tr><td style="height:20px;"></td></tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="background:#14143a;padding:20px 32px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td>
+                      <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;font-weight:bold;">GenT-CEM • Workflow Management</div>
+                      <div style="font-family:Arial,sans-serif;font-size:12px;color:#aaaaaa;margin-top:6px;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับ</div>
+                    </td>
+                    <td align="right" style="font-family:Arial,sans-serif;font-size:11px;color:#888888;">
+                      รวม ${totalTasks} รายการ
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
     </table>
   </center>
 </body>
@@ -82,7 +173,7 @@ async function sendDailySummaryEmail(user, steps) {
     await transporter.sendMail({
       from: process.env.EMAIL_FROM,
       to: user.email,
-      subject: `📋 สรุป Workflow - ${overdue.length > 0 ? `🔴 เกินกำหนด ${overdue.length}` : `${inProgress.length + dueSoon.length + newToday.length} รายการ`}`,
+      subject: `📋 สรุป Workflow - ${overdue.length > 0 ? `🔴 เกินกำหนด ${overdue.length}` : `${totalTasks} รายการ`}`,
       html
     });
     console.log(`📧 Sent daily summary to ${user.email}`);
@@ -832,7 +923,7 @@ async function sendDueTomorrowEmail(user, steps) {
                   <tr>
                     <td align="center" style="padding:20px;background-color:#fff5f5;border:2px dashed #D73527;">
                       <span style="font-size:32px;font-weight:bold;color:#D73527;">${steps.length}</span>
-                      <span style="font-size:16px;color:#666666;font-weight:bold;margin-left:10px;">รายการที่ต้องส่ง</span>
+                      <span style="font-size:16px;color:#666666;font-weight:bold;margin-left:10px;">รายการที่ต้องทํา</span>
                     </td>
                   </tr>
                 </table>

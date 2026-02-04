@@ -225,8 +225,8 @@ async function sendDailyWorkSummaryToTeams() {
         TO_CHAR(ts.start_date, 'DD/MM/YY') as step_start_date,
         TO_CHAR(ts.end_date, 'DD/MM/YY') as step_end_date,
         (SELECT string_agg(u2.firstname || ' ' || u2.lastname, ', ')
-         FROM unnest(ts.assignees) AS aid
-         JOIN users u2 ON u2.id = aid) as step_assignees
+         FROM jsonb_array_elements(ts.assigned_users) AS au
+         JOIN users u2 ON u2.id = (au->>'id')::int) as step_assignees
       FROM daily_work_records d
       JOIN users u ON d.user_id = u.id
       LEFT JOIN task_steps ts ON d.step_id = ts.id
