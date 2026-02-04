@@ -1,4 +1,4 @@
-import pool from '../db.js';
+import pool from '../config/database.js';
 import { sendPendingLeaveReminder } from './emailService.js';
 
 const LEAVE_TYPE_LABELS = {
