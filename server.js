@@ -108,25 +108,6 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-// Debug route to test authentication
-app.get('/api/debug/auth', (req, res) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  
-  res.json({
-    hasAuthHeader: !!authHeader,
-    authHeader: authHeader,
-    hasToken: !!token,
-    token: token ? token.substring(0, 20) + '...' : null
-  });
-});
-
-// Test route without authentication
-app.get('/api/test', (req, res) => {
-  res.json({ message: 'API is working!', timestamp: new Date().toISOString() });
-});
-
-
 // Health check endpoint
 app.get("/health", async (req, res) => {
   try {

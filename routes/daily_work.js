@@ -55,34 +55,18 @@ async function sendCalendarEvent(data) {
     // Prepare attendees
     const attendees = [];
 
-    // Auto add engineers@gent-s.com
-    //attendees.push({
-      //emailAddress: {
-        //address: "engineers@gent-s.com",
-        //name: "Engineers Team"
-      //},
-      //type: "required"
-    //});
-
     if (data.attendees && data.attendees.length > 0) {
       data.attendees.forEach(attendee => {
-        // รองรับทั้ง string และ object
         const email = typeof attendee === 'string' ? attendee : attendee.email;
         const name = typeof attendee === 'string' ? attendee : (attendee.name || attendee.email);
         if (email) {
           attendees.push({
-            emailAddress: {
-              address: email,
-              name: name
-            },
+            emailAddress: { address: email, name: name },
             type: "required"
           });
         }
       });
     }
-
-    // Add meeting room as attendee if selected (not for teams_online)
-    // No meeting room attendees needed, just Teams meeting
 
     const calendarEvent = {
       subject: data.task_name,
