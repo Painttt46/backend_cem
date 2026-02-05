@@ -534,7 +534,7 @@ async function checkAndNotifyMissingWork() {
     SELECT id, firstname || ' ' || lastname as name, position, 
            COALESCE(department, 'ไม่ระบุ') as department 
     FROM users 
-    WHERE is_active = true AND role != 'admin' AND role != 'hr'
+    WHERE is_active = true AND role != 'admin'
   `);
 
   // Get users who have submitted work today
@@ -597,7 +597,7 @@ router.post('/check-missing', async (req, res) => {
       SELECT id, firstname || ' ' || lastname as name, position, 
              COALESCE(department, 'ไม่ระบุ') as department 
       FROM users 
-      WHERE (is_active IS NULL OR is_active = true) AND role != 'admin' AND role != 'hr'
+      WHERE (is_active IS NULL OR is_active = true) AND role != 'admin'
     `);
     console.log('Active users found:', activeUsersResult.rows.length);
 
