@@ -1007,3 +1007,28 @@ router.post('/trigger-workflow-summary', async (req, res) => {
 
 export { sendDailyWorkSummaryToTeams };
 export default router;
+
+// Lightweight daily work for dashboard - no subqueries
+router.get('/summary', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        dwr.id, dwr.task_id, dwr.user_id,
+        TO_CHAR(dwr.work_date, 'YYYY-MM-DD') as work_date,
+        dwr.start_time, dwr.end_time, dwr.total_hours,
+        dwr.work_status,
+        COALESCE(u.firstname || ' ' || u.lastname, 'ไม่ระบุ') as employee_name,
+        COALESCE(u.department, 'ไม่ระบุ') as employee_department,
+        t.task_name,
+        COALESCE(t.category, 'งานทั่วไป') as category
+      FROM daily_work_records dwr
+      LEFT JOIN users u ON dwr.user_id = u.id
+      LEFT JOIN tasks t ON dwr.task_id = t.id
+      ORDER BY dwr.work_date DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
