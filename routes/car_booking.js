@@ -277,8 +277,9 @@ router.get('/', async (req, res) => {
     const result = await pool.query(`
       SELECT 
         c.id, c.type, c.location, c.project, c.task_id, c.discription, c.selected_date, c.time, c.license, 
-        c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
+        c.return_name, c.return_location, c.colleagues, c.created_at, c.updated_at,
         c.return_time, c.return_date, c.status, c.user_id, c.fuel_level_borrow, c.fuel_level_return,
+        CASE WHEN c.images IS NOT NULL AND c.images != '[]'::jsonb AND c.images != 'null'::jsonb THEN true ELSE false END as has_images,
         u.firstname || ' ' || u.lastname as name,
         t.so_number, t.customer_info
       FROM car_bookings c
@@ -293,6 +294,18 @@ router.get('/', async (req, res) => {
   }
 });
 
+
+
+// Get images for a specific booking
+router.get('/:id/images', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query('SELECT images FROM car_bookings WHERE id = $1', [id]);
+    res.json(result.rows[0]?.images || []);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Create car booking record
 router.post('/', async (req, res) => {
