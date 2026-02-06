@@ -107,18 +107,15 @@ router.put('/:id', async (req, res) => {
     // Get old data for audit
     const oldResult = await pool.query('SELECT username, firstname, lastname, role, email, position, department, is_active, nickname FROM users WHERE id = $1', [id]);
     const oldData = oldResult.rows[0];
-    let query = 'UPDATE users SET username = $1, firstname = $2, lastname = $3, role = $4, email = $5, phone = $6, employee_id = $7, position = $8, department = $9, is_active = $10';
-    if (nickname) {
-      query += ', nickname = $11';
-      values.push(nickname);
-    }
-    let values = [username, firstname, lastname, role, email, phone, employee_id, position, department, is_active];
+    
+    let values = [username, firstname, lastname, role, email, phone, employee_id, position, department, is_active !== false, nickname];
+    let query = 'UPDATE users SET username = $1, firstname = $2, lastname = $3, role = $4, email = $5, phone = $6, employee_id = $7, position = $8, department = $9, is_active = $10, nickname = $11';
     
     if (password) {
-      query += ', password = $11 WHERE id = $12';
+      query += ', password = $12 WHERE id = $13';
       values.push(password, id);
     } else {
-      query += ' WHERE id = $11';
+      query += ' WHERE id = $12';
       values.push(id);
     }
     
