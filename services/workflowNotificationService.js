@@ -573,7 +573,7 @@ export function startWorkflowScheduler() {
 }
 
 // แจ้งเตือนเฉพาะผู้รับผิดชอบใหม่ที่ถูกเพิ่ม
-export async function notifyNewAssignees(stepId, taskId, newUserIds, isNewStep = false) {
+export async function notifyNewAssignees(stepId, taskId, newUserIds, isNewStep = false, createdById = null) {
   if (!newUserIds || newUserIds.length === 0) return;
   
   try {
@@ -585,6 +585,15 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds, isNewStep =
     
     if (stepResult.rows.length === 0) return;
     const step = stepResult.rows[0];
+    
+    // ดึงชื่อคนสร้าง
+    let createdByName = null;
+    if (createdById) {
+      const creatorResult = await pool.query('SELECT firstname, lastname FROM users WHERE id = $1', [createdById]);
+      if (creatorResult.rows.length > 0) {
+        createdByName = `${creatorResult.rows[0].firstname} ${creatorResult.rows[0].lastname}`;
+      }
+    }
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -606,12 +615,12 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds, isNewStep =
     );
     
     for (const user of usersResult.rows) {
-      // ส่ง email แจ้งงานใหม่ (ปกติ)
-      await sendAssignmentEmail(user, step, false);
+      // ส่ง email แจ้งงานใหม่ พร้อมชื่อคนสร้าง
+      await sendAssignmentEmail(user, step, false, createdByName);
       
       // ถ้าเป็น step ใหม่และ urgent ส่ง email ด่วนเพิ่ม
       if (isUrgent) {
-        await sendAssignmentEmail(user, step, true);
+        await sendAssignmentEmail(user, step, true, createdByName);
       }
     }
   } catch (error) {
@@ -620,12 +629,13 @@ export async function notifyNewAssignees(stepId, taskId, newUserIds, isNewStep =
 }
 
 // ส่ง email แจ้งเตือนเมื่อถูกเพิ่มเป็นผู้รับผิดชอบ
-async function sendAssignmentEmail(user, step, isUrgent = false) {
+async function sendAssignmentEmail(user, step, isUrgent = false, createdByName = null) {
   const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
   const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
   
   const headerIcon = isUrgent ? '🚨' : '📋';
   const headerText = isUrgent ? `งานด่วน! เหลือ ${daysLeft} วัน` : 'งานใหม่สำหรับคุณ!';
+  const assignedByText = createdByName ? `มอบหมายโดย ${createdByName}` : 'มอบหมายโดยระบบ GenT-CEM';
 
   const html = `<!DOCTYPE html>
 <html lang="th">
@@ -675,7 +685,7 @@ async function sendAssignmentEmail(user, step, isUrgent = false) {
                       <div style="font-family:Arial,sans-serif;font-size:40px;color:#ffffff;">${headerIcon}</div>
                       <div style="height:8px;"></div>
                       <div style="font-family:Arial,sans-serif;font-size:24px;color:#ffffff;font-weight:bold;">${headerText}</div>
-                      <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;margin-top:5px;">มอบหมายโดยระบบ GenT-CEM</div>
+                      <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;margin-top:5px;">${assignedByText}</div>
                     </td>
                   </tr>
                 </table>

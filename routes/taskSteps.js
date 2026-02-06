@@ -11,8 +11,12 @@ router.get('/all', async (req, res) => {
     const result = await pool.query(`
       SELECT ts.*, 
         EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as has_work_logged,
-        (SELECT MAX(work_date) FROM daily_work_records dwr WHERE (dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) AND work_date <= CURRENT_DATE) as latest_work_date
+        (SELECT MAX(work_date) FROM daily_work_records dwr WHERE (dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) AND work_date <= CURRENT_DATE) as latest_work_date,
+        uc.firstname || ' ' || uc.lastname as created_by_name,
+        ucp.firstname || ' ' || ucp.lastname as completed_by_name
       FROM task_steps ts
+      LEFT JOIN users uc ON ts.created_by = uc.id
+      LEFT JOIN users ucp ON ts.completed_by = ucp.id
       ORDER BY ts.task_id, ts.step_order ASC
     `);
     res.json(result.rows);
@@ -29,8 +33,12 @@ router.get('/task/:taskId', async (req, res) => {
     const result = await pool.query(`
       SELECT ts.*, 
         EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as has_work_logged,
-        (SELECT MAX(work_date) FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as latest_work_date
+        (SELECT MAX(work_date) FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as latest_work_date,
+        uc.firstname || ' ' || uc.lastname as created_by_name,
+        ucp.firstname || ' ' || ucp.lastname as completed_by_name
       FROM task_steps ts
+      LEFT JOIN users uc ON ts.created_by = uc.id
+      LEFT JOIN users ucp ON ts.completed_by = ucp.id
       WHERE ts.task_id = $1 
       ORDER BY ts.step_order ASC
     `, [taskId]);
@@ -45,12 +53,13 @@ router.get('/task/:taskId', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, project_statuses } = req.body;
+    const created_by = req.user?.id || null;
     
     const result = await pool.query(`
-      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, project_statuses)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb)
+      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, project_statuses, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10)
       RETURNING *
-    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description, JSON.stringify(project_statuses || [])]);
+    `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description, JSON.stringify(project_statuses || []), created_by]);
     
     // ถ้า task เป็น completed และเพิ่ม step ใหม่ที่ยังไม่เสร็จ -> เปลี่ยนกลับเป็นสถานะก่อนหน้า
     if (status !== 'completed') {
@@ -61,10 +70,10 @@ router.post('/', async (req, res) => {
       }
     }
     
-    // แจ้งเตือนผู้รับผิดชอบใหม่ (isNewStep = true เพื่อส่ง urgent email ถ้า 1-3 วัน)
+    // แจ้งเตือนผู้รับผิดชอบใหม่ พร้อมส่งชื่อคนสร้าง
     if (assigned_users && assigned_users.length > 0) {
       const newUserIds = assigned_users.map(u => typeof u === 'object' ? u.id : u).filter(Boolean);
-      notifyNewAssignees(result.rows[0].id, task_id, newUserIds, true);
+      notifyNewAssignees(result.rows[0].id, task_id, newUserIds, true, created_by);
     }
     
     // แจ้ง MS Teams พร้อม mark ว่าเพิ่มใหม่
@@ -104,13 +113,17 @@ router.put('/:id', async (req, res) => {
     const finalStatus = status !== undefined ? status : existing.status;
     const finalProjectStatuses = project_statuses !== undefined ? project_statuses : existing.project_statuses;
     
+    // บันทึก completed_by เมื่อเปลี่ยนเป็น completed
+    const completed_by = (wasNotCompleted && finalStatus === 'completed') ? (req.user?.id || null) : existing.completed_by;
+    
     const result = await pool.query(`
       UPDATE task_steps 
       SET step_name = $1, step_order = $2, start_date = $3, end_date = $4, 
-          assigned_users = $5::jsonb, status = $6, description = $7, project_statuses = $8::jsonb, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $9
+          assigned_users = $5::jsonb, status = $6, description = $7, project_statuses = $8::jsonb, 
+          completed_by = $9, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $10
       RETURNING *
-    `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), id]);
+    `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), completed_by, id]);
     
     // เช็คว่า steps ทั้งหมดเสร็จหรือยัง
     const allSteps = await pool.query('SELECT status FROM task_steps WHERE task_id = $1', [existing.task_id]);

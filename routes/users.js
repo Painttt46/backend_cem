@@ -23,11 +23,8 @@ router.get('/roles', verifyToken, async (req, res) => {
 // Get all users
 router.get('/', verifyToken, async (req, res) => {
   try {
-    // Add phone column if not exists
-    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20)`);
-    
     const result = await pool.query(
-      'SELECT id, username, firstname, lastname, role, email, phone, employee_id, position, department, is_active FROM users ORDER BY firstname, lastname'
+      'SELECT id, username, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname FROM users ORDER BY firstname, lastname'
     );
     
     res.json(result.rows);
@@ -40,7 +37,7 @@ router.get('/', verifyToken, async (req, res) => {
 // Create new user
 router.post('/', async (req, res) => {
   try {
-    const { username, password, firstname, lastname, role, email, phone, employee_id, position, department } = req.body;
+    const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, nickname} = req.body;
     
     if (!username || !password || !firstname || !lastname) {
       return res.status(400).json({ error: 'Required fields missing' });
@@ -50,8 +47,8 @@ router.post('/', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     
     const result = await pool.query(
-      'INSERT INTO users (username, password, firstname, lastname, role, email, phone, employee_id, position, department) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, username, firstname, lastname, role, email, phone, employee_id, position, department',
-      [username, hashedPassword, firstname, lastname, role || 'user', email, phone, employee_id, position, department]
+      'INSERT INTO users (username, password, firstname, lastname, role, email, phone, employee_id, position, department, nickname) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, username, firstname, lastname, role, email, phone, employee_id, position, department, nickname',
+      [username, hashedPassword, firstname, lastname, role || 'user', email, phone, employee_id, position, department, nickname]
     );
     
     const newUser = result.rows[0];
@@ -105,12 +102,16 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, is_active } = req.body;
+    const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname } = req.body;
     
     // Get old data for audit
-    const oldResult = await pool.query('SELECT username, firstname, lastname, role, email, position, department, is_active FROM users WHERE id = $1', [id]);
+    const oldResult = await pool.query('SELECT username, firstname, lastname, role, email, position, department, is_active, nickname FROM users WHERE id = $1', [id]);
     const oldData = oldResult.rows[0];
     let query = 'UPDATE users SET username = $1, firstname = $2, lastname = $3, role = $4, email = $5, phone = $6, employee_id = $7, position = $8, department = $9, is_active = $10';
+    if (nickname) {
+      query += ', nickname = $11';
+      values.push(nickname);
+    }
     let values = [username, firstname, lastname, role, email, phone, employee_id, position, department, is_active];
     
     if (password) {
@@ -121,7 +122,7 @@ router.put('/:id', async (req, res) => {
       values.push(id);
     }
     
-    query += ' RETURNING id, username, firstname, lastname, role, email, phone, employee_id, position, department, is_active';
+    query += ' RETURNING id, username, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname';
     
     const result = await pool.query(query, values);
     
