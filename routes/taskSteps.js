@@ -87,7 +87,12 @@ router.post('/', async (req, res) => {
       newData: { task_id, step_name, status }
     });
     
-    res.status(201).json(result.rows[0]);
+    // Return พร้อม created_by_name
+    const stepWithName = { 
+      ...result.rows[0], 
+      created_by_name: req.user ? `${req.user.firstname} ${req.user.lastname}` : null 
+    };
+    res.status(201).json(stepWithName);
   } catch (error) {
     console.error('Error creating task step:', error);
     res.status(500).json({ error: 'Failed to create task step' });
@@ -167,7 +172,14 @@ router.put('/:id', async (req, res) => {
       newData: { step_name, status: finalStatus }
     });
     
-    res.json(result.rows[0]);
+    // Return พร้อม completed_by_name
+    const stepWithName = { 
+      ...result.rows[0],
+      completed_by_name: (wasNotCompleted && finalStatus === 'completed' && req.user) 
+        ? `${req.user.firstname} ${req.user.lastname}` 
+        : existing.completed_by_name || null
+    };
+    res.json(stepWithName);
   } catch (error) {
     console.error('Error updating task step:', error);
     res.status(500).json({ error: 'Failed to update task step' });
