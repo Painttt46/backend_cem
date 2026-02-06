@@ -118,17 +118,18 @@ router.put('/:id', async (req, res) => {
     const finalStatus = status !== undefined ? status : existing.status;
     const finalProjectStatuses = project_statuses !== undefined ? project_statuses : existing.project_statuses;
     
-    // บันทึก completed_by เมื่อเปลี่ยนเป็น completed
+    // บันทึก completed_by และ completed_at เมื่อเปลี่ยนเป็น completed
     const completed_by = (wasNotCompleted && finalStatus === 'completed') ? (req.user?.id || null) : existing.completed_by;
+    const completed_at = (wasNotCompleted && finalStatus === 'completed') ? new Date() : existing.completed_at;
     
     const result = await pool.query(`
       UPDATE task_steps 
       SET step_name = $1, step_order = $2, start_date = $3, end_date = $4, 
           assigned_users = $5::jsonb, status = $6, description = $7, project_statuses = $8::jsonb, 
-          completed_by = $9, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $10
+          completed_by = $9, completed_at = $10, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $11
       RETURNING *
-    `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), completed_by, id]);
+    `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), completed_by, completed_at, id]);
     
     // เช็คว่า steps ทั้งหมดเสร็จหรือยัง
     const allSteps = await pool.query('SELECT status FROM task_steps WHERE task_id = $1', [existing.task_id]);
@@ -172,12 +173,15 @@ router.put('/:id', async (req, res) => {
       newData: { step_name, status: finalStatus }
     });
     
-    // Return พร้อม completed_by_name
+    // Return พร้อม completed_by_name และ completed_at
     const stepWithName = { 
       ...result.rows[0],
       completed_by_name: (wasNotCompleted && finalStatus === 'completed' && req.user) 
         ? `${req.user.firstname} ${req.user.lastname}` 
-        : existing.completed_by_name || null
+        : existing.completed_by_name || null,
+      completed_at: (wasNotCompleted && finalStatus === 'completed') 
+        ? completed_at 
+        : existing.completed_at
     };
     res.json(stepWithName);
   } catch (error) {
