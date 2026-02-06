@@ -198,15 +198,88 @@ router.get('/latest-fuel', async (req, res) => {
   }
 });
 
-// Get all car booking records with status calculation
+
+// Process pending bookings - update status, cancel conflicts, notify (fire-and-forget)
+async function processBookingStatuses() {
+  try {
+    await setTimezone();
+    const now = new Date();
+
+    const activeResult = await pool.query(`SELECT id, selected_date, return_date FROM car_bookings WHERE status = 'active' LIMIT 1`);
+    const activeBooking = activeResult.rows[0] || null;
+
+    const pendingResult = await pool.query(`
+      SELECT c.id, c.selected_date, c.time, c.license, c.location, c.project, c.discription,
+             c.colleagues, c.images, c.user_id, c.status, c.return_name, c.return_location,
+             c.return_time, c.return_date, c.type, c.fuel_level_borrow, c.fuel_level_return,
+             u.firstname || ' ' || u.lastname as name
+      FROM car_bookings c
+      LEFT JOIN users u ON c.user_id = u.id
+      WHERE c.status = 'pending'
+      ORDER BY c.selected_date, c.time
+    `);
+
+    for (const record of pendingResult.rows) {
+      const [hour, minute] = record.time.split(':').map(Number);
+      const borrowDateTime = new Date(record.selected_date);
+      borrowDateTime.setHours(hour, minute, 0, 0);
+      if (now < borrowDateTime) continue;
+
+      if (!activeBooking) {
+        await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
+        sendTeamsNotification('active', { ...record, status: 'active' }).catch(() => {});
+
+        const dupes = await pool.query(
+          `SELECT c.id, c.project, c.license, c.selected_date, c.time, c.user_id,
+                  u.firstname || ' ' || u.lastname as name
+           FROM car_bookings c LEFT JOIN users u ON c.user_id = u.id
+           WHERE c.id != $1 AND c.license = $2 AND c.selected_date = $3 AND c.status = 'pending'`,
+          [record.id, record.license, record.selected_date]
+        );
+        if (dupes.rows.length > 0) {
+          await pool.query(
+            `DELETE FROM car_bookings WHERE id != $1 AND license = $2 AND selected_date = $3 AND status = 'pending'`,
+            [record.id, record.license, record.selected_date]
+          );
+          for (const d of dupes.rows) {
+            sendTeamsNotification('auto_cancel_duplicate', { ...d, reason: `มีการใช้รถจริงในวันเดียวกัน (Ticket ID: ${record.id})` }).catch(() => {});
+          }
+        }
+        break;
+      } else {
+        const activeBorrowDate = new Date(activeBooking.selected_date);
+        activeBorrowDate.setHours(0, 0, 0, 0);
+        const pendingDate = new Date(record.selected_date);
+        pendingDate.setHours(0, 0, 0, 0);
+
+        if (!activeBooking.return_date && pendingDate >= activeBorrowDate) {
+          await pool.query('DELETE FROM car_bookings WHERE id = $1', [record.id]);
+          sendTeamsNotification('overdue_cancel', {
+            ...record,
+            cancellation_reason: `รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า (ใช้งานตั้งแต่ ${activeBorrowDate.toLocaleDateString('th-TH')})`
+          }).catch(() => {});
+        }
+      }
+    }
+  } catch (error) {
+    console.error('processBookingStatuses error:', error);
+  }
+}
+
+// Get all car booking records (lightweight - just fetch data)
 router.get('/', async (req, res) => {
   try {
     await setTimezone();
+
+    // Fire-and-forget: process status updates in background
+    processBookingStatuses().catch(() => {});
+
     const result = await pool.query(`
       SELECT 
         c.id, c.type, c.location, c.project, c.task_id, c.discription, c.selected_date, c.time, c.license, 
-        c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
+        c.return_name, c.return_location, c.colleagues, c.created_at, c.updated_at,
         c.return_time, c.return_date, c.status, c.user_id, c.fuel_level_borrow, c.fuel_level_return,
+        CASE WHEN c.images IS NOT NULL AND c.images != '[]'::jsonb AND c.images != 'null'::jsonb THEN true ELSE false END as has_images,
         u.firstname || ' ' || u.lastname as name,
         t.so_number, t.customer_info
       FROM car_bookings c
@@ -214,219 +287,21 @@ router.get('/', async (req, res) => {
       LEFT JOIN tasks t ON c.task_id = t.id
       ORDER BY c.created_at DESC
     `);
-    
-    // Update status based on current time with automatic cancellation
-    const now = new Date();
-    const updatedRecords = [];
-    
-    // Find active booking
-    const activeBooking = result.rows.find(record => record.status === 'active');
-    
-    // Check for pending bookings that should be cancelled due to overdue active bookings
-    if (activeBooking) {
-      const activeBorrowDate = new Date(activeBooking.selected_date);
-      activeBorrowDate.setHours(0, 0, 0, 0);
-      const activeReturnDate = activeBooking.return_date ? new Date(activeBooking.return_date) : null;
-      const now = new Date();
-      
-      // Find pending bookings that conflict with active booking
-      const conflictingPending = result.rows.filter(record => {
-        if (record.status !== 'pending') return false;
-        
-        const pendingDate = new Date(record.selected_date);
-        pendingDate.setHours(0, 0, 0, 0);
-        const pendingTime = record.time; // Format: "HH:MM"
-        const [pendingHour, pendingMin] = pendingTime.split(':').map(Number);
-        const pendingDateTime = new Date(record.selected_date);
-        pendingDateTime.setHours(pendingHour, pendingMin, 0, 0);
-        
-        // Cancel if:
-        // 1. Pending booking time has arrived (pendingDateTime <= now)
-        // 2. Active booking is still not returned (!activeReturnDate)
-        // 3. Pending booking date is same or after active booking date
-        const isPendingTimeArrived = pendingDateTime <= now;
-        const isActiveStillUsing = !activeReturnDate;
-        const isPendingAfterOrSameAsActive = pendingDate >= activeBorrowDate;
-        
-        return isPendingTimeArrived && isActiveStillUsing && isPendingAfterOrSameAsActive;
-      });
-      
-      if (conflictingPending.length > 0) {
-        
-        // Cancel conflicting pending bookings
-        for (const pendingBooking of conflictingPending) {
-          // Get booking data before deletion for Teams notification
-          const cancelledBooking = await pool.query(`
-            SELECT 
-              c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
-              c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
-              c.return_time, c.return_date, c.status, c.user_id,
-              u.firstname || ' ' || u.lastname as name
-            FROM car_bookings c
-            LEFT JOIN users u ON c.user_id = u.id
-            WHERE c.id = $1
-          `, [pendingBooking.id]);
-          
-          // Delete the pending booking
-          await pool.query('DELETE FROM car_bookings WHERE id = $1', [pendingBooking.id]);
-          
-          // Send cancellation notification with reason
-          if (cancelledBooking.rows.length > 0) {
-            const bookingData = cancelledBooking.rows[0];
-            bookingData.cancellation_reason = `รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า (ใช้งานตั้งแต่ ${activeBorrowDate.toLocaleDateString('th-TH')} ${activeReturnDate ? 'ควรคืนวันที่ ' + activeReturnDate.toLocaleDateString('th-TH') : 'ไม่ได้กำหนดวันคืน'})`;
-            await sendTeamsNotification('overdue_cancel', bookingData);
-          }
-          
-          console.log(`Pending booking ${pendingBooking.id} cancelled due to overdue active booking`);
-        }
-        
-        // Remove cancelled bookings from results
-        result.rows = result.rows.filter(record => 
-          record.status !== 'pending' || !conflictingPending.find(cb => cb.id === record.id)
-        );
-      }
-    }
-    
-    for (const record of result.rows) {
-      if (record.status === 'pending') {
-        const borrowDate = new Date(record.selected_date);
-        const [hour, minute] = record.time.split(':').map(Number);
-        const borrowDateTime = new Date(borrowDate);
-        borrowDateTime.setHours(hour, minute, 0, 0);
-        
-        if (now >= borrowDateTime) {
-          if (!activeBooking) {
-            // No active booking, can activate this one
-            await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
-            record.status = 'active';
-            
-            // Send active notification
-            await sendTeamsNotification('active', record);
-            
-            // Get and delete any other pending bookings for the same date and license
-            const conflictingBookings = await pool.query(`
-              SELECT 
-                c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
-                c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
-                c.return_time, c.return_date, c.status, c.user_id,
-                u.firstname || ' ' || u.lastname as name
-              FROM car_bookings c
-              LEFT JOIN users u ON c.user_id = u.id
-              WHERE c.id != $1 
-              AND c.license = $2 
-              AND c.selected_date = $3 
-              AND c.status = 'pending'
-            `, [record.id, record.license, record.selected_date]);
-            
-            // Delete conflicting bookings
-            if (conflictingBookings.rows.length > 0) {
-              await pool.query(`
-                DELETE FROM car_bookings 
-                WHERE id != $1 
-                AND license = $2 
-                AND selected_date = $3 
-                AND status = 'pending'
-              `, [record.id, record.license, record.selected_date]);
-              
-              // Send notification for each cancelled booking
-              for (const cancelled of conflictingBookings.rows) {
-                await sendTeamsNotification('auto_cancel_duplicate', {
-                  ...cancelled,
-                  reason: `มีการใช้รถจริงในวันเดียวกัน (Ticket ID: ${record.id})`
-                });
-              }
-            }
-            
-          } else {
-            // Check if active booking conflicts with this pending booking
-            const activeBorrowDate = new Date(activeBooking.selected_date);
-            activeBorrowDate.setHours(0, 0, 0, 0);
-            const pendingBorrowDate = new Date(borrowDate);
-            pendingBorrowDate.setHours(0, 0, 0, 0);
-            const activeReturnDate = activeBooking.return_date ? new Date(activeBooking.return_date) : null;
-            
-            // Conflict if:
-            // 1. Active booking is not returned yet AND
-            // 2. Pending booking date is same or after active booking date
-            const isPendingAfterOrSameAsActive = pendingBorrowDate >= activeBorrowDate;
-            const hasConflict = !activeReturnDate && isPendingAfterOrSameAsActive;
-            
-            if (hasConflict) {
-              // Get booking data before deletion for Teams notification
-              const cancelledBooking = await pool.query(`
-                SELECT 
-                  c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
-                  c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
-                  c.return_time, c.return_date, c.status, c.user_id,
-                  u.firstname || ' ' || u.lastname as name
-                FROM car_bookings c
-                LEFT JOIN users u ON c.user_id = u.id
-                WHERE c.id = $1
-              `, [record.id]);
-              
-              // Cancel this booking due to conflict with active booking
-              await pool.query('DELETE FROM car_bookings WHERE id = $1', [record.id]);
-              
-              // Send auto-cancel notification
-              if (cancelledBooking.rows.length > 0) {
-                await sendTeamsNotification('auto_cancel', {
-                  ...cancelledBooking.rows[0],
-                  reason: `มีรถกำลังใช้งานอยู่ (Ticket ID: ${activeBooking.id}) จนถึงวันที่จอง`
-                });
-              }
-              
-              console.log(`Booking ${record.id} cancelled due to active booking conflict (active until ${activeReturnDate || 'unknown'})`);
-              continue; // Skip adding deleted record to results
-            } else {
-              // No conflict, can activate this booking
-              await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
-              record.status = 'active';
-              
-              // Send active notification
-              await sendTeamsNotification('active', record);
-              
-              // Get and delete any other pending bookings for the same date and license
-              const conflictingBookings = await pool.query(`
-                SELECT 
-                  c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
-                  c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
-                  c.return_time, c.return_date, c.status, c.user_id,
-                  u.firstname || ' ' || u.lastname as name
-                FROM car_bookings c
-                LEFT JOIN users u ON c.user_id = u.id
-                WHERE c.id != $1 
-                AND c.license = $2 
-                AND c.selected_date = $3 
-                AND c.status = 'pending'
-              `, [record.id, record.license, record.selected_date]);
-              
-              // Delete conflicting bookings
-              if (conflictingBookings.rows.length > 0) {
-                await pool.query(`
-                  DELETE FROM car_bookings 
-                  WHERE id != $1 
-                  AND license = $2 
-                  AND selected_date = $3 
-                  AND status = 'pending'
-                `, [record.id, record.license, record.selected_date]);
-                
-                // Send notification for each cancelled booking
-                for (const cancelled of conflictingBookings.rows) {
-                  await sendTeamsNotification('auto_cancel_duplicate', {
-                    ...cancelled,
-                    reason: `มีการใช้รถจริงในวันเดียวกัน (Ticket ID: ${record.id})`
-                  });
-                }
-              }
-            }
-            continue; // Skip adding to results
-          }
-        }
-      }
-      updatedRecords.push(record);
-    }
-    
-    res.json(updatedRecords);
+
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+
+// Get images for a specific booking
+router.get('/:id/images', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query('SELECT images FROM car_bookings WHERE id = $1', [id]);
+    res.json(result.rows[0]?.images || []);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -7,20 +7,6 @@ const router = express.Router();
 // Get all tasks with latest status from daily work
 router.get('/', async (req, res) => {
   try {
-    // เพิ่ม column files และ status ถ้ายังไม่มี
-    await pool.query(`
-      ALTER TABLE tasks 
-      ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]'
-    `);
-    await pool.query(`
-      ALTER TABLE tasks 
-      ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending'
-    `);
-    await pool.query(`
-      ALTER TABLE tasks 
-      ADD COLUMN IF NOT EXISTS customer_info VARCHAR(255)
-    `);
-    
     const result = await pool.query(`
       SELECT 
         t.id, t.task_name, t.so_number, t.contract_number, t.sale_owner, t.customer_info,

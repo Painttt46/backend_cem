@@ -539,3 +539,17 @@ router.post('/leave-approval/send-reminders', verifyToken, async (req, res) => {
 });
 
 export default router;
+
+// Dashboard summary - single query for counts
+router.get('/dashboard-summary', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM car_bookings WHERE status = 'active') as active_cars
+    `);
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+

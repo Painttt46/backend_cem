@@ -913,15 +913,6 @@ router.delete('/holidays/:id', async (req, res) => {
 // Get all leave requests
 router.get('/', async (req, res) => {
   try {
-    // Ensure columns exist
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1_id INTEGER`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2_id INTEGER`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_by TEXT`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_level INTEGER`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS reject_reason TEXT`);
 
     const result = await pool.query(`
       SELECT 
