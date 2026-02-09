@@ -49,7 +49,7 @@ services:
       - DB_NAME=SOCC
       - DB_PORT=5432
       - JWT_SECRET=gent-cem-secret-key-2025-change-this-in-production
-      - JWT_EXPIRES_IN=1h
+      - JWT_EXPIRES_IN=3h
       - NODE_ENV=production
       - TZ=Asia/Bangkok
       - EMAIL_HOST=smtp.gmail.com
