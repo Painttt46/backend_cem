@@ -338,29 +338,182 @@ export async function notifyNextStep(taskId, completedStepOrder) {
     if (result.rows.length > 0) {
       const step = result.rows[0];
       const emails = [...new Set(result.rows.map(r => r.email).filter(Boolean))];
+      const firstnames = [...new Set(result.rows.map(r => r.firstname).filter(Boolean))];
       
       if (emails.length > 0) {
+        const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
+        const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+        const isUrgent = daysLeft !== null && daysLeft <= 3;
+
         const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#f2f3f5;font-family:Arial,sans-serif;">
-  <center style="padding:24px;">
-    <table width="500" style="background:#fff;border-radius:8px;overflow:hidden;">
-      <tr><td style="background:#198754;padding:20px;text-align:center;">
-        <div style="font-size:36px;">🚀</div>
-        <div style="color:#fff;font-size:18px;font-weight:bold;">ถึงคิวงานของคุณแล้ว!</div>
-      </td></tr>
-      <tr><td style="padding:24px;">
-        <p style="margin:0 0 12px;color:#666;">Step ก่อนหน้าเสร็จแล้ว งานต่อไปนี้พร้อมให้คุณดำเนินการ:</p>
-        <table style="width:100%;background:#f8f9fa;border-radius:6px;padding:12px;">
-          <tr><td style="padding:8px;color:#888;">โครงการ</td><td style="padding:8px;font-weight:bold;">${step.task_name}</td></tr>
-          <tr><td style="padding:8px;color:#888;">Step</td><td style="padding:8px;font-weight:bold;">${step.step_name}</td></tr>
-          ${step.end_date ? `<tr><td style="padding:8px;color:#888;">กำหนดเสร็จ</td><td style="padding:8px;">${new Date(step.end_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</td></tr>` : ''}
-        </table>
-      </td></tr>
-      <tr><td style="padding:16px 24px;text-align:center;border-top:1px solid #e9ecef;color:#888;font-size:12px;">GenT-CEM</td></tr>
+<html lang="th" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta http-equiv="x-ua-compatible" content="ie=edge" />
+  <title>ถึงคิวงานของคุณ</title>
+  <!--[if mso]>
+  <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch><o:AllowPNG/></o:OfficeDocumentSettings></xml>
+  <![endif]-->
+  <style>
+    html,body{margin:0!important;padding:0!important;height:100%!important;width:100%!important}
+    *{-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%}
+    table,td{mso-table-lspace:0pt!important;mso-table-rspace:0pt!important;border-collapse:collapse!important}
+    img{-ms-interpolation-mode:bicubic;border:0;outline:none;text-decoration:none}
+    a{text-decoration:none}
+    @media screen and (max-width:600px){
+      .container{width:100%!important}
+      .px{padding-left:18px!important;padding-right:18px!important}
+      .h1{font-size:22px!important;line-height:28px!important}
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background:#f2f3f5;">
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+    Step ก่อนหน้าเสร็จแล้ว - ${step.step_name}
+  </div>
+  <center style="width:100%;background:#f2f3f5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;">
+
+            <!-- Logo -->
+            <tr>
+              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:28px;color:#190c86;">
+                <div>Gen T Excellency Management</div>
+              </td>
+            </tr>
+
+            <!-- Hero -->
+            <tr>
+              <td align="center" style="padding:0;background-color:#4A90E2;background:linear-gradient(135deg,#4A90E2,#D73527);">
+                <!--[if gte mso 9]>
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false" style="width:600px;height:160px;">
+                  <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
+                  <v:textbox inset="0,0,0,0" style="mso-fit-shape-to-text:false">
+                    <div>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="160" align="center">
+                        <tr>
+                          <td align="center" valign="middle" style="padding:30px 18px;">
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:48px;line-height:48px;color:#ffffff;text-align:center;">🚀</div>
+                            <div style="height:12px;line-height:12px;font-size:12px;">&nbsp;</div>
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;font-weight:bold;color:#ffffff;">ถึงคิวงานของคุณแล้ว!</div>
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:rgba(255,255,255,0.9);margin-top:6px;">Step ก่อนหน้าดำเนินการเสร็จสิ้นแล้ว</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+                  </v:textbox>
+                </v:rect>
+                <![endif]-->
+                <!--[if !mso]><!-->
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td align="center" style="padding:30px 18px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:48px;line-height:48px;color:#ffffff;text-align:center;">🚀</div>
+                      <div style="height:12px;"></div>
+                      <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;color:#ffffff;font-weight:bold;">ถึงคิวงานของคุณแล้ว!</div>
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:rgba(255,255,255,0.9);margin-top:6px;">Step ก่อนหน้าดำเนินการเสร็จสิ้นแล้ว</div>
+                    </td>
+                  </tr>
+                </table>
+                <!--<![endif]-->
+              </td>
+            </tr>
+
+            ${isUrgent ? `
+            <!-- Urgent Banner -->
+            <tr>
+              <td style="padding:15px 32px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fef2f2;border:2px solid #D73527;border-radius:8px;">
+                  <tr>
+                    <td align="center" style="padding:12px;">
+                      <div style="font-family:Arial,sans-serif;font-size:15px;color:#D73527;font-weight:bold;">⚠️ งานนี้ใกล้ครบกำหนด - เหลือเวลาอีก ${daysLeft} วัน!</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>` : ''}
+
+            <!-- Body -->
+            <tr>
+              <td class="px" style="padding:${isUrgent ? '15px' : '28px'} 42px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b;">
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">สวัสดี, <b>${firstnames.join(', ')}</b></p>
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">งานต่อไปนี้พร้อมให้คุณดำเนินการแล้ว:</p>
+
+                <!-- Project Card -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8faff;border-left:4px solid #4A90E2;margin-bottom:20px;border-radius:0 8px 8px 0;">
+                  <tr>
+                    <td style="padding:15px;">
+                      <div style="font-size:11px;color:#4A90E2;font-weight:bold;text-transform:uppercase;">โครงการ</div>
+                      <div style="font-size:18px;color:#1a1a2e;font-weight:bold;margin-top:4px;">${step.task_name}</div>
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Step Name -->
+                <p style="margin:0 0 8px;font-size:12px;color:#888888;">🎯 ขั้นตอนที่ต้องดำเนินการ</p>
+                <p style="margin:0 0 18px;font-size:18px;color:#D73527;font-weight:bold;">${step.step_name}</p>
+
+                <!-- Dates -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    ${step.start_date ? `
+                    <td width="50%" valign="top" style="padding-right:8px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0fdf4;border:1px solid #dcfce7;border-radius:8px;">
+                        <tr><td style="padding:12px;">
+                          <div style="font-size:11px;color:#16a34a;font-weight:bold;">📅 วันที่เริ่ม</div>
+                          <div style="font-size:14px;color:#166534;font-weight:bold;margin-top:4px;">${formatDate(step.start_date)}</div>
+                        </td></tr>
+                      </table>
+                    </td>` : ''}
+                    ${step.end_date ? `
+                    <td width="50%" valign="top" style="padding-left:8px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${isUrgent ? '#fef2f2' : '#fff7ed'};border:1px solid ${isUrgent ? '#fee2e2' : '#ffedd5'};border-radius:8px;">
+                        <tr><td style="padding:12px;">
+                          <div style="font-size:11px;color:${isUrgent ? '#dc2626' : '#ea580c'};font-weight:bold;">⏰ กำหนดส่ง</div>
+                          <div style="font-size:14px;color:${isUrgent ? '#991b1b' : '#9a3412'};font-weight:bold;margin-top:4px;">${formatDate(step.end_date)}</div>
+                        </td></tr>
+                      </table>
+                    </td>` : ''}
+                  </tr>
+                </table>
+
+                ${step.description ? `
+                <div style="margin-top:18px;padding-top:15px;border-top:1px dashed #e2e8f0;">
+                  <div style="font-size:11px;color:#94a3b8;font-weight:bold;text-transform:uppercase;">📝 รายละเอียดงาน</div>
+                  <div style="font-size:13px;color:#475569;line-height:1.6;margin-top:5px;">${step.description}</div>
+                </div>` : ''}
+
+                <p style="margin:18px 0;font-size:16px;line-height:26px;">
+                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to Login Internal</a> | <a style="color:#4a90e2;" href="http://61.91.51.126:3000/login" target="_blank">Click to Login External</a>
+                </p>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="background:#14143a;padding:18px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td style="padding:6px 8px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#ffffff;font-weight:700;">GenT-CEM • Workflow Management Solution</div>
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#aaaaaa;margin-top:4px;">อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับ</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
     </table>
   </center>
-</body></html>`;
+</body>
+</html>`;
 
         await transporter.sendMail({
           from: process.env.EMAIL_FROM,
