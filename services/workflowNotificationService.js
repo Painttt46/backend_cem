@@ -390,17 +390,16 @@ export async function notifyNextStep(taskId, completedStepOrder) {
             <tr>
               <td align="center" style="padding:0;background-color:#4A90E2;background:linear-gradient(135deg,#4A90E2,#D73527);">
                 <!--[if gte mso 9]>
-                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false" style="width:600px;height:160px;">
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false" style="width:600px;height:120px;">
                   <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
                   <v:textbox inset="0,0,0,0" style="mso-fit-shape-to-text:false">
                     <div>
-                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="160" align="center">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="120" align="center">
                         <tr>
-                          <td align="center" valign="middle" style="padding:30px 18px;">
-                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:48px;line-height:48px;color:#ffffff;text-align:center;">🚀</div>
-                            <div style="height:12px;line-height:12px;font-size:12px;">&nbsp;</div>
-                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;font-weight:bold;color:#ffffff;">ถึงคิวงานของคุณแล้ว!</div>
-                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:rgba(255,255,255,0.9);margin-top:6px;">Step ก่อนหน้าดำเนินการเสร็จสิ้นแล้ว</div>
+                          <td align="center" valign="middle" style="padding:20px 18px;">
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:40px;line-height:40px;color:#ffffff;text-align:center;">🚀</div>
+                            <div style="height:8px;line-height:8px;font-size:8px;">&nbsp;</div>
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;font-weight:bold;color:#ffffff;">ถึงคิวงานของคุณแล้ว!</div>
                           </td>
                         </tr>
                       </table>
@@ -411,11 +410,10 @@ export async function notifyNextStep(taskId, completedStepOrder) {
                 <!--[if !mso]><!-->
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                   <tr>
-                    <td align="center" style="padding:30px 18px;">
-                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:48px;line-height:48px;color:#ffffff;text-align:center;">🚀</div>
-                      <div style="height:12px;"></div>
-                      <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;color:#ffffff;font-weight:bold;">ถึงคิวงานของคุณแล้ว!</div>
-                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:rgba(255,255,255,0.9);margin-top:6px;">Step ก่อนหน้าดำเนินการเสร็จสิ้นแล้ว</div>
+                    <td align="center" style="padding:20px 18px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:40px;line-height:40px;color:#ffffff;text-align:center;">🚀</div>
+                      <div style="height:8px;"></div>
+                      <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;color:#ffffff;font-weight:bold;">ถึงคิวงานของคุณแล้ว!</div>
                     </td>
                   </tr>
                 </table>
@@ -487,9 +485,6 @@ export async function notifyNextStep(taskId, completedStepOrder) {
                   <div style="font-size:13px;color:#475569;line-height:1.6;margin-top:5px;">${step.description}</div>
                 </div>` : ''}
 
-                <p style="margin:18px 0;font-size:16px;line-height:26px;">
-                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to Login Internal</a> | <a style="color:#4a90e2;" href="http://61.91.51.126:3000/login" target="_blank">Click to Login External</a>
-                </p>
               </td>
             </tr>
 
