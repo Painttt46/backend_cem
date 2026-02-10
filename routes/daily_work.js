@@ -529,12 +529,12 @@ async function checkAndNotifyMissingWork() {
     allCompleteNotifiedDate = null;
   }
 
-  // Get all active users (exclude admin role)
+  // Get all active engineers only
   const activeUsersResult = await pool.query(`
     SELECT id, firstname || ' ' || lastname as name, position, 
            COALESCE(department, 'ไม่ระบุ') as department 
     FROM users 
-    WHERE is_active = true AND role != 'admin' AND role != 'hr'
+    WHERE is_active = true AND role = 'engineer'
   `);
 
   // Get users who have submitted work today
@@ -592,14 +592,14 @@ router.post('/check-missing', async (req, res) => {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     console.log('Checking missing work for date:', today);
 
-    // Get all active users (include NULL as active, exclude admin role)
+    // Get all active engineers only
     const activeUsersResult = await pool.query(`
       SELECT id, firstname || ' ' || lastname as name, position, 
              COALESCE(department, 'ไม่ระบุ') as department 
       FROM users 
-      WHERE (is_active IS NULL OR is_active = true) AND role != 'admin' AND role != 'hr'
+      WHERE (is_active IS NULL OR is_active = true) AND role = 'engineer'
     `);
-    console.log('Active users found:', activeUsersResult.rows.length);
+    console.log('Active engineers found:', activeUsersResult.rows.length);
 
     // Get users who have submitted work today
     const submittedUsersResult = await pool.query(`
