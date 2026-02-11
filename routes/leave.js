@@ -1278,4 +1278,136 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Request cancellation (for approved leaves)
+router.post('/:id/request-cancel', async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
+    if (!token) return res.status(401).json({ error: 'No token provided' });
+
+    let userId;
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      userId = decoded.userId;
+    } catch (e) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    // ตรวจสอบคำขอลา
+    const checkResult = await pool.query(
+      'SELECT * FROM leave_requests WHERE id = $1',
+      [id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Leave request not found' });
+    }
+
+    const leaveRequest = checkResult.rows[0];
+
+    if (leaveRequest.user_id != userId) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    if (leaveRequest.status !== 'approved') {
+      return res.status(400).json({ error: 'Can only cancel approved leaves' });
+    }
+
+    // ตรวจสอบว่ายังไม่ถึงวันลา
+    const startDate = new Date(leaveRequest.start_datetime);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    startDate.setHours(0, 0, 0, 0);
+
+    if (startDate <= today) {
+      return res.status(400).json({ error: 'Cannot cancel leave that has already started' });
+    }
+
+    // เพิ่มคอลัมน์ถ้ายังไม่มี
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_reason TEXT`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMP`);
+
+    // อัปเดตสถานะเป็น cancellation_requested
+    await pool.query(
+      `UPDATE leave_requests 
+       SET status = 'cancellation_requested', 
+           cancellation_reason = $1,
+           cancellation_requested_at = NOW()
+       WHERE id = $2`,
+      [reason, id]
+    );
+
+    // ส่งการแจ้งเตือนไปยัง Level 2 approvers
+    const updatedResult = await pool.query(`
+      SELECT l.*, u.firstname || ' ' || u.lastname as employee_name, u.position as employee_position
+      FROM leave_requests l
+      LEFT JOIN users u ON l.user_id = u.id
+      WHERE l.id = $1
+    `, [id]);
+
+    await notifyApprovers(2, updatedResult.rows[0], 'cancellation_request');
+
+    res.json({ message: 'Cancellation request submitted successfully' });
+  } catch (error) {
+    console.error('Request cancel error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Approve/Reject cancellation (Level 2 only)
+router.put('/:id/cancel-status', async (req, res) => {
+  const { id } = req.params;
+  const { action, approved_by } = req.body; // action: 'approve' or 'reject'
+
+  try {
+    const checkResult = await pool.query(
+      'SELECT * FROM leave_requests WHERE id = $1',
+      [id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Leave request not found' });
+    }
+
+    const leaveRequest = checkResult.rows[0];
+
+    if (leaveRequest.status !== 'cancellation_requested') {
+      return res.status(400).json({ error: 'No cancellation request found' });
+    }
+
+    if (action === 'approve') {
+      // คืนโควต้า
+      const currentYear = new Date().getFullYear();
+      const days = parseFloat(leaveRequest.total_days) || 0;
+
+      await pool.query(`
+        UPDATE user_leave_quotas
+        SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
+        WHERE user_id = $2 AND leave_type = $3 AND year = $4
+      `, [days, leaveRequest.user_id, leaveRequest.leave_type, currentYear]);
+
+      // อัปเดตสถานะเป็น cancelled
+      await pool.query(
+        `UPDATE leave_requests SET status = 'cancelled', approved_by = $1 WHERE id = $2`,
+        [approved_by, id]
+      );
+
+      res.json({ message: 'Leave cancelled successfully' });
+    } else {
+      // ปฏิเสธการยกเลิก - คืนสถานะเป็น approved
+      await pool.query(
+        `UPDATE leave_requests SET status = 'approved' WHERE id = $1`,
+        [id]
+      );
+
+      res.json({ message: 'Cancellation request rejected' });
+    }
+  } catch (error) {
+    console.error('Cancel status error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
