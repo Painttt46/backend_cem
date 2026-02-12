@@ -1326,8 +1326,10 @@ router.post('/:id/request-cancel', async (req, res) => {
     }
 
     // เพิ่มคอลัมน์ถ้ายังไม่มี
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_reason TEXT`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMP`);
+    
+    // ลบ column ที่ไม่ใช้
+    await pool.query(`ALTER TABLE leave_requests DROP COLUMN IF EXISTS cancellation_reason`);
 
     // อัปเดตสถานะเป็น cancellation_requested
     await pool.query(
