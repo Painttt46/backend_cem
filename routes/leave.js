@@ -797,7 +797,7 @@ router.post('/leave-types', async (req, res) => {
 router.put('/leave-types/:leaveType', async (req, res) => {
   try {
     const leaveType = decodeURIComponent(req.params.leaveType);
-    const { display_name, color, default_quota, advance_days } = req.body;
+    const { display_name, color, default_quota, advance_days, addQuota } = req.body;
     const currentYear = new Date().getFullYear();
 
     // Update all records for this leave type
@@ -816,6 +816,15 @@ router.put('/leave-types/:leaveType', async (req, res) => {
         SET annual_quota = $1
         WHERE leave_type = $2 AND year = $3
       `, [default_quota, leaveType, currentYear]);
+    }
+
+    // Add quota to all users if addQuota is provided
+    if (addQuota && addQuota > 0) {
+      await pool.query(`
+        UPDATE user_leave_quotas 
+        SET annual_quota = annual_quota + $1
+        WHERE leave_type = $2 AND year = $3
+      `, [addQuota, leaveType, currentYear]);
     }
 
     res.json({ message: 'อัปเดตประเภทการลาสำเร็จ' });
@@ -939,6 +948,9 @@ router.delete('/holidays/:id', async (req, res) => {
 // Get all leave requests
 router.get('/', async (req, res) => {
   try {
+    // Ensure new cancellation columns exist before selecting
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancel_reason TEXT`);
 
     const result = await pool.query(`
       SELECT 
@@ -948,6 +960,8 @@ router.get('/', async (req, res) => {
         l.approval_level, l.approved_by_level1, l.approved_by_level2,
         l.approved_by_level1_id, l.approved_by_level2_id,
         l.rejected_by, l.rejected_level, l.reject_reason,
+        l.cancellation_requested_at,
+        l.cancel_reason,
         l.created_at, l.updated_at,
         u.firstname || ' ' || u.lastname as employee_name,
         u.position as employee_position,
@@ -1353,20 +1367,19 @@ router.post('/:id/request-cancel', async (req, res) => {
 
     // เพิ่มคอลัมน์ถ้ายังไม่มี
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancel_reason TEXT`);
     
     // ขยายขนาด status column
     await pool.query(`ALTER TABLE leave_requests ALTER COLUMN status TYPE VARCHAR(50)`);
-    
-    // ลบ column ที่ไม่ใช้
-    await pool.query(`ALTER TABLE leave_requests DROP COLUMN IF EXISTS cancellation_reason`);
 
-    // อัปเดตสถานะเป็น cancel
+    // อัปเดตสถานะเป็น cancel พร้อมเหตุผล
     await pool.query(
       `UPDATE leave_requests 
        SET status = 'cancel', 
-           cancellation_requested_at = NOW()
+           cancellation_requested_at = NOW(),
+           cancel_reason = $2
        WHERE id = $1`,
-      [id]
+      [id, reason || null]
     );
 
     // ส่งการแจ้งเตือนไปยัง Level 2 approvers
