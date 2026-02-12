@@ -1311,8 +1311,8 @@ router.post('/:id/request-cancel', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    if (leaveRequest.status !== 'approved') {
-      return res.status(400).json({ error: 'Can only cancel approved leaves' });
+    if (leaveRequest.status !== 'approved' && leaveRequest.status !== 'pending_level2') {
+      return res.status(400).json({ error: 'Can only cancel approved or pending level 2 leaves' });
     }
 
     // ตรวจสอบว่ายังไม่ถึงวันลา
