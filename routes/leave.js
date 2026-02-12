@@ -1400,13 +1400,17 @@ router.put('/:id/cancel-status', async (req, res) => {
 
       res.json({ message: 'Leave cancelled successfully' });
     } else {
-      // ปฏิเสธการยกเลิก - คืนสถานะเป็น approved
+      // ปฏิเสธการยกเลิก - คืนสถานะตามที่อนุมัติไว้
+      // ถ้ามี approved_by_level2 แสดงว่าอนุมัติครบแล้ว → approved
+      // ถ้ามีแค่ approved_by_level1 แสดงว่าอนุมัติแค่ step 1 → pending_level2
+      const originalStatus = leaveRequest.approved_by_level2 ? 'approved' : 'pending_level2';
+      
       await pool.query(
-        `UPDATE leave_requests SET status = 'approved' WHERE id = $1`,
-        [id]
+        `UPDATE leave_requests SET status = $1 WHERE id = $2`,
+        [originalStatus, id]
       );
 
-      res.json({ message: 'Cancellation request rejected' });
+      res.json({ message: 'Cancellation request rejected', status: originalStatus });
     }
   } catch (error) {
     console.error('Cancel status error:', error);
