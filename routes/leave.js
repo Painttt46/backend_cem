@@ -1333,10 +1333,9 @@ router.post('/:id/request-cancel', async (req, res) => {
     await pool.query(
       `UPDATE leave_requests 
        SET status = 'cancellation_requested', 
-           cancellation_reason = $1,
            cancellation_requested_at = NOW()
-       WHERE id = $2`,
-      [reason, id]
+       WHERE id = $1`,
+      [id]
     );
 
     // ส่งการแจ้งเตือนไปยัง Level 2 approvers
