@@ -200,6 +200,12 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
       bodyText = 'มีคำขอลางานใหม่รอการพิจารณา';
       footerNote = 'กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติ';
       break;
+    case 'cancellation_request':
+      subject = `[ขอยกเลิก] ขอยกเลิกการลา - ${leaveData.employee_name}`;
+      headerText = 'ขอยกเลิกการลา';
+      bodyText = 'มีคำขอยกเลิกการลาที่ได้รับการอนุมัติแล้ว รอการพิจารณา';
+      footerNote = 'กรุณาเข้าสู่ระบบเพื่อดำเนินการอนุมัติยกเลิก';
+      break;
     case 'pending_level2':
       subject = `[อนุมัติขั้นที่ 1] คำขอลางาน - ${leaveData.employee_name}`;
       headerText = 'หัวหน้างานอนุมัติเรียบร้อย';
