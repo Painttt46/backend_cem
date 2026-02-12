@@ -310,7 +310,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
                             <!-- BIG ICON (Outlook) -->
                             <div class="iconBig" style="font-family:Arial,Helvetica,sans-serif;font-size:56px;line-height:56px;font-weight:700;color:#ffffff;mso-line-height-rule:exactly;text-align:center;">
-                              ${notificationType === 'rejected' ? '✕' : notificationType === 'new_request' ? '📋' : '✓'}
+                              ${notificationType === 'rejected' ? '✕' : notificationType === 'new_request' ? '📋' : notificationType === 'cancellation_request' ? '🔄' : '✓'}
                             </div>
 
                             <div style="height:16px;line-height:16px;font-size:16px;">&nbsp;</div>
