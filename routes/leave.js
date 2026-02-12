@@ -606,7 +606,7 @@ router.post('/init-quotas', async (req, res) => {
 router.put('/quota/:userId/:leaveType', async (req, res) => {
   try {
     const { userId, leaveType } = req.params;
-    const { quota, remaining } = req.body;
+    const { quota, remaining, addQuota } = req.body;
     const currentYear = new Date().getFullYear();
 
     // Add used_days column if not exists
@@ -615,17 +615,43 @@ router.put('/quota/:userId/:leaveType', async (req, res) => {
       ADD COLUMN IF NOT EXISTS used_days INTEGER DEFAULT 0
     `);
 
-    // Calculate used days from quota and remaining
-    const usedDays = quota - remaining;
+    let finalQuota, finalUsedDays;
+
+    if (addQuota !== undefined && addQuota > 0) {
+      // กรณีเพิ่มวันลา: เพิ่ม quota, used_days คงเดิม (remaining จะเพิ่มขึ้นตาม)
+      const currentData = await pool.query(`
+        SELECT annual_quota, COALESCE(used_days, 0) as used_days
+        FROM user_leave_quotas
+        WHERE user_id = $1 AND leave_type = $2 AND year = $3
+      `, [userId, leaveType, currentYear]);
+
+      if (currentData.rows.length > 0) {
+        const current = currentData.rows[0];
+        finalQuota = parseFloat(current.annual_quota) + parseFloat(addQuota);
+        finalUsedDays = parseFloat(current.used_days); // used_days คงเดิม
+      } else {
+        finalQuota = parseFloat(addQuota);
+        finalUsedDays = 0;
+      }
+    } else {
+      // กรณีแก้ไขปกติ: คำนวณ used_days จาก quota - remaining
+      finalQuota = parseFloat(quota);
+      finalUsedDays = parseFloat(quota) - parseFloat(remaining);
+    }
 
     await pool.query(`
       INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, used_days, year)
       VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (user_id, leave_type, year) 
       DO UPDATE SET annual_quota = $3, used_days = $4
-    `, [userId, leaveType, quota, usedDays, currentYear]);
+    `, [userId, leaveType, finalQuota, finalUsedDays, currentYear]);
 
-    res.json({ message: 'Quota updated successfully' });
+    res.json({ 
+      message: 'Quota updated successfully',
+      quota: finalQuota,
+      used_days: finalUsedDays,
+      remaining: finalQuota - finalUsedDays
+    });
   } catch (error) {
     console.error('Error updating quota:', error);
     res.status(500).json({ error: error.message });
