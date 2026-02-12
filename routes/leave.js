@@ -1328,13 +1328,16 @@ router.post('/:id/request-cancel', async (req, res) => {
     // เพิ่มคอลัมน์ถ้ายังไม่มี
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMP`);
     
+    // ขยายขนาด status column
+    await pool.query(`ALTER TABLE leave_requests ALTER COLUMN status TYPE VARCHAR(50)`);
+    
     // ลบ column ที่ไม่ใช้
     await pool.query(`ALTER TABLE leave_requests DROP COLUMN IF EXISTS cancellation_reason`);
 
-    // อัปเดตสถานะเป็น cancellation_requested
+    // อัปเดตสถานะเป็น cancel
     await pool.query(
       `UPDATE leave_requests 
-       SET status = 'cancellation_requested', 
+       SET status = 'cancel', 
            cancellation_requested_at = NOW()
        WHERE id = $1`,
       [id]
@@ -1374,7 +1377,7 @@ router.put('/:id/cancel-status', async (req, res) => {
 
     const leaveRequest = checkResult.rows[0];
 
-    if (leaveRequest.status !== 'cancellation_requested') {
+    if (leaveRequest.status !== 'cancel') {
       return res.status(400).json({ error: 'No cancellation request found' });
     }
 
