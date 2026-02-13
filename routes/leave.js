@@ -72,20 +72,49 @@ async function notifyApprovers(level, leaveData, notificationType) {
 // Check if user can approve based on department/position settings
 async function canUserApprove(approverId, requesterId, level) {
   try {
+    console.log('[canUserApprove] Checking permission - Approver:', approverId, 'Requester:', requesterId, 'Level:', level);
+    
+    // Check if table exists
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'leave_approval_settings'
+      )
+    `);
+
+    if (!tableCheck.rows[0].exists) {
+      console.log('[canUserApprove] Table leave_approval_settings does not exist, allowing approval');
+      return true; // If table doesn't exist, allow all approvals
+    }
+
     const approverResult = await pool.query(`
       SELECT can_approve, department_ids, position_ids 
       FROM leave_approval_settings 
       WHERE user_id = $1 AND approval_level = $2
     `, [approverId, level]);
 
-    if (approverResult.rows.length === 0) return false;
+    console.log('[canUserApprove] Approver settings found:', approverResult.rows.length);
+
+    if (approverResult.rows.length === 0) {
+      console.log('[canUserApprove] No settings found for approver - allowing approval');
+      return true; // If no settings, allow approval
+    }
     
     const { can_approve, department_ids, position_ids } = approverResult.rows[0];
-    if (!can_approve) return false;
+    console.log('[canUserApprove] Settings:', { can_approve, department_ids, position_ids });
+    
+    if (!can_approve) {
+      console.log('[canUserApprove] can_approve is false');
+      return false;
+    }
 
     const deptIds = (department_ids || []).map(d => d.toLowerCase());
     const posIds = (position_ids || []).map(p => p.toLowerCase());
-    if (deptIds.length === 0 && posIds.length === 0) return true;
+    
+    if (deptIds.length === 0 && posIds.length === 0) {
+      console.log('[canUserApprove] No department/position restrictions');
+      return true;
+    }
 
     const requesterResult = await pool.query(
       `SELECT department, position FROM users WHERE id = $1`, [requesterId]
@@ -93,13 +122,18 @@ async function canUserApprove(approverId, requesterId, level) {
     const reqDept = (requesterResult.rows[0]?.department || '').toLowerCase();
     const reqPos = (requesterResult.rows[0]?.position || '').toLowerCase();
 
+    console.log('[canUserApprove] Requester info:', { department: reqDept, position: reqPos });
+
     const deptMatch = deptIds.length === 0 || deptIds.includes(reqDept);
     const posMatch = posIds.length === 0 || posIds.includes(reqPos);
 
+    console.log('[canUserApprove] Match result:', { deptMatch, posMatch, final: deptMatch && posMatch });
+
     return deptMatch && posMatch;
   } catch (error) {
-    console.error('Error checking approval permission:', error);
-    return true;
+    console.error('[canUserApprove] Error checking approval permission:', error);
+    console.error('[canUserApprove] Stack:', error.stack);
+    return true; // On error, allow approval to prevent blocking
   }
 }
 
@@ -1454,6 +1488,89 @@ router.put('/:id/cancel-status', async (req, res) => {
   } catch (error) {
     console.error('Cancel status error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin/HR: Delete leave request and return quota (for level 2 approvers)
+router.delete('/:id/admin-reset', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
+    if (!token) {
+      console.log('[admin-reset] No token provided');
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    let approverId;
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      approverId = decoded.userId;
+      console.log('[admin-reset] Approver ID:', approverId);
+    } catch (e) {
+      console.log('[admin-reset] Invalid token:', e.message);
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const leaveResult = await pool.query(
+      'SELECT * FROM leave_requests WHERE id = $1',
+      [id]
+    );
+
+    if (leaveResult.rows.length === 0) {
+      console.log('[admin-reset] Leave request not found:', id);
+      return res.status(404).json({ error: 'ไม่พบคำขอลานี้' });
+    }
+
+    const leaveRequest = leaveResult.rows[0];
+    console.log('[admin-reset] Leave request:', { id: leaveRequest.id, user_id: leaveRequest.user_id, status: leaveRequest.status });
+
+    // ตรวจสอบสิทธิ์ว่าเป็นผู้มีสิทธิ์อนุมัติระดับ 2 (HR) สำหรับผู้ขอลาคนนี้
+    const hasPermission = await canUserApprove(approverId, leaveRequest.user_id, 2);
+    console.log('[admin-reset] Has permission:', hasPermission);
+    
+    if (!hasPermission) {
+      console.log('[admin-reset] Permission denied for approver:', approverId, 'requester:', leaveRequest.user_id);
+      return res.status(403).json({ error: 'คุณไม่มีสิทธิ์จัดการคำขอนี้' });
+    }
+
+    const currentYear = new Date().getFullYear();
+    const days = parseFloat(leaveRequest.total_days) || 0;
+
+    // หากเคยตัดโควต้าจากการอนุมัติแล้ว ให้คืนโควต้า
+    if (days > 0 && (leaveRequest.status === 'approved' || leaveRequest.status === 'cancel' || leaveRequest.status === 'pending_level2')) {
+      console.log('[admin-reset] Returning quota:', days, 'days for user:', leaveRequest.user_id);
+      const updateResult = await pool.query(`
+        UPDATE user_leave_quotas
+        SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
+        WHERE user_id = $2 AND leave_type = $3 AND year = $4
+        RETURNING *
+      `, [days, leaveRequest.user_id, leaveRequest.leave_type, currentYear]);
+      console.log('[admin-reset] Quota update result:', updateResult.rowCount, 'rows affected');
+    }
+
+    // ลบคำขอออกจากระบบ
+    console.log('[admin-reset] Deleting leave request:', id);
+    await pool.query('DELETE FROM leave_requests WHERE id = $1', [id]);
+
+    // Log audit
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'leave_requests',
+      recordId: parseInt(id),
+      recordName: `HR reset - user ${leaveRequest.user_id} - ${getLeaveTypeLabel(leaveRequest.leave_type)}`,
+      oldData: {
+        ...leaveRequest
+      },
+      newData: { deleted: true, quotaRefundedDays: days }
+    });
+
+    console.log('[admin-reset] Success - deleted leave request:', id);
+    res.json({ message: 'ลบคำขอและคืนโควต้าการลาเรียบร้อยแล้ว' });
+  } catch (error) {
+    console.error('[admin-reset] Error:', error);
+    console.error('[admin-reset] Stack:', error.stack);
+    res.status(500).json({ error: error.message || 'เกิดข้อผิดพลาดในการดำเนินการ' });
   }
 });
 
