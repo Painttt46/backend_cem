@@ -253,11 +253,30 @@ async function processBookingStatuses() {
         pendingDate.setHours(0, 0, 0, 0);
 
         if (!activeBooking.return_date && pendingDate >= activeBorrowDate) {
-          await pool.query('DELETE FROM car_bookings WHERE id = $1', [record.id]);
-          sendTeamsNotification('overdue_cancel', {
-            ...record,
-            cancellation_reason: `รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า (ใช้งานตั้งแต่ ${activeBorrowDate.toLocaleDateString('th-TH')})`
-          }).catch(() => {});
+          console.log('[processBookingStatuses] Cancelling pending booking:', {
+            pendingId: record.id,
+            pendingStatus: record.status,
+            pendingDate: pendingDate.toISOString(),
+            activeBookingId: activeBooking.id,
+            activeBorrowDate: activeBorrowDate.toISOString(),
+            reason: 'รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า'
+          });
+          
+          // ลบเฉพาะการจอง pending เท่านั้น ไม่ลบ active
+          const deleteResult = await pool.query(
+            'DELETE FROM car_bookings WHERE id = $1 AND status = $2 RETURNING id', 
+            [record.id, 'pending']
+          );
+          
+          if (deleteResult.rows.length > 0) {
+            console.log('[processBookingStatuses] Successfully deleted pending booking:', record.id);
+            sendTeamsNotification('overdue_cancel', {
+              ...record,
+              cancellation_reason: `รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า (ใช้งานตั้งแต่ ${activeBorrowDate.toLocaleDateString('th-TH')})`
+            }).catch(() => {});
+          } else {
+            console.warn('[processBookingStatuses] No pending booking deleted (may already be active or deleted):', record.id);
+          }
         }
       }
     }

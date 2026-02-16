@@ -1213,11 +1213,41 @@ router.put('/:id/status', async (req, res) => {
       const currentYear = new Date().getFullYear();
       const days = parseFloat(total_days) || 0;
 
-      await pool.query(`
+      console.log('[QUOTA UPDATE] Deducting quota:', {
+        user_id,
+        leave_type,
+        days,
+        currentYear,
+        newStatus,
+        currentStatus
+      });
+
+      const quotaUpdateResult = await pool.query(`
         UPDATE user_leave_quotas
         SET used_days = COALESCE(used_days, 0) + $1
         WHERE user_id = $2 AND leave_type = $3 AND year = $4
+        RETURNING *
       `, [days, user_id, leave_type, currentYear]);
+
+      console.log('[QUOTA UPDATE] Result:', quotaUpdateResult.rows);
+
+      if (quotaUpdateResult.rows.length === 0) {
+        console.error('[QUOTA UPDATE] ERROR: No quota record found for user:', user_id, 'leave_type:', leave_type, 'year:', currentYear);
+        console.error('[QUOTA UPDATE] Attempting to create quota record...');
+        
+        try {
+          await pool.query(`
+            INSERT INTO user_leave_quotas (user_id, leave_type, year, total_days, used_days)
+            VALUES ($1, $2, $3, 10, $4)
+            ON CONFLICT (user_id, leave_type, year) 
+            DO UPDATE SET used_days = user_leave_quotas.used_days + $4
+          `, [user_id, leave_type, currentYear, days]);
+          
+          console.log('[QUOTA UPDATE] Quota record created/updated successfully');
+        } catch (insertError) {
+          console.error('[QUOTA UPDATE] Failed to create quota record:', insertError);
+        }
+      }
     }
 
     // If rejecting previously approved leave
