@@ -7,6 +7,12 @@ import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
 
+async function ensureUsedDaysNumeric() {
+  await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS used_days NUMERIC(10,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN used_days SET DEFAULT 0`);
+  await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN used_days TYPE NUMERIC(10,2) USING COALESCE(used_days, 0)::numeric`);
+}
+
 // Get approvers by level and send email notification
 async function notifyApprovers(level, leaveData, notificationType) {
   try {
@@ -643,11 +649,7 @@ router.put('/quota/:userId/:leaveType', async (req, res) => {
     const { quota, remaining, addQuota } = req.body;
     const currentYear = new Date().getFullYear();
 
-    // Add used_days column if not exists
-    await pool.query(`
-      ALTER TABLE user_leave_quotas 
-      ADD COLUMN IF NOT EXISTS used_days INTEGER DEFAULT 0
-    `);
+    await ensureUsedDaysNumeric();
 
     let finalQuota, finalUsedDays;
 
@@ -1105,6 +1107,7 @@ router.put('/:id/status', async (req, res) => {
   const { status, approved_by, approved_by_id, reject_reason } = req.body;
 
   try {
+    await ensureUsedDaysNumeric();
     // Ensure columns exist first
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT`);
@@ -1439,6 +1442,7 @@ router.put('/:id/cancel-status', async (req, res) => {
   const { action, approved_by } = req.body; // action: 'approve' or 'reject'
 
   try {
+    await ensureUsedDaysNumeric();
     const checkResult = await pool.query(
       'SELECT * FROM leave_requests WHERE id = $1',
       [id]
@@ -1496,6 +1500,7 @@ router.delete('/:id/admin-reset', async (req, res) => {
   const { id } = req.params;
 
   try {
+    await ensureUsedDaysNumeric();
     const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
     if (!token) {
       console.log('[admin-reset] No token provided');
