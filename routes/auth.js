@@ -61,7 +61,7 @@ router.post('/login', async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 8 * 60 * 60 * 1000
+      maxAge: 3 * 60 * 60 * 1000 // 3 hours to match JWT expiration
     });
     
     // Remove password from response
@@ -137,7 +137,7 @@ router.post('/refresh', verifyToken, async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 8 * 60 * 60 * 1000
+      maxAge: 3 * 60 * 60 * 1000 // 3 hours to match JWT expiration
     });
     
     res.json({

@@ -29,21 +29,30 @@ async function notifyApprovers(level, leaveData, notificationType) {
       return;
     }
 
-    // Get requester's department and position
-    const requesterInfo = await pool.query(`
-      SELECT department, position FROM users WHERE id = $1
-    `, [leaveData.user_id]);
-    
-    const requesterDept = requesterInfo.rows[0]?.department || null;
-    const requesterPos = requesterInfo.rows[0]?.position || null;
-
-    // Get approvers with their department/position filters
+    // Optimized: Get requester info and approvers in one query using JOIN
     const result = await pool.query(`
-      SELECT u.email, las.department_ids, las.position_ids
+      SELECT 
+        u.email,
+        las.department_ids,
+        las.position_ids,
+        req_user.department as requester_dept,
+        req_user.position as requester_pos
       FROM leave_approval_settings las
       JOIN users u ON las.user_id = u.id
-      WHERE las.approval_level = $1 AND las.receive_email = true AND u.email IS NOT NULL
-    `, [level]);
+      CROSS JOIN users req_user
+      WHERE las.approval_level = $1 
+        AND las.receive_email = true 
+        AND u.email IS NOT NULL
+        AND req_user.id = $2
+    `, [level, leaveData.user_id]);
+    
+    if (result.rows.length === 0) {
+      console.log(`No approvers configured for level ${level}`);
+      return;
+    }
+    
+    const requesterDept = result.rows[0]?.requester_dept || null;
+    const requesterPos = result.rows[0]?.requester_pos || null;
     
     // Filter approvers based on department/position match (case insensitive)
     const emails = result.rows
