@@ -28,6 +28,7 @@ export const getPendingLeavesForReminder = async () => {
     FROM leave_requests lr
     JOIN users u ON lr.user_id = u.id
     WHERE lr.status IN ('pending', 'pending_level2')
+    AND lr.created_at < NOW() - INTERVAL '24 hours'
     ORDER BY lr.created_at ASC
   `);
 

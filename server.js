@@ -57,8 +57,8 @@ cron.schedule('0 2 * * *', async () => {
   }
 }, { timezone: 'Asia/Bangkok' });
 
-// Pending leave approval reminder - ทุกวันจันทร์-ศุกร์ เวลา 09:00 น.
-cron.schedule('0 9 * * 1-5', async () => {
+// Pending leave approval reminder - ทุกวันจันทร์-ศุกร์ เวลา 10:00 น.
+cron.schedule('0 10 * * 1-5', async () => {
   console.log('[Scheduler] Sending pending leave reminders...');
   try {
     const result = await sendPendingLeaveReminders();
@@ -126,6 +126,16 @@ app.get("/health", async (req, res) => {
     res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
   } catch (error) {
     res.status(503).json({ status: "unhealthy", error: error.message });
+  }
+});
+
+// Test: trigger leave reminder manually (remove after testing)
+app.get("/api/test-leave-reminder", async (req, res) => {
+  try {
+    const result = await sendPendingLeaveReminders();
+    res.json({ success: true, result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
