@@ -13,7 +13,7 @@ const LEAVE_TYPE_LABELS = {
 
 // Get pending leaves grouped by approver for each level
 export const getPendingLeavesForReminder = async () => {
-  // Get all pending leaves > 24 hours
+  // Get all pending leaves that have been waiting > 24 hours
   const pendingResult = await pool.query(`
     SELECT 
       lr.id, lr.leave_type, lr.total_days, lr.status, lr.created_at,
@@ -22,6 +22,7 @@ export const getPendingLeavesForReminder = async () => {
     FROM leave_requests lr
     JOIN users u ON lr.user_id = u.id
     WHERE lr.status IN ('pending', 'pending_level2')
+    AND lr.created_at < NOW() - INTERVAL '24 hours'
     ORDER BY lr.created_at ASC
   `);
 

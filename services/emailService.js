@@ -399,28 +399,41 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
 // Send pending leave approval reminder to approver
 export const sendPendingLeaveReminder = async (approver, pendingLeaves) => {
+  const hasUrgent = pendingLeaves.some(l => {
+    const days = Math.floor((Date.now() - new Date(l.created_at)) / (1000 * 60 * 60 * 24));
+    return days >= 3;
+  });
+
   const leaveRows = pendingLeaves.map(leave => {
     const waitingDays = Math.floor((Date.now() - new Date(leave.created_at)) / (1000 * 60 * 60 * 24));
-    const urgencyBg = waitingDays >= 3 ? '#fef2f2' : waitingDays >= 2 ? '#fff7ed' : '#fefce8';
+    const urgencyBg   = waitingDays >= 3 ? '#fef2f2' : waitingDays >= 2 ? '#fff7ed' : '#fefce8';
     const urgencyBorder = waitingDays >= 3 ? '#fecaca' : waitingDays >= 2 ? '#fed7aa' : '#fef08a';
-    const urgencyColor = waitingDays >= 3 ? '#dc2626' : waitingDays >= 2 ? '#ea580c' : '#ca8a04';
-    const urgencyIcon = waitingDays >= 3 ? '🔴' : waitingDays >= 2 ? '🟠' : '🟡';
-    
+    const urgencyColor  = waitingDays >= 3 ? '#dc2626' : waitingDays >= 2 ? '#ea580c' : '#ca8a04';
+    const urgencyLabel  = waitingDays >= 3 ? 'เร่งด่วน' : waitingDays >= 2 ? 'ควรดำเนินการ' : 'รอดำเนินการ';
+
     return `
       <tr>
-        <td style="padding:0 0 12px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${urgencyBg};border:1px solid ${urgencyBorder};border-radius:8px;">
+        <td style="padding:0 0 10px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+            style="background:${urgencyBg};border:1px solid ${urgencyBorder};border-radius:8px;border-left:4px solid ${urgencyColor};">
             <tr>
-              <td style="padding:14px;">
+              <td style="padding:14px 16px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
-                    <td width="60%">
-                      <div style="font-size:15px;color:#1a1a2e;font-weight:bold;">${leave.employee_name}</div>
-                      <div style="font-size:13px;color:#666;margin-top:4px;">${leave.leave_type_label} • ${leave.total_days} วัน</div>
+                    <td>
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#1a1a2e;">
+                        ${leave.employee_name}
+                      </div>
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#555555;margin-top:4px;">
+                        ${leave.leave_type_label} &nbsp;•&nbsp; ${leave.total_days} วัน
+                      </div>
                     </td>
-                    <td width="40%" align="right">
-                      <div style="display:inline-block;background:${urgencyColor};color:#fff;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:bold;">
-                        ${urgencyIcon} รอ ${waitingDays} วัน
+                    <td align="right" valign="top">
+                      <div style="display:inline-block;background:${urgencyColor};color:#ffffff;padding:4px 12px;border-radius:20px;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:bold;white-space:nowrap;">
+                        รอ ${waitingDays} วัน
+                      </div>
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;color:${urgencyColor};margin-top:4px;text-align:right;font-weight:bold;">
+                        ${urgencyLabel}
                       </div>
                     </td>
                   </tr>
@@ -432,98 +445,176 @@ export const sendPendingLeaveReminder = async (approver, pendingLeaves) => {
       </tr>`;
   }).join('');
 
-  const hasUrgent = pendingLeaves.some(l => {
-    const days = Math.floor((Date.now() - new Date(l.created_at)) / (1000 * 60 * 60 * 24));
-    return days >= 3;
-  });
-
   const mailOptions = {
     from: process.env.EMAIL_FROM,
     to: approver.email,
     subject: `${hasUrgent ? '🚨' : '🔔'} มีใบลารออนุมัติ ${pendingLeaves.length} รายการ - GenT-CEM`,
     html: `<!DOCTYPE html>
-<html lang="th">
+<html lang="th" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
-  <meta charset="utf-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta http-equiv="x-ua-compatible" content="ie=edge" />
+  <title>ใบลารออนุมัติ</title>
+  <!--[if mso]>
+  <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch><o:AllowPNG/></o:OfficeDocumentSettings></xml>
+  <![endif]-->
+  <style>
+    html,body{margin:0!important;padding:0!important;height:100%!important;width:100%!important}
+    *{-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%}
+    table,td{mso-table-lspace:0pt!important;mso-table-rspace:0pt!important;border-collapse:collapse!important}
+    img{-ms-interpolation-mode:bicubic;border:0;outline:none;text-decoration:none}
+    a{text-decoration:none}
+    @media screen and (max-width:600px){
+      .container{width:100%!important}
+      .px{padding-left:18px!important;padding-right:18px!important}
+      .heroPad{padding:36px 18px!important}
+      .h1{font-size:24px!important;line-height:30px!important}
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background:#f2f3f5;">
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
+    มีใบลารออนุมัติ ${pendingLeaves.length} รายการ กรุณาตรวจสอบ
+  </div>
+
   <center style="width:100%;background:#f2f3f5;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
       <tr>
         <td align="center" style="padding:24px 12px;">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;">
-            
+          <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0"
+            style="width:600px;max-width:600px;background:#ffffff;">
+
             <!-- Logo -->
             <tr>
-              <td align="center" style="padding:10px;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:28px;color:#190c86;">
-                <div>Gen T Excellency Management</div>
+              <td align="center" style="padding:16px 10px 10px;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;color:#190c86;font-weight:bold;letter-spacing:0.5px;">
+                Gen T Excellency Management
               </td>
             </tr>
 
-            <!-- Header with gradient -->
+            <!-- Hero gradient -->
             <tr>
-              <td align="center" style="padding:0;background-color:#f093fb;background:linear-gradient(135deg,#f093fb,#f5576c);">
+              <td align="center" style="padding:0;background-color:#4A90E2;background:linear-gradient(135deg,#4A90E2,#D73527);">
+                <!--[if gte mso 9]>
+                <v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" fill="true" stroke="false" style="width:600px;height:180px;">
+                  <v:fill type="gradient" color="#4A90E2" color2="#D73527" angle="135"/>
+                  <v:textbox inset="0,0,0,0" style="mso-fit-shape-to-text:false">
+                    <div>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" height="180" align="center">
+                        <tr>
+                          <td align="center" valign="middle" style="padding:36px 18px;">
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:48px;line-height:48px;color:#ffffff;text-align:center;">📋</div>
+                            <div style="height:10px;line-height:10px;font-size:10px;">&nbsp;</div>
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;font-weight:700;color:#ffffff;">ใบลารออนุมัติ</div>
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:rgba(255,255,255,0.85);margin-top:6px;">แจ้งเตือนจากระบบ GenT-CEM</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+                  </v:textbox>
+                </v:rect>
+                <![endif]-->
+                <!--[if !mso]><!-->
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                   <tr>
-                    <td align="center" style="padding:25px 18px;">
-                      <div style="font-family:Arial,sans-serif;font-size:40px;color:#ffffff;">📋</div>
-                      <div style="height:8px;"></div>
-                      <div style="font-family:Arial,sans-serif;font-size:24px;color:#ffffff;font-weight:bold;">ใบลารออนุมัติ</div>
-                      <div style="font-family:Arial,sans-serif;font-size:14px;color:#ffffff;margin-top:5px;">แจ้งเตือนจากระบบ GenT-CEM</div>
+                    <td class="heroPad" align="center" style="padding:36px 18px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:48px;line-height:48px;color:#ffffff;text-align:center;">📋</div>
+                      <div style="height:10px;"></div>
+                      <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;font-weight:700;color:#ffffff;">ใบลารออนุมัติ</div>
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:rgba(255,255,255,0.85);margin-top:6px;">แจ้งเตือนจากระบบ GenT-CEM</div>
                     </td>
                   </tr>
                 </table>
+                <!--<![endif]-->
               </td>
             </tr>
 
             ${hasUrgent ? `
             <!-- Urgent Banner -->
             <tr>
-              <td style="padding:15px 32px 0;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fef2f2;border:2px solid #dc2626;border-radius:8px;">
+              <td style="padding:16px 32px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                  style="background:#fef2f2;border:2px solid #dc2626;border-radius:8px;">
                   <tr>
-                    <td align="center" style="padding:12px;">
-                      <div style="font-family:Arial,sans-serif;font-size:15px;color:#dc2626;font-weight:bold;">⚠️ มีใบลาที่รอนานเกิน 3 วัน กรุณาตรวจสอบ!</div>
+                    <td align="center" style="padding:12px 16px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#dc2626;font-weight:bold;">
+                        ⚠️ มีใบลาที่รอนานเกิน 3 วัน กรุณาตรวจสอบโดยด่วน!
+                      </div>
                     </td>
                   </tr>
                 </table>
               </td>
             </tr>` : ''}
 
-            <!-- Content -->
+            <!-- Body -->
             <tr>
-              <td style="padding:${hasUrgent ? '15px' : '28px'} 32px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b;">
-                
-                <!-- Summary Card -->
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8faff;border-left:4px solid #f5576c;margin-bottom:20px;border-radius:0 8px 8px 0;">
+              <td class="px" style="padding:24px 32px 8px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b;">
+
+                <p style="margin:0 0 6px;font-size:16px;line-height:26px;">สวัสดี คุณ <b>${approver.firstname} ${approver.lastname}</b>,</p>
+                <p style="margin:0 0 20px;font-size:15px;line-height:24px;color:#555555;">
+                  มีคำขอลางานรออนุมัติจากคุณ กรุณาเข้าสู่ระบบเพื่อดำเนินการ
+                </p>
+
+                <!-- Summary card -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                  style="background:#f0f4ff;border-left:4px solid #4A90E2;border-radius:0 8px 8px 0;margin-bottom:20px;">
                   <tr>
-                    <td style="padding:15px;">
-                      <div style="font-size:11px;color:#f5576c;font-weight:bold;text-transform:uppercase;">สรุป</div>
-                      <div style="font-size:18px;color:#1a1a2e;font-weight:bold;margin-top:4px;">คุณมีใบลารออนุมัติ ${pendingLeaves.length} รายการ</div>
+                    <td style="padding:14px 18px;">
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#4A90E2;font-weight:bold;text-transform:uppercase;letter-spacing:1px;">สรุป</div>
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:20px;color:#1a1a2e;font-weight:bold;margin-top:4px;">
+                        รออนุมัติ ${pendingLeaves.length} รายการ
+                      </div>
                     </td>
                   </tr>
                 </table>
 
-                <p style="margin:0 0 8px;font-size:12px;color:#888888;">📝 รายการใบลาที่รออนุมัติ</p>
-                
-                <!-- Leave Items -->
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;">
+                <!-- Leave list label -->
+                <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#888888;margin-bottom:10px;">
+                  รายการใบลาที่รออนุมัติ
+                </div>
+
+                <!-- Leave items -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   ${leaveRows}
                 </table>
+
+                <!-- CTA -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;margin-bottom:8px;">
+                  <tr>
+                    <td align="center">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td align="center" style="background:linear-gradient(135deg,#4A90E2,#D73527);border-radius:8px;">
+                            <a href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/leave"
+                              style="display:inline-block;padding:12px 32px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;">
+                              เข้าสู่ระบบเพื่ออนุมัติ
+                            </a>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:16px 0 0;font-size:12px;line-height:18px;color:#aaaaaa;text-align:center;">
+                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login">Internal</a>
+                  &nbsp;|&nbsp;
+                  <a style="color:#4a90e2;" href="http://61.91.51.126:3000/login">External</a>
+                </p>
 
               </td>
             </tr>
 
             <!-- Footer -->
             <tr>
-              <td style="padding:20px 32px;background-color:#f8f9fa;border-top:1px solid #e9ecef;">
+              <td style="background:#14143a;padding:18px 32px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
-                    <td align="center">
-                      <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#6c757d;">อีเมลนี้ถูกส่งโดยอัตโนมัติจากระบบ GenT-CEM</p>
-                      <p style="margin:4px 0 0;font-family:Arial,sans-serif;font-size:11px;color:#adb5bd;">โปรดอย่าตอบกลับอีเมลนี้</p>
+                    <td>
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#ffffff;font-weight:700;">
+                        อีเมลนี้ถูกส่งโดยอัตโนมัติ โปรดอย่าตอบกลับอีเมลนี้
+                      </div>
                     </td>
                   </tr>
                 </table>
