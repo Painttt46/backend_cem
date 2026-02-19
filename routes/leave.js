@@ -1010,7 +1010,8 @@ router.get('/', async (req, res) => {
         l.created_at, l.updated_at,
         u.firstname || ' ' || u.lastname as employee_name,
         u.position as employee_position,
-        u.department
+        u.department,
+        u.role as employee_role
       FROM leave_requests l
       LEFT JOIN users u ON l.user_id = u.id
       ORDER BY l.created_at DESC
