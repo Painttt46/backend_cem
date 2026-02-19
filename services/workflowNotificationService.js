@@ -324,7 +324,7 @@ async function checkAndNotifyDaily() {
 }
 
 // แจ้งเตือนเมื่อ step ก่อนหน้าเสร็จ
-export async function notifyNextStep(taskId, completedStepOrder) {
+export async function notifyNextStep(taskId, completedStepOrder, completedStepName) {
   try {
     // แจ้งทุก step ที่ยังไม่เสร็จใน workflow เดียวกัน (ไม่ใช่แค่ step ถัดไป)
     // แต่ไม่ส่งให้คนที่อยู่ใน step ที่เพิ่งเสร็จ
@@ -386,7 +386,7 @@ export async function notifyNextStep(taskId, completedStepOrder) {
 </head>
 <body style="margin:0;padding:0;background:#f2f3f5;">
   <div style="display:none;font-size:1px;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
-    Step ก่อนหน้าเสร็จแล้ว - ${steps.map(s => s.step_name).join(', ')}
+    Step completed notification - ${user.task_name}
   </div>
   <center style="width:100%;background:#f2f3f5;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
@@ -413,8 +413,6 @@ export async function notifyNextStep(taskId, completedStepOrder) {
                         <tr>
                           <td align="center" valign="middle" style="padding:20px 18px;">
                             <div style="font-family:Arial,Helvetica,sans-serif;font-size:40px;line-height:40px;color:#ffffff;text-align:center;">🚀</div>
-                            <div style="height:8px;line-height:8px;font-size:8px;">&nbsp;</div>
-                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;font-weight:bold;color:#ffffff;">ถึงคิวงานของคุณแล้ว!</div>
                           </td>
                         </tr>
                       </table>
@@ -427,8 +425,6 @@ export async function notifyNextStep(taskId, completedStepOrder) {
                   <tr>
                     <td align="center" style="padding:20px 18px;">
                       <div style="font-family:Arial,Helvetica,sans-serif;font-size:40px;line-height:40px;color:#ffffff;text-align:center;">🚀</div>
-                      <div style="height:8px;"></div>
-                      <div class="h1" style="font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:28px;color:#ffffff;font-weight:bold;">ถึงคิวงานของคุณแล้ว!</div>
                     </td>
                   </tr>
                 </table>
@@ -454,7 +450,8 @@ export async function notifyNextStep(taskId, completedStepOrder) {
             <tr>
               <td class="px" style="padding:${isUrgent ? '15px' : '28px'} 42px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b;">
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">สวัสดี, <b>${firstnames.join(', ')}</b></p>
-                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">งานต่อไปนี้พร้อมให้คุณดำเนินการแล้ว:</p>
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">✅ Step <b>"${completedStepName}"</b> ได้ดำเนินการเสร็จสิ้นแล้ว</p>
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">งานที่ต้องทำ:</p>
 
                 <!-- Project Card -->
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8faff;border-left:4px solid #4A90E2;margin-bottom:20px;border-radius:0 8px 8px 0;">
@@ -507,7 +504,7 @@ export async function notifyNextStep(taskId, completedStepOrder) {
         await transporter.sendMail({
           from: process.env.EMAIL_FROM,
           to: emails.join(','),
-          subject: `🚀 อัปเดตความคืบหน้าโครงการ: ${user.task_name} (${steps.length} ขั้นตอนที่รอดำเนินการ)`,
+          subject: `🚀 Step "${completedStepName}" เสร็จแล้ว: ${user.task_name}`,
           html
         });
         console.log(`📧 Sent next step notification to ${emails.join(', ')}`);
