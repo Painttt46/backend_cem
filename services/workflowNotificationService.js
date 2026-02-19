@@ -335,7 +335,7 @@ export async function notifyNextStep(taskId, completedStepOrder) {
       CROSS JOIN LATERAL jsonb_array_elements(ts.assigned_users) AS au
       JOIN users u ON (au->>'id')::int = u.id
       WHERE ts.task_id = $1 
-        AND ts.status != 'completed' 
+        AND (ts.status IS NULL OR ts.status != 'completed') 
         AND u.email IS NOT NULL
         AND u.id NOT IN (
           SELECT (au2->>'id')::int 
