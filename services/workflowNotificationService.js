@@ -337,29 +337,27 @@ export async function notifyNextStep(taskId, completedStepOrder) {
       WHERE ts.task_id = $1 
         AND (ts.status IS NULL OR ts.status != 'completed') 
         AND u.email IS NOT NULL
-        AND u.id NOT IN (
-          SELECT (au2->>'id')::int 
-          FROM task_steps ts2 
-          CROSS JOIN LATERAL jsonb_array_elements(ts2.assigned_users) AS au2
-          WHERE ts2.task_id = $1 AND ts2.step_order = $2
-        )
       ORDER BY ts.step_order
-    `, [taskId, completedStepOrder]);
+    `, [taskId]);
 
     if (result.rows.length > 0) {
-      // จัดกลุ่มตาม step
-      const stepMap = new Map();
+      // จัดกลุ่มตามคน (user_id) เพื่อส่ง email เดียวต่อคน
+      const userMap = new Map();
       for (const row of result.rows) {
-        if (!stepMap.has(row.id)) {
-          stepMap.set(row.id, { step: row, emails: [], firstnames: [] });
+        if (!userMap.has(row.user_id)) {
+          userMap.set(row.user_id, { 
+            user: row, 
+            steps: [], 
+            emails: [row.email], 
+            firstnames: [row.firstname] 
+          });
         }
-        if (row.email) stepMap.get(row.id).emails.push(row.email);
-        if (row.firstname) stepMap.get(row.id).firstnames.push(row.firstname);
+        userMap.get(row.user_id).steps.push(row);
       }
 
-      for (const { step, emails, firstnames } of stepMap.values()) {
+      for (const { user, steps, emails, firstnames } of userMap.values()) {
       const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
-        const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+        const daysLeft = user.end_date ? Math.ceil((new Date(user.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
         const isUrgent = daysLeft !== null && daysLeft <= 3;
 
         const html = `<!DOCTYPE html>
@@ -463,45 +461,24 @@ export async function notifyNextStep(taskId, completedStepOrder) {
                   <tr>
                     <td style="padding:15px;">
                       <div style="font-size:11px;color:#4A90E2;font-weight:bold;text-transform:uppercase;">โครงการ</div>
-                      <div style="font-size:18px;color:#1a1a2e;font-weight:bold;margin-top:4px;">${step.task_name}</div>
+                      <div style="font-size:18px;color:#1a1a2e;font-weight:bold;margin-top:4px;">${user.task_name}</div>
                     </td>
                   </tr>
                 </table>
 
-                <!-- Step Name -->
-                <p style="margin:0 0 8px;font-size:12px;color:#888888;">🎯 ขั้นตอนที่ต้องดำเนินการ</p>
-                <p style="margin:0 0 18px;font-size:18px;color:#D73527;font-weight:bold;">${step.step_name}</p>
-
-                <!-- Dates -->
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <!-- Steps List -->
+                <p style="margin:0 0 8px;font-size:12px;color:#888888;">🎯 ขั้นตอนที่ต้องดำเนินการ (${steps.length} ขั้นตอน)</p>
+                ${steps.map(step => `
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px;">
                   <tr>
-                    ${step.start_date ? `
-                    <td width="50%" valign="top" style="padding-right:8px;">
-                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0fdf4;border:1px solid #dcfce7;border-radius:8px;">
-                        <tr><td style="padding:12px;">
-                          <div style="font-size:11px;color:#16a34a;font-weight:bold;">📅 วันที่เริ่ม</div>
-                          <div style="font-size:14px;color:#166534;font-weight:bold;margin-top:4px;">${formatDate(step.start_date)}</div>
-                        </td></tr>
-                      </table>
-                    </td>` : ''}
-                    ${step.end_date ? `
-                    <td width="50%" valign="top" style="padding-left:8px;">
-                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${isUrgent ? '#fef2f2' : '#fff7ed'};border:1px solid ${isUrgent ? '#fee2e2' : '#ffedd5'};border-radius:8px;">
-                        <tr><td style="padding:12px;">
-                          <div style="font-size:11px;color:${isUrgent ? '#dc2626' : '#ea580c'};font-weight:bold;">⏰ กำหนดส่ง</div>
-                          <div style="font-size:14px;color:${isUrgent ? '#991b1b' : '#9a3412'};font-weight:bold;margin-top:4px;">${formatDate(step.end_date)}</div>
-                        </td></tr>
-                      </table>
-                    </td>` : ''}
+                    <td style="padding:12px;">
+                      <div style="font-size:14px;color:#1a1a2e;font-weight:bold;">${step.step_name}</div>
+                      ${step.end_date ? `<div style="font-size:11px;color:#64748b;margin-top:4px;">⏰ กำหนดส่ง: ${formatDate(step.end_date)}</div>` : ''}
+                    </td>
                   </tr>
-                </table>
+                </table>`).join('')}
 
-                ${step.description ? `
-                <div style="margin-top:18px;padding-top:15px;border-top:1px dashed #e2e8f0;">
-                  <div style="font-size:11px;color:#94a3b8;font-weight:bold;text-transform:uppercase;">📝 รายละเอียดงาน</div>
-                  <div style="font-size:13px;color:#475569;line-height:1.6;margin-top:5px;">${step.description}</div>
-                </div>` : ''}
-
+                
               </td>
             </tr>
 
@@ -530,7 +507,7 @@ export async function notifyNextStep(taskId, completedStepOrder) {
         await transporter.sendMail({
           from: process.env.EMAIL_FROM,
           to: emails.join(','),
-          subject: `🚀 ถึงคิวงานของคุณ: ${step.step_name} - ${step.task_name}`,
+          subject: `🚀 อัปเดตความคืบหน้าโครงการ: ${user.task_name} (${steps.length} ขั้นตอนที่รอดำเนินการ)`,
           html
         });
         console.log(`📧 Sent next step notification to ${emails.join(', ')}`);
