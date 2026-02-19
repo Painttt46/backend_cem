@@ -1079,7 +1079,7 @@ router.post('/', async (req, res) => {
     // Get created data with user info for Teams notification
     const createdResult = await pool.query(`
       SELECT 
-        l.id, l.leave_type, l.start_datetime, l.end_datetime, l.total_days, l.reason,
+        l.id, l.user_id, l.leave_type, l.start_datetime, l.end_datetime, l.total_days, l.reason,
         l.has_delegation, l.delegate_name, l.delegate_position, l.delegate_department,
         l.delegate_contact, l.work_details, l.attachments, l.status, l.created_at, l.updated_at,
         u.firstname || ' ' || u.lastname as employee_name,

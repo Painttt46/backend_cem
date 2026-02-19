@@ -129,6 +129,48 @@ app.get("/health", async (req, res) => {
   }
 });
 
+// Test: trigger new_request email for latest pending leave (remove after testing)
+app.get("/api/test-new-leave-email", async (req, res) => {
+  try {
+    const leaveResult = await pool.query(`
+      SELECT l.id, l.user_id, l.leave_type, l.start_datetime, l.end_datetime, l.total_days,
+             l.reason, l.status, l.created_at,
+             u.firstname || ' ' || u.lastname as employee_name,
+             u.position as employee_position
+      FROM leave_requests l
+      LEFT JOIN users u ON l.user_id = u.id
+      WHERE l.status = 'pending'
+      ORDER BY l.created_at DESC LIMIT 1
+    `);
+    if (leaveResult.rows.length === 0) return res.json({ message: 'No pending leave found' });
+    const leaveData = leaveResult.rows[0];
+
+    const { sendLeaveNotificationEmail } = await import('./services/emailService.js');
+    const approversResult = await pool.query(`
+      SELECT las.user_id, las.approval_level, las.receive_email, las.department_ids, las.position_ids,
+             u.email, u.firstname, u.lastname
+      FROM leave_approval_settings las
+      JOIN users u ON las.user_id = u.id
+      WHERE las.approval_level = 1 AND las.receive_email = true AND u.email IS NOT NULL
+    `);
+
+    const requesterResult = await pool.query('SELECT department, position FROM users WHERE id = $1', [leaveData.user_id]);
+    const requester = requesterResult.rows[0] || {};
+
+    const emails = approversResult.rows.filter(r => {
+      const deptIds = (r.department_ids || []).map(d => d.toLowerCase());
+      const posIds = (r.position_ids || []).map(p => p.toLowerCase());
+      const deptMatch = deptIds.length === 0 || deptIds.includes((requester.department || '').toLowerCase());
+      const posMatch = posIds.length === 0 || posIds.includes((requester.position || '').toLowerCase());
+      return deptMatch && posMatch;
+    }).map(r => r.email);
+
+    res.json({ leaveData, approvers: approversResult.rows, requester, matched_emails: emails });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Public server time endpoint (no auth required)
 app.get("/api/server-time", async (req, res) => {
   try {
