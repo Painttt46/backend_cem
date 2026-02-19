@@ -129,12 +129,28 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// Test: trigger leave reminder manually (remove after testing)
+// Test: check email config + trigger leave reminder (remove after testing)
 app.get("/api/test-leave-reminder", async (req, res) => {
   try {
+    const emailConfig = {
+      host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT,
+      user: process.env.EMAIL_USER,
+      from: process.env.EMAIL_FROM,
+      hasPass: !!process.env.EMAIL_PASS
+    };
+    console.log('[TestReminder] Email config:', emailConfig);
+
+    const { testEmailConnection } = await import('./services/emailService.js');
+    const connected = await testEmailConnection();
+    console.log('[TestReminder] Email connection:', connected);
+
     const result = await sendPendingLeaveReminders();
-    res.json({ success: true, result });
+    console.log('[TestReminder] Result:', result);
+
+    res.json({ success: true, emailConfig, emailConnected: connected, result });
   } catch (error) {
+    console.error('[TestReminder] Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
