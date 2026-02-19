@@ -326,22 +326,39 @@ async function checkAndNotifyDaily() {
 // แจ้งเตือนเมื่อ step ก่อนหน้าเสร็จ
 export async function notifyNextStep(taskId, completedStepOrder) {
   try {
+    // แจ้งทุก step ที่ยังไม่เสร็จใน workflow เดียวกัน (ไม่ใช่แค่ step ถัดไป)
+    // แต่ไม่ส่งให้คนที่อยู่ใน step ที่เพิ่งเสร็จ
     const result = await pool.query(`
-      SELECT ts.*, t.task_name, u.email, u.firstname
+      SELECT ts.*, t.task_name, u.email, u.firstname, u.id as user_id
       FROM task_steps ts
       JOIN tasks t ON ts.task_id = t.id
       CROSS JOIN LATERAL jsonb_array_elements(ts.assigned_users) AS au
       JOIN users u ON (au->>'id')::int = u.id
-      WHERE ts.task_id = $1 AND ts.step_order = $2
-    `, [taskId, completedStepOrder + 1]);
+      WHERE ts.task_id = $1 
+        AND ts.status != 'completed' 
+        AND u.email IS NOT NULL
+        AND u.id NOT IN (
+          SELECT (au2->>'id')::int 
+          FROM task_steps ts2 
+          CROSS JOIN LATERAL jsonb_array_elements(ts2.assigned_users) AS au2
+          WHERE ts2.task_id = $1 AND ts2.step_order = $2
+        )
+      ORDER BY ts.step_order
+    `, [taskId, completedStepOrder]);
 
     if (result.rows.length > 0) {
-      const step = result.rows[0];
-      const emails = [...new Set(result.rows.map(r => r.email).filter(Boolean))];
-      const firstnames = [...new Set(result.rows.map(r => r.firstname).filter(Boolean))];
-      
-      if (emails.length > 0) {
-        const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
+      // จัดกลุ่มตาม step
+      const stepMap = new Map();
+      for (const row of result.rows) {
+        if (!stepMap.has(row.id)) {
+          stepMap.set(row.id, { step: row, emails: [], firstnames: [] });
+        }
+        if (row.email) stepMap.get(row.id).emails.push(row.email);
+        if (row.firstname) stepMap.get(row.id).firstnames.push(row.firstname);
+      }
+
+      for (const { step, emails, firstnames } of stepMap.values()) {
+      const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
         const daysLeft = step.end_date ? Math.ceil((new Date(step.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
         const isUrgent = daysLeft !== null && daysLeft <= 3;
 

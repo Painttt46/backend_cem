@@ -150,7 +150,11 @@ router.put('/:id', async (req, res) => {
     
     // ถ้าเปลี่ยนเป็น completed ให้แจ้ง step ถัดไป
     if (wasNotCompleted && finalStatus === 'completed') {
-      notifyNextStep(existing.task_id, existing.step_order);
+      try {
+        await notifyNextStep(existing.task_id, existing.step_order);
+      } catch (error) {
+        console.error('Error notifying next step:', error);
+      }
     } 
     // แจ้งเฉพาะผู้รับผิดชอบใหม่ที่ถูกเพิ่ม
     else if (assigned_users && assigned_users.length > 0) {
