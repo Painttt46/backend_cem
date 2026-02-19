@@ -558,7 +558,7 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       FROM task_steps ts
       JOIN tasks t ON ts.task_id = t.id
       WHERE (ts.status IS NULL OR ts.status NOT IN ('completed', 'cancelled'))
-        AND t.status NOT IN ('completed', 'cancelled', 'closed')
+        AND t.status NOT IN ('completed', 'closed')
       ORDER BY t.task_name, ts.step_order ASC
     `, [today]);
 
