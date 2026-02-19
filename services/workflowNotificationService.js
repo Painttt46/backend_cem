@@ -324,7 +324,7 @@ async function checkAndNotifyDaily() {
 }
 
 // แจ้งเตือนเมื่อ step ก่อนหน้าเสร็จ
-export async function notifyNextStep(taskId, completedStepOrder, completedStepName) {
+export async function notifyNextStep(taskId, completedStepOrder, completedStepName, completedStepDate) {
   try {
     // แจ้งทุก step ที่ยังไม่เสร็จใน workflow เดียวกัน (ไม่ใช่แค่ step ถัดไป)
     // แต่ไม่ส่งให้คนที่อยู่ใน step ที่เพิ่งเสร็จ
@@ -339,6 +339,15 @@ export async function notifyNextStep(taskId, completedStepOrder, completedStepNa
         AND u.email IS NOT NULL
       ORDER BY ts.step_order
     `, [taskId]);
+
+    // ดึงข้อมูล step ที่เสร็จมาด้วย
+    const completedStepResult = await pool.query(`
+      SELECT step_name, start_date, end_date
+      FROM task_steps 
+      WHERE task_id = $1 AND step_order = $2
+    `, [taskId, completedStepOrder]);
+    
+    const completedStep = completedStepResult.rows[0];
 
     if (result.rows.length > 0) {
       // จัดกลุ่มตามคน (user_id) เพื่อส่ง email เดียวต่อคน
@@ -356,7 +365,7 @@ export async function notifyNextStep(taskId, completedStepOrder, completedStepNa
       }
 
       for (const { user, steps, emails, firstnames } of userMap.values()) {
-      const formatDate = (date) => date ? new Date(date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
+      const formatDate = (date) => date ? new Date(date).toLocaleString('th-TH', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
         const daysLeft = user.end_date ? Math.ceil((new Date(user.end_date) - new Date()) / (1000 * 60 * 60 * 24)) : null;
         const isUrgent = daysLeft !== null && daysLeft <= 3;
 
@@ -413,6 +422,8 @@ export async function notifyNextStep(taskId, completedStepOrder, completedStepNa
                         <tr>
                           <td align="center" valign="middle" style="padding:20px 18px;">
                             <div style="font-family:Arial,Helvetica,sans-serif;font-size:40px;line-height:40px;color:#ffffff;text-align:center;">🚀</div>
+                            <div style="height:8px;"></div>
+                            <div style="font-family:Arial,Helvetica,sans-serif;font-size:18px;line-height:24px;color:#ffffff;text-align:center;">Step เสร็จแล้ว!</div>
                           </td>
                         </tr>
                       </table>
@@ -425,6 +436,8 @@ export async function notifyNextStep(taskId, completedStepOrder, completedStepNa
                   <tr>
                     <td align="center" style="padding:20px 18px;">
                       <div style="font-family:Arial,Helvetica,sans-serif;font-size:40px;line-height:40px;color:#ffffff;text-align:center;">🚀</div>
+                      <div style="height:8px;"></div>
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:18px;line-height:24px;color:#ffffff;text-align:center;">Step เสร็จแล้ว!</div>
                     </td>
                   </tr>
                 </table>
@@ -450,7 +463,13 @@ export async function notifyNextStep(taskId, completedStepOrder, completedStepNa
             <tr>
               <td class="px" style="padding:${isUrgent ? '15px' : '28px'} 42px 12px;font-family:Arial,Helvetica,sans-serif;color:#2b2b2b;">
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">สวัสดี, <b>${firstnames.join(', ')}</b></p>
-                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">✅ Step <b>"${completedStepName}"</b> ได้ดำเนินการเสร็จสิ้นแล้ว</p>
+                <p style="margin:0 0 18px;font-size:16px;line-height:26px;">✅ Step <b>"${completedStepName}"</b> ได้ดำเนินการเสร็จสิ้นแล้ว${completedStepDate ? ` (${formatDate(completedStepDate)})` : ''}</p>
+                ${completedStep?.start_date || completedStep?.end_date ? `
+                <div style="margin:0 0 18px;font-size:12px;color:#64748b;">
+                  ${completedStep.start_date ? `📅 เริ่ม: ${formatDate(completedStep.start_date)}` : ''}
+                  ${completedStep.start_date && completedStep.end_date ? ' | ' : ''}
+                  ${completedStep.end_date ? `⏰ สิ้นสุด: ${formatDate(completedStep.end_date)}` : ''}
+                </div>` : ''}
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">งานที่ต้องทำ:</p>
 
                 <!-- Project Card -->
@@ -470,7 +489,11 @@ export async function notifyNextStep(taskId, completedStepOrder, completedStepNa
                   <tr>
                     <td style="padding:12px;">
                       <div style="font-size:14px;color:#1a1a2e;font-weight:bold;">${step.step_name}</div>
-                      ${step.end_date ? `<div style="font-size:11px;color:#64748b;margin-top:4px;">⏰ กำหนดส่ง: ${formatDate(step.end_date)}</div>` : ''}
+                      <div style="font-size:11px;color:#64748b;margin-top:4px;">
+                        ${step.start_date ? `📅 เริ่ม: ${formatDate(step.start_date)}` : ''}
+                        ${step.start_date && step.end_date ? ' | ' : ''}
+                        ${step.end_date ? `⏰ สิ้นสุด: ${formatDate(step.end_date)}` : ''}
+                      </div>
                     </td>
                   </tr>
                 </table>`).join('')}

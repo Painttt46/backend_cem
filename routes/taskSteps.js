@@ -155,7 +155,7 @@ router.put('/:id', async (req, res) => {
     // ถ้าเปลี่ยนเป็น completed ให้แจ้ง step ถัดไป
     if (wasNotCompleted && finalStatus === 'completed') {
       try {
-        await notifyNextStep(existing.task_id, existing.step_order, existing.step_name);
+        await notifyNextStep(existing.task_id, existing.step_order, existing.step_name, completed_at);
       } catch (error) {
         console.error('Error notifying next step:', error);
       }
