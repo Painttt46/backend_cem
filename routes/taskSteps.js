@@ -115,6 +115,10 @@ router.put('/:id', async (req, res) => {
     const wasNotCompleted = existing.status !== 'completed';
     
     // รักษาค่าเดิมถ้าไม่ได้ส่งมา
+    const finalStepName = step_name !== undefined ? step_name : existing.step_name;
+    const finalStepOrder = step_order !== undefined ? step_order : existing.step_order;
+    const finalStartDate = start_date !== undefined ? start_date : existing.start_date;
+    const finalEndDate = end_date !== undefined ? end_date : existing.end_date;
     const finalStatus = status !== undefined ? status : existing.status;
     const finalProjectStatuses = project_statuses !== undefined ? project_statuses : existing.project_statuses;
     
@@ -129,7 +133,7 @@ router.put('/:id', async (req, res) => {
           completed_by = $9, completed_at = $10, updated_at = CURRENT_TIMESTAMP
       WHERE id = $11
       RETURNING *
-    `, [step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), completed_by, completed_at, id]);
+    `, [finalStepName, finalStepOrder, finalStartDate, finalEndDate, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), completed_by, completed_at, id]);
     
     // เช็คว่า steps ทั้งหมดเสร็จหรือยัง
     const allSteps = await pool.query('SELECT status FROM task_steps WHERE task_id = $1', [existing.task_id]);
