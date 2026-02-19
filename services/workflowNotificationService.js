@@ -386,7 +386,7 @@ export async function notifyNextStep(taskId, completedStepOrder) {
 </head>
 <body style="margin:0;padding:0;background:#f2f3f5;">
   <div style="display:none;font-size:1px;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
-    Step ก่อนหน้าเสร็จแล้ว - ${step.step_name}
+    Step ก่อนหน้าเสร็จแล้ว - ${steps.map(s => s.step_name).join(', ')}
   </div>
   <center style="width:100%;background:#f2f3f5;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f5;">
