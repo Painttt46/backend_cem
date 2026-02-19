@@ -129,7 +129,31 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// Test: check email config + trigger leave reminder (remove after testing)
+// Debug: raw DB data (remove after testing)
+app.get("/api/debug-leave-reminder", async (req, res) => {
+  try {
+    const approvers = await pool.query(`
+      SELECT las.user_id, las.approval_level, las.receive_email, las.can_approve,
+             las.department_ids, las.position_ids,
+             u.email, u.firstname, u.lastname
+      FROM leave_approval_settings las
+      JOIN users u ON las.user_id = u.id
+    `);
+    const pending = await pool.query(`
+      SELECT lr.id, lr.status, lr.created_at,
+             u.firstname || ' ' || u.lastname as name, u.department, u.position
+      FROM leave_requests lr
+      JOIN users u ON lr.user_id = u.id
+      WHERE lr.status IN ('pending', 'pending_level2')
+      ORDER BY lr.created_at ASC
+    `);
+    res.json({ approvers: approvers.rows, pending_leaves: pending.rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test: check email config + show approvers + trigger leave reminder (remove after testing)
 app.get("/api/test-leave-reminder", async (req, res) => {
   try {
     const emailConfig = {
@@ -139,18 +163,23 @@ app.get("/api/test-leave-reminder", async (req, res) => {
       from: process.env.EMAIL_FROM,
       hasPass: !!process.env.EMAIL_PASS
     };
-    console.log('[TestReminder] Email config:', emailConfig);
 
     const { testEmailConnection } = await import('./services/emailService.js');
-    const connected = await testEmailConnection();
-    console.log('[TestReminder] Email connection:', connected);
+    const { getPendingLeavesForReminder } = await import('./services/leaveReminderService.js');
+
+    const emailConnected = await testEmailConnection();
+    const approversWithLeaves = await getPendingLeavesForReminder();
+
+    const approverSummary = approversWithLeaves.map(({ approver, leaves }) => ({
+      approver_email: approver.email,
+      approver_name: `${approver.firstname} ${approver.lastname}`,
+      pending_leaves_count: leaves.length
+    }));
 
     const result = await sendPendingLeaveReminders();
-    console.log('[TestReminder] Result:', result);
 
-    res.json({ success: true, emailConfig, emailConnected: connected, result });
+    res.json({ success: true, emailConfig, emailConnected, approverSummary, result });
   } catch (error) {
-    console.error('[TestReminder] Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
