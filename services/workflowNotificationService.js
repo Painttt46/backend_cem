@@ -676,6 +676,9 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       };
     });
 
+    console.log(`📊 Sending to Teams: ${Object.keys(projects).length} projects, ${result.rows.length} steps`);
+    console.log('Projects:', Object.keys(projects).map(id => projects[id].task_name));
+    
     const message = {
       type: "AdaptiveCard",
       version: "1.5",
@@ -687,6 +690,9 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       msteams: { width: "Full" }
     };
 
+    console.log(`📏 Message size: ${JSON.stringify(message).length} characters`);
+    console.log(`📦 Body items: ${message.body.length} items`);
+    
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
