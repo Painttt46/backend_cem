@@ -38,7 +38,7 @@ export const getPendingLeavesForReminder = async () => {
            u.id, u.email, u.firstname, u.lastname
     FROM leave_approval_settings las
     JOIN users u ON las.user_id = u.id
-    WHERE las.can_approve = true AND las.receive_email = true AND u.email IS NOT NULL
+    WHERE las.receive_email = true AND u.email IS NOT NULL
   `);
   const approverSettings = settingsResult.rows;
 
