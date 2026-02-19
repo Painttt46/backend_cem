@@ -13,13 +13,7 @@ const LEAVE_TYPE_LABELS = {
 
 // Get pending leaves grouped by approver for each level
 export const getPendingLeavesForReminder = async () => {
-  // Get leave approval settings
-  const settingsResult = await pool.query(`
-    SELECT step, approvers FROM leave_approval_settings ORDER BY step
-  `);
-  const settings = settingsResult.rows;
-
-  // Get all pending leaves
+  // Get all pending leaves > 24 hours
   const pendingResult = await pool.query(`
     SELECT 
       lr.id, lr.leave_type, lr.total_days, lr.status, lr.created_at,
@@ -37,31 +31,38 @@ export const getPendingLeavesForReminder = async () => {
     leave_type_label: LEAVE_TYPE_LABELS[leave.leave_type] || leave.leave_type
   }));
 
+  if (pendingLeaves.length === 0) return [];
+
+  // Get all approver settings
+  const settingsResult = await pool.query(`
+    SELECT las.user_id, las.approval_level, las.department_ids, las.position_ids,
+           u.id, u.email, u.firstname, u.lastname
+    FROM leave_approval_settings las
+    JOIN users u ON las.user_id = u.id
+    WHERE las.can_approve = true AND las.receive_email = true AND u.email IS NOT NULL
+  `);
+  const approverSettings = settingsResult.rows;
+
   // Group by approver
   const approverMap = new Map();
 
   for (const leave of pendingLeaves) {
     const level = leave.status === 'pending' ? 1 : 2;
-    const stepSettings = settings.find(s => s.step === level);
-    if (!stepSettings?.approvers) continue;
 
-    // Find matching approvers based on department/position
-    for (const approverConfig of stepSettings.approvers) {
-      const deptMatch = !approverConfig.departments?.length || approverConfig.departments.includes(leave.department);
-      const posMatch = !approverConfig.positions?.length || approverConfig.positions.includes(leave.position);
-      
-      if (deptMatch && posMatch && approverConfig.user_ids?.length) {
-        // Get approver users
-        const approversResult = await pool.query(`
-          SELECT id, email, firstname, lastname FROM users WHERE id = ANY($1)
-        `, [approverConfig.user_ids]);
+    for (const setting of approverSettings) {
+      if (setting.approval_level !== level) continue;
 
-        for (const approver of approversResult.rows) {
-          if (!approverMap.has(approver.id)) {
-            approverMap.set(approver.id, { approver, leaves: [] });
-          }
-          approverMap.get(approver.id).leaves.push(leave);
+      const deptIds = (setting.department_ids || []).map(d => d.toLowerCase());
+      const posIds = (setting.position_ids || []).map(p => p.toLowerCase());
+      const deptMatch = deptIds.length === 0 || deptIds.includes((leave.department || '').toLowerCase());
+      const posMatch = posIds.length === 0 || posIds.includes((leave.position || '').toLowerCase());
+
+      if (deptMatch && posMatch) {
+        const approver = { id: setting.user_id, email: setting.email, firstname: setting.firstname, lastname: setting.lastname };
+        if (!approverMap.has(approver.id)) {
+          approverMap.set(approver.id, { approver, leaves: [] });
         }
+        approverMap.get(approver.id).leaves.push(leave);
       }
     }
   }
