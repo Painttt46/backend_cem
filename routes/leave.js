@@ -368,8 +368,6 @@ async function createLeaveMessage(type, data) {
         ['วันเริ่มลา', formatDateTime(data.start_datetime)],
         ['วันสิ้นสุด', formatDateTime(data.end_datetime)],
         ['จำนวนวัน', correctDays + ' วัน'],
-
-        ['เหตุผล', data.reason || '-'],
         ['สถานะ', 'รออนุมัติ']
       ];
       break;
@@ -384,7 +382,6 @@ async function createLeaveMessage(type, data) {
         ['วันเริ่มลา', formatDateTime(data.start_datetime)],
         ['วันสิ้นสุด', formatDateTime(data.end_datetime)],
         ['จำนวนวัน', correctDays + ' วัน'],
-        ['เหตุผล', data.reason || '-'],
         ['ผู้อนุมัติขั้นที่ 1 (HR)', data.approved_by_level1 || '-'],
         ['ผู้อนุมัติขั้นที่ 2 (ผู้บริหาร)', data.approved_by_level2 || '-'],
         ['สถานะ', 'อนุมัติ']
@@ -401,7 +398,6 @@ async function createLeaveMessage(type, data) {
         ['วันเริ่มลา', formatDateTime(data.start_datetime)],
         ['วันสิ้นสุด', formatDateTime(data.end_datetime)],
         ['จำนวนวัน', data.total_days + ' วัน'],
-        ['เหตุผล', data.reason || '-'],
         ['ผู้ปฏิเสธ', data.approved_by || 'ไม่ระบุ'],
         ['สถานะ', 'ปฏิเสธ']
       ];
