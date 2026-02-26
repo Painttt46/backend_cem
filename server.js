@@ -97,7 +97,13 @@ const authLimiter = rateLimit({
 
 // CORS configuration
 app.use(cors({
-  origin: ['http://172.30.101.52:8080', 'http://localhost:3001', 'http://127.0.0.1:8080'],
+  origin: [
+    'http://172.30.101.52:8080',
+    'http://localhost:3001',
+    'http://127.0.0.1:8080',
+    'http://localhost:3000', // เพิ่ม origin ของ frontend
+    'http://127.0.0.1:3000'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -156,6 +162,10 @@ app.use('/api/car-booking', verifyToken, carBookingRoutes);
 app.use('/api/role-permissions', verifyToken, rolePermissionsRoutes);
 app.use('/api/settings', verifyToken, settingsRoutes);
 app.use('/api/audit-logs', verifyToken, auditLogsRoutes);
+
+// Banner route
+import bannerRoutes from './routes/banner.js';
+app.use('/api/banner', verifyToken, bannerRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {
