@@ -212,6 +212,7 @@ async function processBookingStatuses() {
       SELECT c.id, c.selected_date, c.time, c.license, c.location, c.project, c.discription,
              c.colleagues, c.images, c.user_id, c.status, c.return_name, c.return_location,
              c.return_time, c.return_date, c.type, c.fuel_level_borrow, c.fuel_level_return,
+             c.easy_pass_borrow, c.easy_pass_return,
              u.firstname || ' ' || u.lastname as name
       FROM car_bookings c
       LEFT JOIN users u ON c.user_id = u.id
