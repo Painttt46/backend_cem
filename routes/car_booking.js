@@ -298,6 +298,7 @@ router.get('/', async (req, res) => {
         c.id, c.type, c.location, c.project, c.task_id, c.discription, c.selected_date, c.time, c.license, 
         c.return_name, c.return_location, c.colleagues, c.created_at, c.updated_at,
         c.return_time, c.return_date, c.status, c.user_id, c.fuel_level_borrow, c.fuel_level_return,
+        c.easy_pass_borrow, c.easy_pass_return,
         CASE WHEN c.images IS NOT NULL AND c.images != '[]'::jsonb AND c.images != 'null'::jsonb THEN true ELSE false END as has_images,
         u.firstname || ' ' || u.lastname as name, u.nickname,
         t.so_number, t.customer_info
