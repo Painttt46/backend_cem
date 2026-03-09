@@ -1339,7 +1339,7 @@ router.put('/:id/status', async (req, res) => {
 });
 
 
-// Update attachments (owner only, within time window)
+// Update attachments (owner or Level2 approver, within time window)
 router.put('/:id/attachments', async (req, res) => {
   try {
     const { id } = req.params;
@@ -1350,7 +1350,16 @@ router.put('/:id/attachments', async (req, res) => {
     if (result.rows.length === 0) return res.status(404).json({ error: 'ไม่พบคำขอลา' });
 
     const leave = result.rows[0];
-    if (leave.user_id != currentUserId) {
+    const isOwner = leave.user_id == currentUserId;
+
+    // Check if Level2 approver
+    const level2Check = await pool.query(
+      `SELECT 1 FROM leave_approval_settings WHERE user_id = $1 AND approval_level = 2 AND can_approve = true`,
+      [currentUserId]
+    );
+    const isLevel2Approver = level2Check.rows.length > 0;
+
+    if (!isOwner && !isLevel2Approver) {
       return res.status(403).json({ error: 'ไม่มีสิทธิ์แก้ไขเอกสาร' });
     }
 
