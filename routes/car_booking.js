@@ -183,7 +183,7 @@ function createCarBookingMessage(type, data) {
 router.get('/latest-fuel', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT fuel_level_return, easy_pass_return 
+      SELECT fuel_level_return, easy_pass_return, return_location
       FROM car_bookings 
       WHERE status = 'returned' AND fuel_level_return IS NOT NULL
       ORDER BY updated_at DESC 
@@ -191,7 +191,8 @@ router.get('/latest-fuel', async (req, res) => {
     `);
     res.json({ 
       fuel_level: result.rows[0]?.fuel_level_return || 50,
-      easy_pass_balance: result.rows[0]?.easy_pass_return || 500
+      easy_pass_balance: result.rows[0]?.easy_pass_return || 500,
+      return_location: result.rows[0]?.return_location || null
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
