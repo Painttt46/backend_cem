@@ -1338,6 +1338,45 @@ router.put('/:id/status', async (req, res) => {
   }
 });
 
+
+// Update attachments (owner only, within time window)
+router.put('/:id/attachments', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { attachments } = req.body;
+    const currentUserId = req.user.id;
+
+    const result = await pool.query('SELECT * FROM leave_requests WHERE id = $1', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'ไม่พบคำขอลา' });
+
+    const leave = result.rows[0];
+    if (leave.user_id != currentUserId) {
+      return res.status(403).json({ error: 'ไม่มีสิทธิ์แก้ไขเอกสาร' });
+    }
+
+    const now = new Date();
+    const createdAt = new Date(leave.created_at);
+    createdAt.setHours(0, 0, 0, 0);
+    const deadline = new Date(leave.end_datetime);
+    deadline.setDate(deadline.getDate() + 15);
+    deadline.setHours(23, 59, 59, 999);
+
+    if (now < createdAt || now > deadline) {
+      return res.status(403).json({ error: 'ไม่อยู่ในช่วงเวลาที่อนุญาต (วันยื่นคำขอ - วันสิ้นสุดลา + 15 วัน)' });
+    }
+
+    await pool.query(
+      'UPDATE leave_requests SET attachments = $1, updated_at = NOW() WHERE id = $2',
+      [JSON.stringify(attachments || []), id]
+    );
+
+    res.json({ success: true, attachments: attachments || [] });
+  } catch (error) {
+    console.error('Error updating attachments:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Delete leave request (only if status is pending)
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
