@@ -8,10 +8,10 @@ import { logAudit } from '../utils/auditHelper.js';
 const router = express.Router();
 
 async function ensureUsedDaysNumeric() {
-  await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS used_days NUMERIC(10,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS used_days NUMERIC(10,4) DEFAULT 0`);
   await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN used_days SET DEFAULT 0`);
-  await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN used_days TYPE NUMERIC(10,2) USING COALESCE(used_days, 0)::numeric`);
-  await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN annual_quota TYPE NUMERIC(10,2) USING COALESCE(annual_quota, 0)::numeric`);
+  await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN used_days TYPE NUMERIC(10,4) USING COALESCE(used_days, 0)::numeric`);
+  await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN annual_quota TYPE NUMERIC(10,4) USING COALESCE(annual_quota, 0)::numeric`);
 }
 
 // Get approvers by level and send email notification
@@ -541,7 +541,7 @@ router.get('/setup-database', async (req, res) => {
           id SERIAL PRIMARY KEY,
           user_id INTEGER NOT NULL,
           leave_type VARCHAR(50) NOT NULL,
-          annual_quota NUMERIC(10,2) NOT NULL DEFAULT 0,
+          annual_quota NUMERIC(10,4) NOT NULL DEFAULT 0,
           year INTEGER NOT NULL DEFAULT EXTRACT(YEAR FROM CURRENT_DATE),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
