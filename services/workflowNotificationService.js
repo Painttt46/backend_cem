@@ -17,9 +17,9 @@ const transporter = nodemailer.createTransport({
 
 // ส่ง email สรุปรายวัน
 async function sendDailySummaryEmail(user, steps) {
-  const { overdue, dueSoon, inProgress, newToday } = steps;
+  const { overdue, dueSoon, inProgress, newToday, pending = [] } = steps;
   
-  if (overdue.length === 0 && dueSoon.length === 0 && inProgress.length === 0 && newToday.length === 0) {
+  if (overdue.length === 0 && dueSoon.length === 0 && inProgress.length === 0 && newToday.length === 0 && pending.length === 0) {
     return;
   }
 
@@ -37,14 +37,16 @@ async function sendDailySummaryEmail(user, steps) {
                 <div style="font-size:15px;font-weight:bold;color:${textColor};margin-bottom:12px;">${emoji} ${title} (${items.length})</div>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr style="background:rgba(0,0,0,0.05);">
-                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:45%;">โครงการ</td>
-                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:35%;">Step</td>
-                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:20%;text-align:center;">กำหนด</td>
+                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:40%;">โครงการ</td>
+                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:30%;">Step</td>
+                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:15%;text-align:center;">เริ่ม</td>
+                    <td style="padding:10px 12px;font-weight:bold;font-size:12px;color:#555;width:15%;text-align:center;">สิ้นสุด</td>
                   </tr>
                   ${items.map(s => `
                   <tr style="border-top:1px solid rgba(0,0,0,0.08);">
                     <td style="padding:10px 12px;font-size:13px;color:#333;">${s.task_name || '-'}</td>
                     <td style="padding:10px 12px;font-size:13px;color:#333;font-weight:600;">${s.step_name}</td>
+                    <td style="padding:10px 12px;font-size:13px;color:#166534;font-weight:bold;text-align:center;">${formatDate(s.start_date)}</td>
                     <td style="padding:10px 12px;font-size:13px;color:${textColor};font-weight:bold;text-align:center;">${formatDate(s.end_date)}</td>
                   </tr>`).join('')}
                 </table>
@@ -55,7 +57,7 @@ async function sendDailySummaryEmail(user, steps) {
       </tr>`;
   };
 
-  const totalTasks = overdue.length + dueSoon.length + inProgress.length + newToday.length;
+  const totalTasks = overdue.length + dueSoon.length + inProgress.length + newToday.length + pending.length;
 
   const html = `<!DOCTYPE html>
 <html lang="th">
@@ -130,6 +132,7 @@ async function sendDailySummaryEmail(user, steps) {
                     ${dueSoon.length > 0 ? `<td align="center" style="padding:8px;"><div style="background:#ffedd5;border-radius:8px;padding:12px 8px;"><div style="font-size:24px;font-weight:bold;color:#ea580c;">${dueSoon.length}</div><div style="font-size:11px;color:#9a3412;">ใกล้ครบกำหนด</div></div></td>` : ''}
                     ${inProgress.length > 0 ? `<td align="center" style="padding:8px;"><div style="background:#dbeafe;border-radius:8px;padding:12px 8px;"><div style="font-size:24px;font-weight:bold;color:#2563eb;">${inProgress.length}</div><div style="font-size:11px;color:#1e40af;">กำลังดำเนินการ</div></div></td>` : ''}
                     ${newToday.length > 0 ? `<td align="center" style="padding:8px;"><div style="background:#dcfce7;border-radius:8px;padding:12px 8px;"><div style="font-size:24px;font-weight:bold;color:#16a34a;">${newToday.length}</div><div style="font-size:11px;color:#166534;">งานใหม่วันนี้</div></div></td>` : ''}
+                     ${pending.length > 0 ? `<td align="center" style="padding:8px;"><div style="background:#ede9fe;border-radius:8px;padding:12px 8px;"><div style="font-size:24px;font-weight:bold;color:#7c3aed;">${pending.length}</div><div style="font-size:11px;color:#5b21b6;">รอดำเนินการ</div></div></td>` : ''}
                   </tr>
                 </table>
               </td>
@@ -140,6 +143,7 @@ async function sendDailySummaryEmail(user, steps) {
             ${renderSection('ใกล้ครบกำหนด (1-4 วัน)', '🟠', dueSoon, '#fff7ed', '#ea580c', '#ea580c')}
             ${renderSection('กำลังดำเนินการ', '🔵', inProgress, '#eff6ff', '#2563eb', '#2563eb')}
             ${renderSection('งานใหม่วันนี้', '🟢', newToday, '#f0fdf4', '#16a34a', '#16a34a')}
+            ${renderSection('รอดำเนินการ', '⏳', pending, '#f5f3ff', '#7c3aed', '#7c3aed')}
 
             <!-- Spacer -->
             <tr><td style="height:20px;"></td></tr>
@@ -286,14 +290,22 @@ async function checkAndNotifyDaily() {
       const dueSoon = [];
       const inProgress = [];
       const newToday = [];
+      const pending = [];
       
       for (const step of steps) {
         const startDate = step.start_date ? new Date(step.start_date).toISOString().split('T')[0] : null;
         const endDate = step.end_date ? new Date(step.end_date).toISOString().split('T')[0] : null;
         
+        // ยังไม่ถึงวันเริ่ม = รอดำเนินการ
+        if (startDate && startDate > today) {
+          pending.push(step);
+          continue;
+        }
+        
         // งานใหม่วันนี้
         if (startDate === today) {
           newToday.push(step);
+          continue;
         }
         
         if (endDate) {
@@ -316,7 +328,7 @@ async function checkAndNotifyDaily() {
         await sendOverdueEmail(user, overdue);
       }
       
-      await sendDailySummaryEmail(user, { overdue, dueSoon, inProgress, newToday });
+      await sendDailySummaryEmail(user, { overdue, dueSoon, inProgress, newToday, pending });
     }
   } catch (error) {
     console.error('Daily workflow notification error:', error);
