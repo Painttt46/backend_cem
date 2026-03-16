@@ -3,16 +3,82 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Create transporter
-const transporter = nodemailer.createTransport({
+// Primary transporter (Gmail)
+const gmailTransporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: false, // true for 465, false for other ports
+  port: parseInt(process.env.EMAIL_PORT) || 587,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
+
+// Fallback transporter (Brevo) — used when Gmail daily limit is exceeded
+const brevoTransporter = nodemailer.createTransport({
+  host: process.env.BREVO_HOST,
+  port: parseInt(process.env.BREVO_PORT) || 587,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_USER,
+    pass: process.env.BREVO_PASS,
+  },
+});
+
+// State: track when Gmail limit was hit (reset after 24h)
+let gmailLimitHitAt = null;
+const GMAIL_LIMIT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const isGmailLimited = () => {
+  if (!gmailLimitHitAt) return false;
+  if (Date.now() - gmailLimitHitAt >= GMAIL_LIMIT_COOLDOWN_MS) {
+    gmailLimitHitAt = null; // cooldown expired, retry Gmail
+    console.log('[Email] Gmail 24h cooldown expired — switching back to Gmail');
+    return false;
+  }
+  return true;
+};
+
+const isGmailLimitError = (err) => {
+  const msg = (err.message || '').toLowerCase();
+  const response = (err.response || '').toLowerCase();
+  return (
+    msg.includes('daily user sending limit') ||
+    msg.includes('daily sending quota') ||
+    response.includes('550 5.4.5') ||
+    (err.responseCode === 550 && (msg.includes('limit') || msg.includes('quota')))
+  );
+};
+
+// sendMailWithFallback: tries Gmail first, falls back to Brevo on daily limit error
+const sendMailWithFallback = async (mailOptions) => {
+  // If Gmail is still in cooldown, go straight to Brevo
+  if (isGmailLimited()) {
+    console.log('[Email] Gmail limited — sending via Brevo');
+    const brevoOptions = {
+      ...mailOptions,
+      from: mailOptions.from?.includes(process.env.EMAIL_USER)
+        ? process.env.BREVO_FROM || mailOptions.from
+        : mailOptions.from,
+    };
+    return brevoTransporter.sendMail(brevoOptions);
+  }
+
+  try {
+    return await gmailTransporter.sendMail(mailOptions);
+  } catch (err) {
+    if (isGmailLimitError(err)) {
+      gmailLimitHitAt = Date.now();
+      console.warn('[Email] Gmail daily limit reached — switching to Brevo for 24h');
+      const brevoOptions = {
+        ...mailOptions,
+        from: process.env.BREVO_FROM || mailOptions.from,
+      };
+      return brevoTransporter.sendMail(brevoOptions);
+    }
+    throw err; // re-throw non-limit errors
+  }
+};
 
 // Send forgot password email
 export const sendForgotPasswordEmail = async (email, userData) => {
@@ -120,7 +186,7 @@ export const sendForgotPasswordEmail = async (email, userData) => {
 </html>`
     };
 
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendMailWithFallback(mailOptions);
     console.log('Email sent successfully:', result.messageId);
     return { success: true, messageId: result.messageId };
     
@@ -133,12 +199,19 @@ export const sendForgotPasswordEmail = async (email, userData) => {
 // Test email configuration
 export const testEmailConnection = async () => {
   try {
-    await transporter.verify();
-    console.log('Email server connection verified');
+    await gmailTransporter.verify();
+    console.log('[Email] Gmail connection verified');
     return true;
   } catch (error) {
-    console.error('Email server connection failed:', error);
-    return false;
+    console.warn('[Email] Gmail connection failed, trying Brevo:', error.message);
+    try {
+      await brevoTransporter.verify();
+      console.log('[Email] Brevo connection verified');
+      return true;
+    } catch (brevoError) {
+      console.error('[Email] Both Gmail and Brevo connections failed:', brevoError.message);
+      return false;
+    }
   }
 };
 
@@ -387,7 +460,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 };
 
   try {
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendMailWithFallback(mailOptions);
     console.log('Leave notification email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
@@ -631,7 +704,7 @@ export const sendPendingLeaveReminder = async (approver, pendingLeaves) => {
   };
 
   try {
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sendMailWithFallback(mailOptions);
     console.log(`Pending leave reminder sent to ${approver.email}:`, result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
