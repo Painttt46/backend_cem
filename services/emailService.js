@@ -14,9 +14,59 @@ const gmailTransporter = nodemailer.createTransport({
   },
 });
 
-// sendMailWithFallback: sends via Gmail
+// Fallback transporter (Mailjet) — used when Gmail daily limit is exceeded
+const mailjetTransporter = nodemailer.createTransport({
+  host: 'in-v3.mailjet.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.MAILJET_API_KEY,
+    pass: process.env.MAILJET_SECRET_KEY,
+  },
+});
+
+// State: track when Gmail limit was hit (reset after 24h)
+let gmailLimitHitAt = null;
+const GMAIL_LIMIT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+const isGmailLimited = () => {
+  if (!gmailLimitHitAt) return false;
+  if (Date.now() - gmailLimitHitAt >= GMAIL_LIMIT_COOLDOWN_MS) {
+    gmailLimitHitAt = null;
+    console.log('[Email] Gmail 24h cooldown expired — switching back to Gmail');
+    return false;
+  }
+  return true;
+};
+
+const isGmailLimitError = (err) => {
+  const msg = (err.message || '').toLowerCase();
+  const response = (err.response || '').toLowerCase();
+  return (
+    msg.includes('daily user sending limit') ||
+    msg.includes('daily sending quota') ||
+    response.includes('550 5.4.5') ||
+    (err.responseCode === 550 && (msg.includes('limit') || msg.includes('quota')))
+  );
+};
+
+// sendMailWithFallback: tries Gmail first, falls back to Mailjet on daily limit error
 const sendMailWithFallback = async (mailOptions) => {
-  return gmailTransporter.sendMail(mailOptions);
+  if (isGmailLimited()) {
+    console.log('[Email] Gmail limited — sending via Mailjet');
+    return mailjetTransporter.sendMail({ ...mailOptions, from: process.env.MAILJET_FROM || mailOptions.from });
+  }
+
+  try {
+    return await gmailTransporter.sendMail(mailOptions);
+  } catch (err) {
+    if (isGmailLimitError(err)) {
+      gmailLimitHitAt = Date.now();
+      console.warn('[Email] Gmail daily limit reached — switching to Mailjet for 24h');
+      return mailjetTransporter.sendMail({ ...mailOptions, from: process.env.MAILJET_FROM || mailOptions.from });
+    }
+    throw err;
+  }
 };
 
 // Send forgot password email
