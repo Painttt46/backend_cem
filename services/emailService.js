@@ -14,70 +14,9 @@ const gmailTransporter = nodemailer.createTransport({
   },
 });
 
-// Fallback transporter (Brevo) — used when Gmail daily limit is exceeded
-const brevoTransporter = nodemailer.createTransport({
-  host: process.env.BREVO_HOST,
-  port: parseInt(process.env.BREVO_PORT) || 587,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_USER,
-    pass: process.env.BREVO_PASS,
-  },
-});
-
-// State: track when Gmail limit was hit (reset after 24h)
-let gmailLimitHitAt = null;
-const GMAIL_LIMIT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-const isGmailLimited = () => {
-  if (!gmailLimitHitAt) return false;
-  if (Date.now() - gmailLimitHitAt >= GMAIL_LIMIT_COOLDOWN_MS) {
-    gmailLimitHitAt = null; // cooldown expired, retry Gmail
-    console.log('[Email] Gmail 24h cooldown expired — switching back to Gmail');
-    return false;
-  }
-  return true;
-};
-
-const isGmailLimitError = (err) => {
-  const msg = (err.message || '').toLowerCase();
-  const response = (err.response || '').toLowerCase();
-  return (
-    msg.includes('daily user sending limit') ||
-    msg.includes('daily sending quota') ||
-    response.includes('550 5.4.5') ||
-    (err.responseCode === 550 && (msg.includes('limit') || msg.includes('quota')))
-  );
-};
-
-// sendMailWithFallback: tries Gmail first, falls back to Brevo on daily limit error
+// sendMailWithFallback: sends via Gmail
 const sendMailWithFallback = async (mailOptions) => {
-  // If Gmail is still in cooldown, go straight to Brevo
-  if (isGmailLimited()) {
-    console.log('[Email] Gmail limited — sending via Brevo');
-    const brevoOptions = {
-      ...mailOptions,
-      from: mailOptions.from?.includes(process.env.EMAIL_USER)
-        ? process.env.BREVO_FROM || mailOptions.from
-        : mailOptions.from,
-    };
-    return brevoTransporter.sendMail(brevoOptions);
-  }
-
-  try {
-    return await gmailTransporter.sendMail(mailOptions);
-  } catch (err) {
-    if (isGmailLimitError(err)) {
-      gmailLimitHitAt = Date.now();
-      console.warn('[Email] Gmail daily limit reached — switching to Brevo for 24h');
-      const brevoOptions = {
-        ...mailOptions,
-        from: process.env.BREVO_FROM || mailOptions.from,
-      };
-      return brevoTransporter.sendMail(brevoOptions);
-    }
-    throw err; // re-throw non-limit errors
-  }
+  return gmailTransporter.sendMail(mailOptions);
 };
 
 // Send forgot password email
@@ -203,15 +142,8 @@ export const testEmailConnection = async () => {
     console.log('[Email] Gmail connection verified');
     return true;
   } catch (error) {
-    console.warn('[Email] Gmail connection failed, trying Brevo:', error.message);
-    try {
-      await brevoTransporter.verify();
-      console.log('[Email] Brevo connection verified');
-      return true;
-    } catch (brevoError) {
-      console.error('[Email] Both Gmail and Brevo connections failed:', brevoError.message);
-      return false;
-    }
+    console.error('[Email] Gmail connection failed:', error.message);
+    return false;
   }
 };
 
