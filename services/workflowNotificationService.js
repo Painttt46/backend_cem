@@ -252,7 +252,7 @@ async function sendOverdueEmail(user, overdueSteps) {
 
 // ตรวจสอบและส่งสรุปรายวัน
 async function checkAndNotifyDaily() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
   
   try {
     // ดึง users ทั้งหมดที่มี email
@@ -293,8 +293,8 @@ async function checkAndNotifyDaily() {
       const pending = [];
       
       for (const step of steps) {
-        const startDate = step.start_date ? new Date(step.start_date).toISOString().split('T')[0] : null;
-        const endDate = step.end_date ? new Date(step.end_date).toISOString().split('T')[0] : null;
+        const startDate = step.start_date ? new Date(step.start_date).toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' }) : null;
+        const endDate = step.end_date ? new Date(step.end_date).toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' }) : null;
         
         // ยังไม่ถึงวันเริ่ม = รอดำเนินการ
         if (startDate && startDate > today) {
@@ -555,9 +555,7 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
   const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/772efa7dba4846248602bec0f4ec9adf/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=u_vIlVoRaHZOEJ-gEE6SXcdJ-HZPpp3KN6-y1WSoGRI';
   
   try {
-    const today = new Date().toISOString().split('T')[0];
-    
-    // ดึง workflow steps ที่ยังไม่เสร็จ
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
     const result = await pool.query(`
       SELECT ts.*, t.task_name, t.so_number, t.id as task_id,
         TO_CHAR(ts.start_date, 'DD/MM') as start_fmt,
