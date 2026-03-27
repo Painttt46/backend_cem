@@ -29,6 +29,14 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 
+// Create indexes for performance
+pool.query(`
+  CREATE INDEX IF NOT EXISTS idx_dwr_work_date ON daily_work_records(work_date);
+  CREATE INDEX IF NOT EXISTS idx_dwr_step_id ON daily_work_records(step_id);
+  CREATE INDEX IF NOT EXISTS idx_dwr_user_id ON daily_work_records(user_id);
+  CREATE INDEX IF NOT EXISTS idx_task_steps_task_id ON task_steps(task_id);
+`).catch(() => {});
+
 // Start schedulers
 startCarBookingScheduler();
 startWorkflowScheduler();

@@ -33,7 +33,7 @@ router.get('/task/:taskId', async (req, res) => {
     const result = await pool.query(`
       SELECT ts.*, 
         EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as has_work_logged,
-        (SELECT MAX(work_date) FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as latest_work_date,
+        (SELECT MAX(work_date) FROM daily_work_records dwr WHERE (dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) AND work_date <= CURRENT_DATE) as latest_work_date,
         uc.firstname || ' ' || uc.lastname as created_by_name,
         ucp.firstname || ' ' || ucp.lastname as completed_by_name
       FROM task_steps ts
@@ -103,7 +103,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { step_name, step_order, start_date, end_date, assigned_users, status, description, project_statuses } = req.body;
+    const { step_name, step_order, start_date, end_date, assigned_users, status, description, project_statuses, late_reason } = req.body;
     
     // ดึงข้อมูลเดิมก่อน update
     const oldStep = await pool.query('SELECT * FROM task_steps WHERE id = $1', [id]);
@@ -130,10 +130,11 @@ router.put('/:id', async (req, res) => {
       UPDATE task_steps 
       SET step_name = $1, step_order = $2, start_date = $3, end_date = $4, 
           assigned_users = $5::jsonb, status = $6, description = $7, project_statuses = $8::jsonb, 
-          completed_by = $9, completed_at = $10, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $11
+          completed_by = $9, completed_at = $10, updated_at = CURRENT_TIMESTAMP,
+          late_reason = CASE WHEN $11::text IS NOT NULL THEN $11::text ELSE late_reason END
+      WHERE id = $12
       RETURNING *
-    `, [finalStepName, finalStepOrder, finalStartDate, finalEndDate, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), completed_by, completed_at, id]);
+    `, [finalStepName, finalStepOrder, finalStartDate, finalEndDate, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), completed_by, completed_at, late_reason || null, id]);
     
     // เช็คว่า steps ทั้งหมดเสร็จหรือยัง
     const allSteps = await pool.query('SELECT status FROM task_steps WHERE task_id = $1', [existing.task_id]);

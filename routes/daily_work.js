@@ -1016,11 +1016,29 @@ router.get('/summary', async (req, res) => {
         dwr.id, dwr.task_id, dwr.user_id,
         TO_CHAR(dwr.work_date, 'YYYY-MM-DD') as work_date,
         dwr.start_time, dwr.end_time, dwr.total_hours,
-        dwr.work_status,
+        dwr.work_status, dwr.location,
         COALESCE(u.firstname || ' ' || u.lastname, 'ไม่ระบุ') as employee_name,
         COALESCE(u.department, 'ไม่ระบุ') as employee_department,
         t.task_name,
-        COALESCE(t.category, 'งานทั่วไป') as category
+        COALESCE(t.category, 'งานทั่วไป') as category,
+        (
+          SELECT json_agg(json_build_object(
+            'id', s.id,
+            'step_name', s.step_name,
+            'step_order', s.step_order,
+            'status', s.status,
+            'project_statuses', s.project_statuses
+          ) ORDER BY s.step_order)
+          FROM task_steps s
+          WHERE s.id = ANY(
+            CASE 
+              WHEN dwr.step_ids IS NOT NULL AND jsonb_array_length(dwr.step_ids) > 0 
+              THEN ARRAY(SELECT jsonb_array_elements_text(dwr.step_ids)::int)
+              WHEN dwr.step_id IS NOT NULL THEN ARRAY[dwr.step_id]
+              ELSE ARRAY[]::int[]
+            END
+          )
+        ) as steps_data
       FROM daily_work_records dwr
       LEFT JOIN users u ON dwr.user_id = u.id
       LEFT JOIN tasks t ON dwr.task_id = t.id

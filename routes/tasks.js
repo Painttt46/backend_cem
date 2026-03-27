@@ -9,7 +9,7 @@ router.get('/', async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
-        t.id, t.task_name, t.so_number, t.contract_number, t.sale_owner, t.customer_info,
+        t.id, t.task_name, t.so_number, t.contract_number, t.sale_owner, t.project_manager, t.customer_info,
         t.description, t.files, 
         TO_CHAR(t.project_start_date, 'YYYY-MM-DD') as project_start_date,
         TO_CHAR(t.project_end_date, 'YYYY-MM-DD') as project_end_date,
@@ -28,7 +28,7 @@ router.get('/', async (req, res) => {
 // Create new task
 router.post('/', async (req, res) => {
   try {
-    const { task_name, so_number, contract_number, sale_owner, customer_info, project_start_date, project_end_date, description, category, files } = req.body;
+    const { task_name, so_number, contract_number, sale_owner, project_manager, customer_info, project_start_date, project_end_date, description, category, files } = req.body;
     
     // Check if so_number already exists
     if (so_number) {
@@ -50,10 +50,10 @@ router.post('/', async (req, res) => {
     }
     
     const result = await pool.query(`
-      INSERT INTO tasks (task_name, so_number, contract_number, sale_owner, customer_info, project_start_date, project_end_date, description, category, files, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NULL)
+      INSERT INTO tasks (task_name, so_number, contract_number, sale_owner, project_manager, customer_info, project_start_date, project_end_date, description, category, files, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NULL)
       RETURNING *
-    `, [task_name, so_number, contract_number, sale_owner, customer_info, project_start_date, project_end_date, description, finalCategory, JSON.stringify(files || [])]);
+    `, [task_name, so_number, contract_number, sale_owner, project_manager, customer_info, project_start_date, project_end_date, description, finalCategory, JSON.stringify(files || [])]);
     
     // Log audit
     await logAudit(req, {
@@ -67,7 +67,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating task:', error);
-    if (error.code === '23505') { // Unique violation
+    if (error.code === '23505') {
       return res.status(400).json({ error: 'เลข SO นี้มีอยู่ในระบบแล้ว กรุณาใช้เลข SO อื่น' });
     }
     res.status(500).json({ error: 'Failed to create task' });
@@ -105,7 +105,7 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { task_name, so_number, contract_number, sale_owner, customer_info, description, category, status, files, project_start_date, project_end_date } = req.body;
+    const { task_name, so_number, contract_number, sale_owner, project_manager, customer_info, description, category, status, files, project_start_date, project_end_date } = req.body;
     
     // Check if so_number already exists (excluding current task)
     if (so_number) {
@@ -122,11 +122,11 @@ router.put('/:id', async (req, res) => {
     const result = await pool.query(`
       UPDATE tasks 
       SET task_name = $1, so_number = $2, contract_number = $3, 
-          sale_owner = $4, customer_info = $5, description = $6, category = $7, status = $8, files = $9::jsonb, 
-          project_start_date = $10, project_end_date = $11, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $12
+          sale_owner = $4, project_manager = $5, customer_info = $6, description = $7, category = $8, status = $9, files = $10::jsonb, 
+          project_start_date = $11, project_end_date = $12, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $13
       RETURNING *
-    `, [task_name, so_number, contract_number, sale_owner, customer_info, description, category, status, JSON.stringify(files || []), project_start_date, project_end_date, id]);
+    `, [task_name, so_number, contract_number, sale_owner, project_manager, customer_info, description, category, status, JSON.stringify(files || []), project_start_date, project_end_date, id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });
@@ -145,7 +145,7 @@ router.put('/:id', async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error updating task:', error);
-    if (error.code === '23505') { // Unique violation
+    if (error.code === '23505') {
       return res.status(400).json({ error: 'เลข SO นี้มีอยู่ในระบบแล้ว กรุณาใช้เลข SO อื่น' });
     }
     res.status(500).json({ error: 'Failed to update task' });
@@ -157,14 +157,10 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Get task data before delete for audit
     const oldResult = await pool.query('SELECT task_name, so_number FROM tasks WHERE id = $1', [id]);
     const oldData = oldResult.rows[0];
     
-    // Delete related daily_work_records first
     await pool.query('DELETE FROM daily_work_records WHERE task_id = $1', [id]);
-    
-    // Delete related task_steps
     await pool.query('DELETE FROM task_steps WHERE task_id = $1', [id]);
     
     const result = await pool.query('DELETE FROM tasks WHERE id = $1 RETURNING *', [id]);
@@ -173,7 +169,6 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
     
-    // Log audit
     if (oldData) {
       await logAudit(req, {
         action: 'DELETE',
