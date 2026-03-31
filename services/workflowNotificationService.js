@@ -180,7 +180,6 @@ async function sendDailySummaryEmail(user, steps) {
       subject: `📋 สรุป Workflow - ${overdue.length > 0 ? `🔴 เกินกำหนด ${overdue.length}` : `${totalTasks} รายการ`}`,
       html
     });
-    console.log(`📧 Sent daily summary to ${user.email}`);
   } catch (error) {
     console.error('Email send error:', error);
   }
@@ -244,7 +243,6 @@ async function sendOverdueEmail(user, overdueSteps) {
       subject: `🔴 ด่วน! งานเกินกำหนด ${overdueSteps.length} รายการ - กรุณาดำเนินการ`,
       html
     });
-    console.log(`📧 Sent overdue alert to ${user.email} (${overdueSteps.length} items)`);
   } catch (error) {
     console.error('Overdue email send error:', error);
   }
@@ -542,7 +540,6 @@ export async function notifyNextStep(taskId, completedStepOrder, completedStepNa
           subject: `🚀 Step "${completedStepName}" เสร็จแล้ว: ${user.task_name}`,
           html
         });
-        console.log(`📧 Sent next step notification to ${emails.join(', ')}`);
       }
     }
   } catch (error) {
@@ -573,7 +570,6 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
     `, [today]);
 
     if (result.rows.length === 0) {
-      console.log('No active workflow steps');
       return;
     }
 
@@ -686,8 +682,6 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       };
     });
 
-    console.log(`📊 Sending to Teams: ${Object.keys(projects).length} projects, ${result.rows.length} steps`);
-    console.log('Projects:', Object.keys(projects).map(id => projects[id].task_name));
     
     const message = {
       type: "AdaptiveCard",
@@ -700,8 +694,6 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
       msteams: { width: "Full" }
     };
 
-    console.log(`📏 Message size: ${JSON.stringify(message).length} characters`);
-    console.log(`📦 Body items: ${message.body.length} items`);
     
     const response = await fetch(webhookUrl, {
       method: 'POST',
@@ -712,7 +704,6 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
     if (!response.ok) {
       console.error('Teams workflow summary failed:', response.status);
     } else {
-      console.log('✅ Workflow summary sent to Teams');
     }
   } catch (error) {
     console.error('Teams workflow summary error:', error);
@@ -722,32 +713,25 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
 // เริ่ม cron job ทุกวันจันทร์-ศุกร์ 9:00 น.
 export function startWorkflowScheduler() {
   // ส่งทันทีเมื่อ server start
-  console.log('📢 Sending initial workflow summary to Teams...');
   sendWorkflowSummaryToTeams();
   
   // สรุปรายวัน + แจ้งเตือนก่อน 1 วัน 9:00 น.
   cron.schedule('0 9 * * 1-5', () => {
-    console.log('🔔 Running daily workflow summary...');
     checkAndNotifyDaily();
-    console.log('⏰ Running due tomorrow reminder...');
     notifyDueTomorrow();
-    console.log('📢 Sending workflow summary to Teams...');
     sendWorkflowSummaryToTeams();
   }, { timezone: 'Asia/Bangkok' });
   
   // แจ้ง Teams ทุก 1 ชม. (10:00-17:00)
   cron.schedule('0 10-17 * * 1-5', () => {
-    console.log('📢 Hourly workflow summary to Teams...');
     sendWorkflowSummaryToTeams();
   }, { timezone: 'Asia/Bangkok' });
   
   // แจ้ง Teams รอบสุดท้าย 18:00
   cron.schedule('0 18 * * 1-5', () => {
-    console.log('📢 Final workflow summary to Teams...');
     sendWorkflowSummaryToTeams();
   }, { timezone: 'Asia/Bangkok' });
   
-  console.log('✅ Workflow notification scheduler started (Mon-Fri 9:00-18:00)');
 }
 
 // แจ้งเตือนเฉพาะผู้รับผิดชอบใหม่ที่ถูกเพิ่ม
@@ -967,7 +951,6 @@ async function sendAssignmentEmail(user, step, isUrgent = false, createdByName =
       subject: `${subjectPrefix} งานใหม่: ${step.step_name} - ${step.task_name}`,
       html
     });
-    console.log(`📧 Sent ${isUrgent ? 'URGENT ' : ''}assignment notification to ${user.email}`);
   } catch (error) {
     console.error('Email send error:', error);
   }
@@ -990,11 +973,9 @@ async function notifyDueTomorrow() {
     `, [tomorrowStr]);
     
     if (stepsResult.rows.length === 0) {
-      console.log('📅 No steps due tomorrow');
       return;
     }
     
-    console.log(`📅 Found ${stepsResult.rows.length} steps due tomorrow`);
     
     // จัดกลุ่มตาม user
     const userSteps = {};
@@ -1151,7 +1132,6 @@ async function sendDueTomorrowEmail(user, steps) {
       subject: `⏰ ด่วน! ${steps.length} งานครบกำหนดพรุ่งนี้`,
       html
     });
-    console.log(`📧 Sent due tomorrow reminder to ${user.email} (${steps.length} steps)`);
   } catch (error) {
     console.error('Email send error:', error);
   }

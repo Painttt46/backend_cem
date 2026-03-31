@@ -7,19 +7,16 @@ const router = express.Router();
 
 // Calendar event creation function using Microsoft Graph API
 async function sendCalendarEvent(data) {
-  console.log('sendCalendarEvent called with data:', data);
 
   try {
     const startDateTime = `${data.work_date}T${data.start_time}+07:00`;
     const endDateTime = `${data.work_date}T${data.end_time}+07:00`;
 
-    console.log('DateTime range:', { startDateTime, endDateTime });
 
     // Get user's email from database
     const userResult = await pool.query('SELECT email FROM users WHERE id = $1', [data.user_id]);
     const userEmail = userResult.rows.length > 0 ? userResult.rows[0].email : null;
 
-    console.log('User email from DB:', userEmail);
 
     if (!userEmail) {
       console.error('User email not found, cannot create calendar event');
@@ -31,11 +28,6 @@ async function sendCalendarEvent(data) {
     const clientSecret = process.env.AZURE_CLIENT_SECRET;
     const tenantId = process.env.AZURE_TENANT_ID;
 
-    console.log('Azure config check:', {
-      hasClientId: !!clientId,
-      hasClientSecret: !!clientSecret,
-      hasTenantId: !!tenantId
-    });
 
     if (!clientId || !clientSecret || !tenantId) {
       console.error('Azure AD credentials not configured');
@@ -43,9 +35,7 @@ async function sendCalendarEvent(data) {
     }
 
     // Get access token with application permissions
-    console.log('Getting access token...');
     const accessToken = await getAccessToken();
-    console.log('Access token obtained:', !!accessToken);
 
     if (!accessToken) {
       console.error('Failed to get access token');
@@ -90,11 +80,9 @@ async function sendCalendarEvent(data) {
       onlineMeetingProvider: data.create_teams_meeting === true ? "teamsForBusiness" : undefined
     };
 
-    console.log('Calendar event payload:', JSON.stringify(calendarEvent, null, 2));
 
     // Use Microsoft Graph API endpoint for specific user
     const graphApiUrl = `https://graph.microsoft.com/v1.0/users/${userEmail}/events`;
-    console.log('Graph API URL:', graphApiUrl);
 
     const response = await fetch(graphApiUrl, {
       method: 'POST',
@@ -105,14 +93,11 @@ async function sendCalendarEvent(data) {
       body: JSON.stringify(calendarEvent)
     });
 
-    console.log('Graph API response status:', response.status);
     const responseText = await response.text();
-    console.log('Graph API response:', responseText);
 
     if (!response.ok) {
       console.error('Graph API calendar event creation failed:', response.status, responseText);
     } else {
-      console.log(`Calendar event created successfully for user: ${userEmail}`);
     }
   } catch (error) {
     console.error('Graph API calendar event error:', error);
@@ -125,7 +110,6 @@ async function getAccessToken() {
   const clientSecret = process.env.AZURE_CLIENT_SECRET;
   const tenantId = process.env.AZURE_TENANT_ID;
 
-  console.log('Getting access token with tenant:', tenantId);
 
   const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
 
@@ -142,9 +126,7 @@ async function getAccessToken() {
       body: params
     });
 
-    console.log('Token response status:', response.status);
     const data = await response.json();
-    console.log('Token response:', data);
 
     if (!response.ok) {
       console.error('Failed to get access token:', data);
@@ -173,7 +155,6 @@ async function sendTeamsNotification(type, data) {
     if (!response.ok) {
       console.error('Teams notification failed:', response.status);
     } else {
-      console.log('Teams notification sent successfully');
     }
   } catch (error) {
     console.error('Teams notification error:', error);
@@ -229,7 +210,6 @@ async function sendDailyWorkSummaryToTeams() {
     const latestId = latestRecord.id;
     const latestUserId = latestRecord.user_id;
     
-    console.log('Latest record:', { id: latestId, user_id: latestUserId, user_name: latestRecord.user_name, updated_at: latestRecord.updated_at });
 
     // Group by user
     const groupedByUser = {};
@@ -366,7 +346,6 @@ async function sendDailyWorkSummaryToTeams() {
     if (!response.ok) {
       console.error('Daily work summary Teams notification failed:', response.status);
     } else {
-      console.log('Daily work summary sent to Teams');
     }
   } catch (error) {
     console.error('Daily work summary Teams error:', error);
@@ -520,7 +499,6 @@ function startAutoCheck() {
 async function checkAndNotifyMissingWork() {
   // Use Thailand timezone
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
-  console.log('Auto checking missing work for date:', today);
 
   // Reset notification flag if it's a new day
   if (lastNotificationDate !== today) {
@@ -558,29 +536,20 @@ async function checkAndNotifyMissingWork() {
   const activeUsers = activeUsersResult.rows;
 
   // Debug logging
-  console.log('All active users:', activeUsers.map(u => `${u.name} (ID: ${u.id})`));
-  console.log('Submitted user IDs:', submittedUserIds);
-  console.log('Approved leave user IDs:', approvedLeaveUserIds);
 
   // Find missing users
   const missingUsers = activeUsers.filter(user =>
     !submittedUserIds.includes(user.id) && !approvedLeaveUserIds.includes(user.id)
   );
 
-  console.log('Missing users:', missingUsers.map(u => `${u.name} (ID: ${u.id})`));
-  console.log('Auto check - Missing users count:', missingUsers.length);
 
   if (missingUsers.length > 0) {
-    console.log('Auto sending missing work notification...');
     await sendTeamsNotification('missing_work', { missingUsers });
   } else if (activeUsers.length > 0 && allCompleteNotifiedDate !== today) {
-    console.log('Auto sending all complete notification (once per day)...');
     await sendTeamsNotification('all_complete', { totalUsers: activeUsers.length });
     allCompleteNotified = true;
     allCompleteNotifiedDate = today;
-    console.log('All complete notification sent and marked as notified for today');
   } else {
-    console.log('All work submitted - no notification needed');
   }
 }
 
@@ -590,7 +559,6 @@ router.post('/check-missing', async (req, res) => {
   try {
     // Use Thailand timezone
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
-    console.log('Checking missing work for date:', today);
 
     // Get all active engineers only
     const activeUsersResult = await pool.query(`
@@ -599,7 +567,6 @@ router.post('/check-missing', async (req, res) => {
       FROM users 
       WHERE (is_active IS NULL OR is_active = true) AND role = 'engineer'
     `);
-    console.log('Active engineers found:', activeUsersResult.rows.length);
 
     // Get users who have submitted work today
     const submittedUsersResult = await pool.query(`
@@ -607,7 +574,6 @@ router.post('/check-missing', async (req, res) => {
       FROM daily_work_records 
       WHERE work_date::date = $1::date
     `, [today]);
-    console.log('Users who submitted work today:', submittedUsersResult.rows.length);
 
     // Get users who have approved leave today
     const approvedLeaveResult = await pool.query(`
@@ -617,7 +583,6 @@ router.post('/check-missing', async (req, res) => {
       AND start_datetime::date <= $1 
       AND end_datetime::date >= $1
     `, [today]);
-    console.log('Users with approved leave today:', approvedLeaveResult.rows.length);
 
     const submittedUserIds = submittedUsersResult.rows.map(row => row.user_id);
     const approvedLeaveUserIds = approvedLeaveResult.rows.map(row => row.user_id);
@@ -628,15 +593,11 @@ router.post('/check-missing', async (req, res) => {
       !submittedUserIds.includes(user.id) && !approvedLeaveUserIds.includes(user.id)
     );
 
-    console.log('Missing users count:', missingUsers.length);
-    console.log('Missing users:', missingUsers.map(u => u.name));
 
     if (missingUsers.length > 0) {
-      console.log('Sending missing work notification...');
       await sendTeamsNotification('missing_work', { missingUsers });
       res.json({ message: 'Missing work notification sent', missingCount: missingUsers.length });
     } else if (allCompleteNotifiedDate !== today) {
-      console.log('Sending all complete notification...');
       await sendTeamsNotification('all_complete', { totalUsers: activeUsers.length });
       allCompleteNotifiedDate = today;
       res.json({ message: 'All complete notification sent', totalUsers: activeUsers.length });
@@ -746,7 +707,6 @@ router.post('/', async (req, res) => {
   // ดึง work_status จาก task.status
   let work_status = null;
 
-  console.log('Daily work POST request:', { task_id, step_ids: finalStepIds, work_date, work_status, user_id });
 
   try {
     // ดึง task_name จาก tasks table
@@ -806,17 +766,6 @@ router.post('/', async (req, res) => {
       const eventStartTime = meeting_start_time || start_time;
       const eventEndTime = meeting_end_time || end_time;
       
-      console.log('Creating calendar event with data:', {
-        event_title,
-        work_date,
-        start_time: eventStartTime,
-        end_time: eventEndTime,
-        location,
-        work_description,
-        user_id,
-        attendees,
-        meeting_room
-      });
 
       try {
         // Get user info
@@ -842,12 +791,6 @@ router.post('/', async (req, res) => {
         // Don't fail the main request if calendar creation fails
       }
     } else {
-      console.log('Calendar event not created. Conditions:', {
-        create_calendar_event,
-        has_task_name: !!task_name,
-        has_start_time: !!start_time,
-        has_end_time: !!end_time
-      });
     }
 
     // Send Teams notification only if work_date is today
@@ -878,7 +821,6 @@ router.post('/', async (req, res) => {
 
 // Update daily work record
 router.put('/:id', async (req, res) => {
-  console.log('PUT /api/daily-work/:id called, id:', req.params.id);
   try {
     const { id } = req.params;
     const { task_id, step_id, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
@@ -907,10 +849,8 @@ router.put('/:id', async (req, res) => {
     // Send Teams notification only if work_date is today
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     if (work_date === today) {
-      console.log('Sending Teams notification after edit...');
       try {
         await sendDailyWorkSummaryToTeams();
-        console.log('Teams notification sent successfully');
       } catch (teamsError) {
         console.error('Teams notification failed:', teamsError);
       }

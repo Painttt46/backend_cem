@@ -106,7 +106,6 @@ let isRunning = false;
 
 async function checkAndUpdateBookingStatus() {
   if (isRunning) {
-    console.log('[Scheduler] Previous check still running, skipping...');
     return;
   }
   
@@ -160,7 +159,6 @@ async function checkAndUpdateBookingStatus() {
             ...pending,
             cancellation_reason: `รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า`
           });
-          console.log(`[Scheduler] Cancelled pending booking ${pending.id}`);
         }
       }
       
@@ -195,7 +193,6 @@ async function checkAndUpdateBookingStatus() {
               });
             }
             
-            console.log(`[Scheduler] Activated booking ${record.id}`);
             break;
           }
         }
@@ -210,9 +207,7 @@ async function checkAndUpdateBookingStatus() {
 export function startCarBookingScheduler() {
   // Run every 5 seconds
   cron.schedule('*/5 * * * * *', async () => {
-    console.log('[Scheduler] Checking car booking status...');
     await checkAndUpdateBookingStatus();
   });
   
-  console.log('[Scheduler] Car booking scheduler started (every 5 seconds)');
 }

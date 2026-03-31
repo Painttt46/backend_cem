@@ -33,7 +33,6 @@ const isGmailLimited = () => {
   if (!gmailLimitHitAt) return false;
   if (Date.now() - gmailLimitHitAt >= GMAIL_LIMIT_COOLDOWN_MS) {
     gmailLimitHitAt = null;
-    console.log('[Email] Gmail 24h cooldown expired — switching back to Gmail');
     return false;
   }
   return true;
@@ -53,7 +52,6 @@ const isGmailLimitError = (err) => {
 // sendMailWithFallback: tries Gmail first, falls back to Mailjet on daily limit error
 const sendMailWithFallback = async (mailOptions) => {
   if (isGmailLimited()) {
-    console.log('[Email] Gmail limited — sending via Mailjet');
     return mailjetTransporter.sendMail({ ...mailOptions, from: process.env.MAILJET_FROM || mailOptions.from });
   }
 
@@ -176,7 +174,6 @@ export const sendForgotPasswordEmail = async (email, userData) => {
     };
 
     const result = await sendMailWithFallback(mailOptions);
-    console.log('Email sent successfully:', result.messageId);
     return { success: true, messageId: result.messageId };
     
   } catch (error) {
@@ -189,7 +186,6 @@ export const sendForgotPasswordEmail = async (email, userData) => {
 export const testEmailConnection = async () => {
   try {
     await gmailTransporter.verify();
-    console.log('[Email] Gmail connection verified');
     return true;
   } catch (error) {
     console.error('[Email] Gmail connection failed:', error.message);
@@ -443,7 +439,6 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
 
   try {
     const result = await sendMailWithFallback(mailOptions);
-    console.log('Leave notification email sent:', result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
     console.error('Error sending leave notification:', error);
@@ -687,7 +682,6 @@ export const sendPendingLeaveReminder = async (approver, pendingLeaves) => {
 
   try {
     const result = await sendMailWithFallback(mailOptions);
-    console.log(`Pending leave reminder sent to ${approver.email}:`, result.messageId);
     return { success: true, messageId: result.messageId };
   } catch (error) {
     console.error(`Error sending pending leave reminder to ${approver.email}:`, error);

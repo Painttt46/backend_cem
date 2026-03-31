@@ -72,13 +72,11 @@ export const getPendingLeavesForReminder = async () => {
 
 // Send reminders to all approvers with pending leaves
 export const sendPendingLeaveReminders = async () => {
-  console.log('[LeaveReminder] Starting pending leave reminder job...');
   
   try {
     const approversWithLeaves = await getPendingLeavesForReminder();
     
     if (approversWithLeaves.length === 0) {
-      console.log('[LeaveReminder] No pending leaves found');
       return { success: true, sent: 0 };
     }
 
@@ -88,7 +86,6 @@ export const sendPendingLeaveReminders = async () => {
       if (result.success) sentCount++;
     }
 
-    console.log(`[LeaveReminder] Sent ${sentCount}/${approversWithLeaves.length} reminders`);
     return { success: true, sent: sentCount, total: approversWithLeaves.length };
   } catch (error) {
     console.error('[LeaveReminder] Error:', error);

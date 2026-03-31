@@ -26,7 +26,6 @@ async function notifyApprovers(level, leaveData, notificationType) {
     `);
     
     if (!tableCheck.rows[0].exists) {
-      console.log('leave_approval_settings table does not exist, skipping notification');
       return;
     }
 
@@ -48,7 +47,6 @@ async function notifyApprovers(level, leaveData, notificationType) {
     `, [level, leaveData.user_id]);
     
     if (result.rows.length === 0) {
-      console.log(`No approvers configured for level ${level}`);
       return;
     }
     
@@ -75,9 +73,7 @@ async function notifyApprovers(level, leaveData, notificationType) {
     
     if (emails.length > 0) {
       await sendLeaveNotificationEmail(emails, leaveData, notificationType);
-      console.log(`Sent ${notificationType} notification to level ${level} approvers:`, emails);
     } else {
-      console.log(`No matching approvers for level ${level} (dept: ${requesterDept}, pos: ${requesterPos})`);
     }
   } catch (error) {
     console.error('Error notifying approvers:', error);
@@ -88,7 +84,6 @@ async function notifyApprovers(level, leaveData, notificationType) {
 // Check if user can approve based on department/position settings
 async function canUserApprove(approverId, requesterId, level) {
   try {
-    console.log('[canUserApprove] Checking permission - Approver:', approverId, 'Requester:', requesterId, 'Level:', level);
     
     // Check if table exists
     const tableCheck = await pool.query(`
@@ -99,7 +94,6 @@ async function canUserApprove(approverId, requesterId, level) {
     `);
 
     if (!tableCheck.rows[0].exists) {
-      console.log('[canUserApprove] Table leave_approval_settings does not exist, allowing approval');
       return true; // If table doesn't exist, allow all approvals
     }
 
@@ -109,18 +103,14 @@ async function canUserApprove(approverId, requesterId, level) {
       WHERE user_id = $1 AND approval_level = $2
     `, [approverId, level]);
 
-    console.log('[canUserApprove] Approver settings found:', approverResult.rows.length);
 
     if (approverResult.rows.length === 0) {
-      console.log('[canUserApprove] No settings found for approver - allowing approval');
       return true; // If no settings, allow approval
     }
     
     const { can_approve, department_ids, position_ids } = approverResult.rows[0];
-    console.log('[canUserApprove] Settings:', { can_approve, department_ids, position_ids });
     
     if (!can_approve) {
-      console.log('[canUserApprove] can_approve is false');
       return false;
     }
 
@@ -128,7 +118,6 @@ async function canUserApprove(approverId, requesterId, level) {
     const posIds = (position_ids || []).map(p => p.toLowerCase());
     
     if (deptIds.length === 0 && posIds.length === 0) {
-      console.log('[canUserApprove] No department/position restrictions');
       return true;
     }
 
@@ -138,12 +127,10 @@ async function canUserApprove(approverId, requesterId, level) {
     const reqDept = (requesterResult.rows[0]?.department || '').toLowerCase();
     const reqPos = (requesterResult.rows[0]?.position || '').toLowerCase();
 
-    console.log('[canUserApprove] Requester info:', { department: reqDept, position: reqPos });
 
     const deptMatch = deptIds.length === 0 || deptIds.includes(reqDept);
     const posMatch = posIds.length === 0 || posIds.includes(reqPos);
 
-    console.log('[canUserApprove] Match result:', { deptMatch, posMatch, final: deptMatch && posMatch });
 
     return deptMatch && posMatch;
   } catch (error) {
@@ -182,7 +169,6 @@ async function sendTeamsNotification(type, data) {
     if (!response.ok) {
       console.error('Teams notification failed:', response.status);
     } else {
-      console.log('Teams notification sent successfully');
     }
   } catch (error) {
     console.error('Teams notification error:', error);
@@ -207,7 +193,6 @@ async function resetLeaveQuotasForNewYear() {
   const currentYear = new Date().getFullYear();
 
   try {
-    console.log(`Resetting leave quotas for year ${currentYear}...`);
 
     // Get all active users
     const usersResult = await pool.query('SELECT id FROM users WHERE is_active = true');
@@ -231,7 +216,6 @@ async function resetLeaveQuotasForNewYear() {
       }
     }
 
-    console.log(`Leave quotas reset completed for ${usersResult.rows.length} users`);
   } catch (error) {
     console.error('Error resetting leave quotas:', error);
   }
@@ -246,7 +230,6 @@ function startQuotaResetScheduler() {
     const isNewYearTime = now.getHours() === 0 && now.getMinutes() === 1;
 
     if (isJanuary1st && isNewYearTime) {
-      console.log('New Year detected - resetting leave quotas...');
       await resetLeaveQuotasForNewYear();
     }
   }, 60 * 1000); // Check every minute
@@ -522,7 +505,6 @@ router.get('/database-status', async (req, res) => {
 // Database setup endpoint
 router.get('/setup-database', async (req, res) => {
   try {
-    console.log('Setting up leave quota database...');
 
     // Check if table exists
     const tableCheck = await pool.query(`
@@ -1034,14 +1016,12 @@ router.post('/', async (req, res) => {
     if (!userId) {
       // ลองดึงจาก token
       const token = req.headers.authorization?.replace('Bearer ', '');
-      console.log('Received token:', token);
 
       if (token && token.startsWith('token_')) {
         userId = token.split('_')[1];
       }
     }
 
-    console.log('Extracted userId:', userId);
 
     if (!userId || isNaN(parseInt(userId))) {
       return res.status(401).json({ error: 'Invalid user ID' });
@@ -1220,14 +1200,6 @@ router.put('/:id/status', async (req, res) => {
       const currentYear = new Date().getFullYear();
       const days = parseFloat(total_days) || 0;
 
-      console.log('[QUOTA UPDATE] Deducting quota:', {
-        user_id,
-        leave_type,
-        days,
-        currentYear,
-        newStatus,
-        currentStatus
-      });
 
       const quotaUpdateResult = await pool.query(`
         UPDATE user_leave_quotas
@@ -1236,7 +1208,6 @@ router.put('/:id/status', async (req, res) => {
         RETURNING *
       `, [days, user_id, leave_type, currentYear]);
 
-      console.log('[QUOTA UPDATE] Result:', quotaUpdateResult.rows);
 
       if (quotaUpdateResult.rows.length === 0) {
         console.error('[QUOTA UPDATE] ERROR: No quota record found for user:', user_id, 'leave_type:', leave_type, 'year:', currentYear);
@@ -1250,7 +1221,6 @@ router.put('/:id/status', async (req, res) => {
             DO UPDATE SET used_days = user_leave_quotas.used_days + $4
           `, [user_id, leave_type, currentYear, days]);
           
-          console.log('[QUOTA UPDATE] Quota record created/updated successfully');
         } catch (insertError) {
           console.error('[QUOTA UPDATE] Failed to create quota record:', insertError);
         }
@@ -1346,7 +1316,7 @@ router.put('/:id/attachments', async (req, res) => {
     const { attachments } = req.body;
     const currentUserId = req.user.id;
 
-    const result = await pool.query('SELECT * FROM leave_requests WHERE id = $1', [id]);
+    const result = await pool.query('SELECT id, user_id, status, leave_type, start_date, end_date, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1', [id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'ไม่พบคำขอลา' });
 
     const leave = result.rows[0];
@@ -1391,20 +1361,7 @@ router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    // ดึง user info จาก token
-    const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
-    
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    let userId;
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      userId = decoded.userId;
-    } catch (e) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
+    const userId = req.user.id;
 
     // ตรวจสอบคำขอลา
     const checkResult = await pool.query(
@@ -1446,20 +1403,11 @@ router.post('/:id/request-cancel', async (req, res) => {
   const { reason } = req.body;
 
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
-    if (!token) return res.status(401).json({ error: 'No token provided' });
-
-    let userId;
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      userId = decoded.userId;
-    } catch (e) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
+    const userId = req.user.id;
 
     // ตรวจสอบคำขอลา
     const checkResult = await pool.query(
-      'SELECT * FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, start_date, end_date, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -1529,7 +1477,7 @@ router.put('/:id/cancel-status', async (req, res) => {
   try {
     await ensureUsedDaysNumeric();
     const checkResult = await pool.query(
-      'SELECT * FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, start_date, end_date, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -1586,41 +1534,23 @@ router.delete('/:id/admin-reset', async (req, res) => {
 
   try {
     await ensureUsedDaysNumeric();
-    const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
-    if (!token) {
-      console.log('[admin-reset] No token provided');
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    let approverId;
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      approverId = decoded.userId;
-      console.log('[admin-reset] Approver ID:', approverId);
-    } catch (e) {
-      console.log('[admin-reset] Invalid token:', e.message);
-      return res.status(401).json({ error: 'Invalid token' });
-    }
+    const approverId = req.user.id;
 
     const leaveResult = await pool.query(
-      'SELECT * FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, start_date, end_date, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
     if (leaveResult.rows.length === 0) {
-      console.log('[admin-reset] Leave request not found:', id);
       return res.status(404).json({ error: 'ไม่พบคำขอลานี้' });
     }
 
     const leaveRequest = leaveResult.rows[0];
-    console.log('[admin-reset] Leave request:', { id: leaveRequest.id, user_id: leaveRequest.user_id, status: leaveRequest.status });
 
     // ตรวจสอบสิทธิ์ว่าเป็นผู้มีสิทธิ์อนุมัติระดับ 2 (HR) สำหรับผู้ขอลาคนนี้
     const hasPermission = await canUserApprove(approverId, leaveRequest.user_id, 2);
-    console.log('[admin-reset] Has permission:', hasPermission);
     
     if (!hasPermission) {
-      console.log('[admin-reset] Permission denied for approver:', approverId, 'requester:', leaveRequest.user_id);
       return res.status(403).json({ error: 'คุณไม่มีสิทธิ์จัดการคำขอนี้' });
     }
 
@@ -1629,18 +1559,15 @@ router.delete('/:id/admin-reset', async (req, res) => {
 
     // หากเคยตัดโควต้าจากการอนุมัติแล้ว ให้คืนโควต้า
     if (days > 0 && (leaveRequest.status === 'approved' || leaveRequest.status === 'cancel' || leaveRequest.status === 'pending_level2')) {
-      console.log('[admin-reset] Returning quota:', days, 'days for user:', leaveRequest.user_id);
       const updateResult = await pool.query(`
         UPDATE user_leave_quotas
         SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
         WHERE user_id = $2 AND leave_type = $3 AND year = $4
         RETURNING *
       `, [days, leaveRequest.user_id, leaveRequest.leave_type, currentYear]);
-      console.log('[admin-reset] Quota update result:', updateResult.rowCount, 'rows affected');
     }
 
     // ลบคำขอออกจากระบบ
-    console.log('[admin-reset] Deleting leave request:', id);
     await pool.query('DELETE FROM leave_requests WHERE id = $1', [id]);
 
     // Log audit
@@ -1655,7 +1582,6 @@ router.delete('/:id/admin-reset', async (req, res) => {
       newData: { deleted: true, quotaRefundedDays: days }
     });
 
-    console.log('[admin-reset] Success - deleted leave request:', id);
     res.json({ message: 'ลบคำขอและคืนโควต้าการลาเรียบร้อยแล้ว' });
   } catch (error) {
     console.error('[admin-reset] Error:', error);
