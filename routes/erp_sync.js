@@ -37,6 +37,8 @@
 import express from 'express'
 import fetch from 'node-fetch'
 import https from 'https'
+import fs from 'fs'
+import path from 'path'
 import pool from '../config/database.js'
 
 const router = express.Router()
@@ -87,12 +89,26 @@ router.post('/projects', async (req, res) => {
     // Step 2: Upsert ทั้งหมดเข้า DB
     await Promise.all(projects.map(async (p) => {
       try {
+        // ดึง file list จาก ERP
+        const fileFilter = encodeURIComponent(JSON.stringify([['attached_to_name','=',p.name]]))
+        const fileFields = encodeURIComponent(JSON.stringify(['file_name','file_url']))
+        const fileRes = await erpGet(`/File?filters=${fileFilter}&fields=${fileFields}&limit_page_length=100`)
+        const erpFiles = (fileRes.data || []).map(f => ({ erp: true, name: f.file_name, url: f.file_url }))
+
         const syncedStatus = p.status === 'Completed' ? 'completed' : null
-        const oldRow = await pool.query('SELECT task_name, sale_owner, customer_info, status FROM tasks WHERE so_number=$1', [p.name])
+        const oldRow = await pool.query('SELECT task_name, sale_owner, customer_info, status, files FROM tasks WHERE so_number=$1', [p.name])
         const oldData = oldRow.rows[0] || null
+
+        // เก็บ local files เดิมไว้ ไม่ทับ
+        const existingFiles = oldData?.files || []
+        const localFiles = Array.isArray(existingFiles)
+          ? existingFiles.filter(f => typeof f === 'string' || !f.erp)
+          : []
+        const mergedFiles = [...localFiles, ...erpFiles]
+
         const result = await pool.query(`
-          INSERT INTO tasks (so_number, task_name, sale_owner, customer_info, status, project_start_date, project_end_date, created_by)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,1)
+          INSERT INTO tasks (so_number, task_name, sale_owner, customer_info, status, project_start_date, project_end_date, files, created_by)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,1)
           ON CONFLICT (so_number) DO UPDATE SET
             task_name          = EXCLUDED.task_name,
             sale_owner         = EXCLUDED.sale_owner,
@@ -100,6 +116,7 @@ router.post('/projects', async (req, res) => {
             status             = EXCLUDED.status,
             project_start_date = EXCLUDED.project_start_date,
             project_end_date   = EXCLUDED.project_end_date,
+            files              = EXCLUDED.files,
             updated_at         = NOW()
           WHERE (
             tasks.task_name IS DISTINCT FROM EXCLUDED.task_name OR
@@ -107,15 +124,16 @@ router.post('/projects', async (req, res) => {
             tasks.customer_info IS DISTINCT FROM EXCLUDED.customer_info OR
             tasks.status IS DISTINCT FROM EXCLUDED.status OR
             tasks.project_start_date IS DISTINCT FROM EXCLUDED.project_start_date OR
-            tasks.project_end_date IS DISTINCT FROM EXCLUDED.project_end_date
+            tasks.project_end_date IS DISTINCT FROM EXCLUDED.project_end_date OR
+            tasks.files IS DISTINCT FROM EXCLUDED.files
           )
           RETURNING (xmax = 0) AS is_insert
         `, [p.name, p.project_name || p.name, p.sales_person || null, p.customer || null,
-            syncedStatus, p.expected_start_date || null, p.expected_end_date || null])
+            syncedStatus, p.expected_start_date || null, p.expected_end_date || null, JSON.stringify(mergedFiles)])
         if (!result.rows[0]) { /* ข้อมูลเหมือนเดิม */ }
         else if (result.rows[0].is_insert) {
           created++
-          createdList.push({ name: p.project_name || p.name, so: p.name })
+          createdList.push({ name: p.project_name || p.name, so: p.name, files: erpFiles.map(f => f.name) })
         } else {
           const old = oldData || {}
           const newName = p.project_name || p.name
@@ -124,6 +142,14 @@ router.post('/projects', async (req, res) => {
           if (old.sale_owner !== (p.sales_person || null)) changes.sale_owner = { old: old.sale_owner, new: p.sales_person || null }
           if (old.customer_info !== (p.customer || null)) changes.customer_info = { old: old.customer_info, new: p.customer || null }
           if (old.status !== syncedStatus) changes.status = { old: old.status, new: syncedStatus }
+
+          // track file changes
+          const oldErpFiles = (Array.isArray(old.files) ? old.files : []).filter(f => f && f.erp).map(f => f.name)
+          const newErpFiles = erpFiles.map(f => f.name)
+          const addedFiles = newErpFiles.filter(n => !oldErpFiles.includes(n))
+          const removedFiles = oldErpFiles.filter(n => !newErpFiles.includes(n))
+          if (addedFiles.length || removedFiles.length) changes.files = { added: addedFiles, removed: removedFiles }
+
           updated++
           updatedList.push({ name: newName, so: p.name, changes: Object.keys(changes).length ? changes : null })
         }
@@ -171,6 +197,29 @@ router.get('/status', async (req, res) => {
     `SELECT COUNT(*) FROM tasks WHERE so_number LIKE 'SO%' OR so_number LIKE 'DEV%'`
   )
   res.json({ synced_tasks: parseInt(result.rows[0].count) })
+})
+
+/**
+ * GET /api/erp-sync/file?path=/private/files/xxx.pdf
+ * Proxy ดึงไฟล์จาก ERP พร้อม token แล้ว stream กลับ
+ */
+router.get('/file', async (req, res) => {
+  const filePath = req.query.path
+  if (!filePath) return res.status(400).json({ error: 'missing path' })
+
+  try {
+    const response = await fetch(`https://172.30.101.203${filePath}`, {
+      headers: { Authorization: ERP_TOKEN },
+      agent
+    })
+    if (!response.ok) return res.status(response.status).json({ error: 'ERP file not found' })
+
+    res.setHeader('Content-Type', response.headers.get('content-type') || 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${filePath.split('/').pop()}"`)
+    response.body.pipe(res)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 export default router
