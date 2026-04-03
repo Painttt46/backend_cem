@@ -1316,7 +1316,7 @@ router.put('/:id/attachments', async (req, res) => {
     const { attachments } = req.body;
     const currentUserId = req.user.id;
 
-    const result = await pool.query('SELECT id, user_id, status, leave_type, start_date, end_date, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1', [id]);
+    const result = await pool.query('SELECT id, user_id, status, leave_type, start_datetime, end_datetime, reason, approved_by, approved_by_level1, approved_by_level2, created_at FROM leave_requests WHERE id = $1', [id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'ไม่พบคำขอลา' });
 
     const leave = result.rows[0];

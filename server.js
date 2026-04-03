@@ -19,6 +19,7 @@ import carBookingRoutes from './routes/car_booking.js';
 import rolePermissionsRoutes from './routes/role_permissions.js';
 import settingsRoutes from './routes/settings.js';
 import auditLogsRoutes from './routes/audit_logs.js';
+import erpSyncRoutes from './routes/erp_sync.js';
 import { startCarBookingScheduler } from './services/carBookingScheduler.js';
 import { startWorkflowScheduler } from './services/workflowNotificationService.js';
 import { sendPendingLeaveReminders } from './services/leaveReminderService.js';
@@ -117,16 +118,6 @@ app.use(express.urlencoded({ extended: true, limit: '200mb' }));
 // Static files - serve uploads folder
 app.use('/uploads', express.static('uploads'));
 
-// Test database connection
-app.get('/api/test-db', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT NOW()');
-    res.json({ success: true, time: result.rows[0].now });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // Health check endpoint
 app.get("/health", async (req, res) => {
   try {
@@ -164,6 +155,7 @@ app.use('/api/car-booking', verifyToken, carBookingRoutes);
 app.use('/api/role-permissions', verifyToken, rolePermissionsRoutes);
 app.use('/api/settings', verifyToken, settingsRoutes);
 app.use('/api/audit-logs', verifyToken, auditLogsRoutes);
+app.use('/api/erp-sync', verifyToken, erpSyncRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {
