@@ -1407,7 +1407,7 @@ router.post('/:id/request-cancel', async (req, res) => {
 
     // ตรวจสอบคำขอลา
     const checkResult = await pool.query(
-      'SELECT id, user_id, status, leave_type, start_date, end_date, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, start_datetime, end_datetime, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -1477,7 +1477,7 @@ router.put('/:id/cancel-status', async (req, res) => {
   try {
     await ensureUsedDaysNumeric();
     const checkResult = await pool.query(
-      'SELECT id, user_id, status, leave_type, start_date, end_date, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, start_datetime, end_datetime, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -1537,7 +1537,7 @@ router.delete('/:id/admin-reset', async (req, res) => {
     const approverId = req.user.id;
 
     const leaveResult = await pool.query(
-      'SELECT id, user_id, status, leave_type, start_date, end_date, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, start_datetime, end_datetime, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
