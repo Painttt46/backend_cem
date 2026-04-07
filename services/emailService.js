@@ -218,14 +218,21 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
   };
 
   // Format จำนวนวันเป็นชั่วโมง:นาที
-  const formatDaysToHoursMinutes = (days) => {
+  const formatDaysToHoursMinutes = (days, startDatetime, endDatetime) => {
     if (!days || days <= 0) return '0 ชั่วโมง';
+    // ถ้ามี datetime ให้คำนวณจากเวลาจริงแทน
+    if (startDatetime && endDatetime) {
+      const diffMs = new Date(endDatetime) - new Date(startDatetime);
+      const totalMinutes = Math.round(diffMs / 60000);
+      const h = Math.floor(totalMinutes / 60);
+      const m = totalMinutes % 60;
+      if (m === 0) return `${h} ชั่วโมง`;
+      return `${h} ชั่วโมง ${m} นาที`;
+    }
     const totalMinutes = Math.round(days * 8 * 60);
     const h = Math.floor(totalMinutes / 60);
     const m = totalMinutes % 60;
-    if (m === 0) {
-      return `${h} ชั่วโมง`;
-    }
+    if (m === 0) return `${h} ชั่วโมง`;
     return `${h} ชั่วโมง ${m} นาที`;
   };
 
@@ -398,7 +405,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                   ประเภทการลา : <b>${leaveTypeLabels[leaveData.leave_type] || leaveData.leave_type}</b><br>
                   วันเริ่มลา : <b>${formatDate(leaveData.start_datetime)} เวลา ${formatTime(leaveData.start_datetime)} น.</b><br>
                   วันสิ้นสุด : <b>${formatDate(leaveData.end_datetime)} เวลา ${formatTime(leaveData.end_datetime)} น.</b><br>
-                  จำนวนวันลา : <b>${formatDays(leaveData.total_days)} วัน (${formatDaysToHoursMinutes(leaveData.total_days)})</b><br>
+                  จำนวนวันลา : <b>${formatDays(leaveData.total_days)} วัน (${formatDaysToHoursMinutes(leaveData.total_days, leaveData.start_datetime, leaveData.end_datetime)})</b><br>
                   เหตุผล : <b>${leaveData.reason || '-'}</b><br>
                   สถานะ : <b>${statusLabels[leaveData.status] || leaveData.status}</b><br>
                   ${approverHtml}
