@@ -1,6 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import pool from '../config/database.js';
 import { sendForgotPasswordEmail } from '../services/emailService.js';
 import { verifyToken } from '../middleware/auth.js';
@@ -53,7 +54,7 @@ router.post('/login', async (req, res) => {
         role: user.role
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '3h' }
     );
     
     // Set HttpOnly Cookie
@@ -80,7 +81,6 @@ router.post('/login', async (req, res) => {
     
     res.json({
       success: true,
-      access_token: token,
       user: user.id,
       username: user.username,
       firstname: user.firstname,
@@ -130,7 +130,7 @@ router.post('/refresh', verifyToken, async (req, res) => {
         role: req.user.role
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '3h' }
     );
     
     res.cookie('token', newToken, {
@@ -174,11 +174,11 @@ router.post('/forgot-password', async (req, res) => {
     const result = await pool.query('SELECT id, username, firstname, lastname, email FROM users WHERE email = $1', [email]);
     
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'ไม่พบอีเมลในระบบ' });
+      return res.json({ message: 'ส่งข้อมูลการเข้าสู่ระบบไปยังอีเมลของคุณเรียบร้อยแล้ว', success: true });
     }
     
     const user = result.rows[0];
-    const newPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
+    const newPassword = crypto.randomBytes(6).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) + crypto.randomInt(100, 999);
     
     // ส่ง email ก่อน ถ้าสำเร็จค่อยเปลี่ยน password
     try {

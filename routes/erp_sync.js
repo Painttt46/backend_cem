@@ -107,9 +107,9 @@ router.post('/projects', async (req, res) => {
         const mergedFiles = [...localFiles, ...erpFiles]
 
         const result = await pool.query(`
-          INSERT INTO tasks (so_number, task_name, sale_owner, customer_info, status, project_start_date, project_end_date, files, created_by)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,1)
-          ON CONFLICT (so_number) DO UPDATE SET
+          INSERT INTO tasks (so_number, task_name, sale_owner, customer_info, status, project_start_date, project_end_date, files, erp_synced, created_by)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,true,1)
+          ON CONFLICT (so_number) WHERE erp_synced = true DO UPDATE SET
             task_name          = EXCLUDED.task_name,
             sale_owner         = EXCLUDED.sale_owner,
             customer_info      = EXCLUDED.customer_info,

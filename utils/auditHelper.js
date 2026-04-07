@@ -1,29 +1,26 @@
 import pool from '../config/database.js';
 
-// สร้างตาราง audit_logs ถ้ายังไม่มี
-async function ensureTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS audit_logs (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER,
-      user_name VARCHAR(100),
-      action VARCHAR(50) NOT NULL,
-      table_name VARCHAR(50) NOT NULL,
-      record_id INTEGER,
-      record_name VARCHAR(255),
-      old_data JSONB,
-      new_data JSONB,
-      ip_address VARCHAR(45),
-      user_agent TEXT,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-}
+// สร้างตาราง audit_logs ครั้งเดียวตอน module load
+pool.query(`
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER,
+    user_name VARCHAR(100),
+    action VARCHAR(50) NOT NULL,
+    table_name VARCHAR(50) NOT NULL,
+    record_id INTEGER,
+    record_name VARCHAR(255),
+    old_data JSONB,
+    new_data JSONB,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+  )
+`).catch(() => {});
 
 // Helper: บันทึก audit log
 export async function logAudit(req, { action, tableName, recordId, recordName, oldData, newData, userName: customUserName }) {
   try {
-    await ensureTable();
     const userId = req.user?.id || recordId || null;
     
     // ใช้ชื่อที่ส่งมา หรือดึงจาก database
@@ -36,7 +33,7 @@ export async function logAudit(req, { action, tableName, recordId, recordName, o
     }
     if (!userName) userName = 'system';
     
-    const ip = req.headers['x-client-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.headers['x-real-ip'] || req.ip || req.connection?.remoteAddress || 'unknown';
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.headers['x-real-ip'] || req.ip || req.connection?.remoteAddress || 'unknown';
     // แปลง IPv6-mapped IPv4 เป็น IPv4 ปกติ
     const cleanIp = ip.replace(/^::ffff:/, '');
     const userAgent = req.headers['user-agent'] || '';

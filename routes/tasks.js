@@ -29,15 +29,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { task_name, so_number, contract_number, sale_owner, project_manager, customer_info, project_start_date, project_end_date, description, category, files } = req.body;
-    
-    // Check if so_number already exists
-    if (so_number) {
-      const existingTask = await pool.query('SELECT id FROM tasks WHERE so_number = $1', [so_number]);
-      if (existingTask.rows.length > 0) {
-        return res.status(400).json({ error: 'เลข SO นี้มีอยู่ในระบบแล้ว กรุณาใช้เลข SO อื่น' });
-      }
-    }
-    
+
     // Get first category as default if not provided
     let finalCategory = category;
     if (!finalCategory) {
@@ -55,7 +47,6 @@ router.post('/', async (req, res) => {
       RETURNING *
     `, [task_name, so_number, contract_number, sale_owner, project_manager, customer_info, project_start_date, project_end_date, description, finalCategory, JSON.stringify(files || [])]);
     
-    // Log audit
     await logAudit(req, {
       action: 'CREATE',
       tableName: 'tasks',
@@ -67,9 +58,6 @@ router.post('/', async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating task:', error);
-    if (error.code === '23505') {
-      return res.status(400).json({ error: 'เลข SO นี้มีอยู่ในระบบแล้ว กรุณาใช้เลข SO อื่น' });
-    }
     res.status(500).json({ error: 'Failed to create task' });
   }
 });
@@ -107,15 +95,6 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { task_name, so_number, contract_number, sale_owner, project_manager, customer_info, description, category, status, files, project_start_date, project_end_date } = req.body;
     
-    // Check if so_number already exists (excluding current task)
-    if (so_number) {
-      const existingTask = await pool.query('SELECT id FROM tasks WHERE so_number = $1 AND id != $2', [so_number, id]);
-      if (existingTask.rows.length > 0) {
-        return res.status(400).json({ error: 'เลข SO นี้มีอยู่ในระบบแล้ว กรุณาใช้เลข SO อื่น' });
-      }
-    }
-    
-    // Get old data for audit
     const oldResult = await pool.query('SELECT task_name, so_number, status, category FROM tasks WHERE id = $1', [id]);
     const oldData = oldResult.rows[0];
     
@@ -145,9 +124,6 @@ router.put('/:id', async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error updating task:', error);
-    if (error.code === '23505') {
-      return res.status(400).json({ error: 'เลข SO นี้มีอยู่ในระบบแล้ว กรุณาใช้เลข SO อื่น' });
-    }
     res.status(500).json({ error: 'Failed to update task' });
   }
 });

@@ -28,7 +28,7 @@ export const verifyToken = async (req, res, next) => {
       
       // ตรวจสอบว่า user ยังมีอยู่และ active
       const result = await pool.query(
-        'SELECT id, username, role FROM users WHERE id = $1 AND is_active = true',
+        'SELECT id, username, role, firstname, lastname FROM users WHERE id = $1 AND is_active = true',
         [decoded.userId]
       );
       

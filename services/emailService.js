@@ -230,9 +230,8 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
   };
 
   const formatDays = (days) => {
-    if (!days || days <= 0) return '0';
-    const rounded = Math.round(days * 10) / 10;
-    return Number.isInteger(rounded) ? rounded : rounded.toFixed(1);
+    if (!days || days <= 0) return '0.00';
+    return parseFloat(days).toFixed(2);
   };
 
   const statusLabels = {
