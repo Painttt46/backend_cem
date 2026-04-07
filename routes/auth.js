@@ -81,6 +81,7 @@ router.post('/login', async (req, res) => {
     
     res.json({
       success: true,
+      access_token: token,
       user: user.id,
       username: user.username,
       firstname: user.firstname,
