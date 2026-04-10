@@ -1364,10 +1364,14 @@ router.delete('/:id', async (req, res) => {
     const userId = req.user.id;
 
     // ตรวจสอบคำขอลา
-    const checkResult = await pool.query(
-      'SELECT user_id, status FROM leave_requests WHERE id = $1',
-      [id]
-    );
+    const checkResult = await pool.query(`
+      SELECT l.user_id, l.status, l.leave_type, l.start_datetime, l.end_datetime, l.total_days, l.reason,
+        l.has_delegation, l.delegate_name, l.delegate_position, l.delegate_department, l.delegate_contact, l.work_details,
+        u.firstname || ' ' || u.lastname as employee_name, u.position as employee_position
+      FROM leave_requests l
+      LEFT JOIN users u ON l.user_id = u.id
+      WHERE l.id = $1
+    `, [id]);
 
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ error: 'Leave request not found' });
@@ -1389,6 +1393,11 @@ router.delete('/:id', async (req, res) => {
       'DELETE FROM leave_requests WHERE id = $1 RETURNING *',
       [id]
     );
+
+    // แจ้ง Level 1 approvers ว่ามีการยกเลิกคำขอ
+    try {
+      await notifyApprovers(1, { ...leaveRequest, id: parseInt(id), user_id: userId }, 'cancellation_request');
+    } catch (e) { /* non-blocking */ }
 
     res.json({ message: 'Leave request deleted successfully', deleted: result.rows[0] });
   } catch (error) {
@@ -1423,16 +1432,6 @@ router.post('/:id/request-cancel', async (req, res) => {
 
     if (leaveRequest.status !== 'approved' && leaveRequest.status !== 'pending_level2') {
       return res.status(400).json({ error: 'Can only cancel approved or pending level 2 leaves' });
-    }
-
-    // ตรวจสอบว่ายังไม่ถึงวันลา
-    const startDate = new Date(leaveRequest.start_datetime);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    startDate.setHours(0, 0, 0, 0);
-
-    if (startDate <= today) {
-      return res.status(400).json({ error: 'Cannot cancel leave that has already started' });
     }
 
     // เพิ่มคอลัมน์ถ้ายังไม่มี
@@ -1477,7 +1476,7 @@ router.put('/:id/cancel-status', async (req, res) => {
   try {
     await ensureUsedDaysNumeric();
     const checkResult = await pool.query(
-      'SELECT id, user_id, status, leave_type, start_datetime, end_datetime, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, total_days, start_datetime, end_datetime, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 

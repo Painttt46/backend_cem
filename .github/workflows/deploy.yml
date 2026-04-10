@@ -1,0 +1,20 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        run: |
+          echo "${{ secrets.ROOT_PASSWORD }}" | su -c "
+            cd /var/www/html/backend_cem &&
+            git pull origin develop &&
+            docker compose down &&
+            docker compose up -d --build
+          " root
