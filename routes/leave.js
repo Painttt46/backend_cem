@@ -178,13 +178,21 @@ async function sendTeamsNotification(type, data) {
 function calculateLeaveDays(startDateTime, endDateTime) {
   const start = new Date(startDateTime);
   const end = new Date(endDateTime);
+  const HOURS_PER_DAY = 8;
 
-  // Set time to start of day for accurate day calculation
-  start.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
+  // Same day → คำนวณตามชั่วโมงจริง
+  const startDay = new Date(start); startDay.setHours(0, 0, 0, 0);
+  const endDay   = new Date(end);   endDay.setHours(0, 0, 0, 0);
 
-  const diffTime = end - start;
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  if (startDay.getTime() === endDay.getTime()) {
+    const diffHours = (end - start) / (1000 * 60 * 60);
+    const days = diffHours / HOURS_PER_DAY;
+    // ปัดเป็น 0.5 หรือ 1.0
+    return days <= 0.5 ? 0.5 : 1;
+  }
+
+  // ต่างวัน → นับจำนวนวัน
+  const diffDays = Math.floor((endDay - startDay) / (1000 * 60 * 60 * 24)) + 1;
   return diffDays;
 }
 

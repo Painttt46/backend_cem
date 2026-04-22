@@ -75,4 +75,5 @@ volumes:
 
 networks:
   default:
-    name: backend_cem_default
+    name: cem_network
+    external: true
