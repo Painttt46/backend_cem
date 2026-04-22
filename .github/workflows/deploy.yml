@@ -13,6 +13,7 @@ jobs:
       - name: Deploy
         run: |
           echo "${{ secrets.ROOT_PASSWORD }}" | su -c "
+            docker network create cem_network 2>/dev/null || true &&
             cd /var/www/html/backend_cem &&
             git checkout docker-compose.yml &&
             git pull origin develop &&
