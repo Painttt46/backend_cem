@@ -17,6 +17,7 @@ jobs:
             cd /var/www/html/backend_cem &&
             git checkout docker-compose.yml &&
             git pull origin develop &&
+            sed -i 's|AZURE_CLIENT_SECRET=|AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}|' docker-compose.yml &&
             docker compose down &&
             docker compose up -d --build
           " root
