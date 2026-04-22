@@ -14,6 +14,7 @@ jobs:
         run: |
           echo "${{ secrets.ROOT_PASSWORD }}" | su -c "
             cd /var/www/html/backend_cem &&
+            git checkout docker-compose.yml &&
             git pull origin develop &&
             docker compose down &&
             docker compose up -d --build
