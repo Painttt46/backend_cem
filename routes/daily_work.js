@@ -42,14 +42,21 @@ async function sendCalendarEvent(data) {
       return;
     }
 
-    // Prepare attendees
+    // Prepare attendees — creator เป็น attendee แรกเสมอ
     const attendees = [];
+
+    if (userEmail) {
+      attendees.push({
+        emailAddress: { address: userEmail, name: data.user_name },
+        type: "required"
+      });
+    }
 
     if (data.attendees && data.attendees.length > 0) {
       data.attendees.forEach(attendee => {
         const email = typeof attendee === 'string' ? attendee : attendee.email;
         const name = typeof attendee === 'string' ? attendee : (attendee.name || attendee.email);
-        if (email) {
+        if (email && email !== userEmail) {
           attendees.push({
             emailAddress: { address: email, name: name },
             type: "required"
@@ -62,7 +69,16 @@ async function sendCalendarEvent(data) {
       subject: data.task_name,
       body: {
         contentType: "HTML",
-        content: `<p><strong>ผู้ปฏิบัติงาน:</strong> ${data.user_name}</p><p><strong>รายละเอียด:</strong> ${data.work_description || 'ไม่ระบุ'}</p>${data.event_details ? `<p><strong>รายละเอียดเพิ่มเติม:</strong> ${data.event_details}</p>` : ''}`
+        content: (() => {
+          const nl = s => (s || '').replace(/\n/g, '<br>');
+          let html = `<p><strong>👤 ผู้ปฏิบัติงาน:</strong> ${data.user_name}</p>`;
+          html += `<p><strong>📍 สถานที่:</strong> ${data.location || 'ไม่ระบุ'}</p>`;
+          html += `<p><strong>📝 รายละเอียด:</strong><br>${nl(data.work_description)}</p>`;
+          if (data.event_details) {
+            html += `<hr><p><strong>📋 Steps:</strong><br>${nl(data.event_details)}</p>`;
+          }
+          return html;
+        })()
       },
       start: {
         dateTime: startDateTime,
@@ -765,10 +781,9 @@ router.post('/', async (req, res) => {
     if (create_calendar_event && event_title && (meeting_start_time || start_time) && (meeting_end_time || end_time)) {
       const eventStartTime = meeting_start_time || start_time;
       const eventEndTime = meeting_end_time || end_time;
-      
+      console.log('[CALENDAR] Attempting:', { event_title, user_id, eventStartTime, eventEndTime });
 
       try {
-        // Get user info
         const userResult = await pool.query('SELECT firstname, lastname FROM users WHERE id = $1', [user_id]);
         const userName = userResult.rows.length > 0 ?
           `${userResult.rows[0].firstname} ${userResult.rows[0].lastname}` : 'ไม่ระบุ';
@@ -786,11 +801,12 @@ router.post('/', async (req, res) => {
           create_teams_meeting,
           event_details
         });
+        console.log('[CALENDAR] Created successfully');
       } catch (calendarError) {
-        console.error('Calendar event creation failed:', calendarError);
-        // Don't fail the main request if calendar creation fails
+        console.error('[CALENDAR] Failed:', calendarError.message, calendarError.stack);
       }
     } else {
+      console.log('[CALENDAR] Skipped:', { create_calendar_event, event_title, meeting_start_time, start_time });
     }
 
     // Send Teams notification only if work_date is today
