@@ -668,7 +668,7 @@ router.put('/quota/:userId/:leaveType', async (req, res) => {
     } else {
       // กรณีแก้ไขปกติ: คำนวณ used_days จาก quota - remaining
       finalQuota = parseFloat(quota);
-      finalUsedDays = parseFloat(quota) - parseFloat(remaining);
+      finalUsedDays = Math.max(0, parseFloat(quota) - parseFloat(remaining));
     }
 
     await pool.query(`
@@ -1440,6 +1440,10 @@ router.post('/:id/request-cancel', async (req, res) => {
 
     if (leaveRequest.status !== 'approved' && leaveRequest.status !== 'pending_level2') {
       return res.status(400).json({ error: 'Can only cancel approved or pending level 2 leaves' });
+    }
+
+    if (leaveRequest.cancellation_requested_at) {
+      return res.status(400).json({ error: 'Cancellation already requested' });
     }
 
     // เพิ่มคอลัมน์ถ้ายังไม่มี

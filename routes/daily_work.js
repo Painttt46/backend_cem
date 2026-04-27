@@ -512,7 +512,7 @@ async function checkAndNotifyMissingWork() {
     SELECT id, firstname || ' ' || lastname as name, position, 
            COALESCE(department, 'ไม่ระบุ') as department 
     FROM users 
-    WHERE is_active = true AND role = 'engineer'
+    WHERE (is_active IS NULL OR is_active = true) AND role = 'engineer'
   `);
 
   // Get users who have submitted work today
@@ -831,6 +831,7 @@ router.put('/:id', async (req, res) => {
       const start = new Date(`1970-01-01T${start_time}`);
       const end = new Date(`1970-01-01T${end_time}`);
       total_hours = (end - start) / (1000 * 60 * 60);
+      if (total_hours <= 0) total_hours += 24; // ข้ามเที่ยงคืน
     }
 
     const result = await pool.query(`
