@@ -443,6 +443,70 @@ router.delete('/role-work-hours/:role', async (req, res) => {
   }
 });
 
+// ========== USER WORK HOURS ==========
+
+async function ensureUserWorkHoursTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_work_hours (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      start_time TIME NOT NULL DEFAULT '09:00',
+      end_time TIME NOT NULL DEFAULT '18:00',
+      lunch_start TIME DEFAULT '12:00',
+      lunch_end TIME DEFAULT '13:00',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+// GET all user work hours (with user info)
+router.get('/user-work-hours', async (req, res) => {
+  try {
+    await ensureUserWorkHoursTable();
+    const result = await pool.query(`
+      SELECT uwh.*, u.firstname, u.lastname, u.nickname, u.role, u.department, u.position
+      FROM user_work_hours uwh
+      JOIN users u ON uwh.user_id = u.id
+      ORDER BY u.firstname, u.lastname
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST/PUT upsert user work hours
+router.post('/user-work-hours', async (req, res) => {
+  const { user_id, start_time, end_time, lunch_start, lunch_end } = req.body;
+  if (!user_id || !start_time || !end_time) {
+    return res.status(400).json({ error: 'user_id, start_time, end_time are required' });
+  }
+  try {
+    await ensureUserWorkHoursTable();
+    const result = await pool.query(`
+      INSERT INTO user_work_hours (user_id, start_time, end_time, lunch_start, lunch_end)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (user_id)
+      DO UPDATE SET start_time = $2, end_time = $3, lunch_start = $4, lunch_end = $5, updated_at = NOW()
+      RETURNING *
+    `, [user_id, start_time, end_time, lunch_start || '12:00', lunch_end || '13:00']);
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE user work hours
+router.delete('/user-work-hours/:userId', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM user_work_hours WHERE user_id = $1', [req.params.userId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET distinct departments
 router.get('/departments', verifyToken, async (req, res) => {
   try {
