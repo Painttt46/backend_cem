@@ -69,78 +69,142 @@ const erpGet = (path) =>
 /**
  * GET /api/erp-sync/preview
  * 
- * Preview การเปลี่ยนแปลงก่อน sync จริง
- * - แสดงโครงการใหม่ที่จะถูกสร้าง
- * - แสดงโครงการที่จะถูกอัปเดต พร้อมรายละเอียดการเปลี่ยนแปลง
- * 
- * Response: { total, created, updated, createdList, updatedList }
+ * Preview การเปลี่ยนแปลงก่อน sync จริง (dry run)
  */
 router.get('/preview', async (req, res) => {
   try {
-    const fields = encodeURIComponent(JSON.stringify(['name','project_name','status','sales_person','customer','expected_start_date','expected_end_date']))
-    const listRes = await erpGet(`/Project?limit_page_length=All&fields=${fields}`)
-    const projects = (listRes.data || []).filter(p => p.status === 'Open' || p.status === 'Completed')
-
-    let created = 0, updated = 0
-    const createdList = [], updatedList = []
-
-    await Promise.all(projects.map(async (p) => {
-      try {
-        // ดึง file list จาก ERP
-        const fileFilter = encodeURIComponent(JSON.stringify([['attached_to_name','=',p.name]]))
-        const fileFields = encodeURIComponent(JSON.stringify(['file_name','file_url']))
-        const fileRes = await erpGet(`/File?filters=${fileFilter}&fields=${fileFields}&limit_page_length=100`)
-        const erpFiles = (fileRes.data || []).map(f => ({ erp: true, name: f.file_name, url: f.file_url }))
-
-        const syncedStatus = p.status === 'Completed' ? 'completed' : null
-        const oldRow = await pool.query('SELECT task_name, sale_owner, customer_info, status, files FROM tasks WHERE so_number=$1', [p.name])
-        const oldData = oldRow.rows[0] || null
-
-        if (!oldData) {
-          // โครงการใหม่
-          created++
-          createdList.push({ 
-            name: p.project_name || p.name, 
-            so: p.name,
-            sales_person: p.sales_person,
-            customer: p.customer,
-            status: syncedStatus,
-            files: erpFiles.map(f => f.name)
-          })
-        } else {
-          // ตรวจสอบการเปลี่ยนแปลง
-          const old = oldData
-          const newName = p.project_name || p.name
-          const changes = {}
-          
-          if (old.task_name !== newName) changes.task_name = { old: old.task_name, new: newName }
-          if (old.sale_owner !== (p.sales_person || null)) changes.sale_owner = { old: old.sale_owner, new: p.sales_person || null }
-          if (old.customer_info !== (p.customer || null)) changes.customer_info = { old: old.customer_info, new: p.customer || null }
-          if (old.status !== syncedStatus) changes.status = { old: old.status, new: syncedStatus }
-
-          // track file changes
-          const oldErpFiles = (Array.isArray(old.files) ? old.files : []).filter(f => f && f.erp).map(f => f.name)
-          const newErpFiles = erpFiles.map(f => f.name)
-          const addedFiles = newErpFiles.filter(n => !oldErpFiles.includes(n))
-          const removedFiles = oldErpFiles.filter(n => !newErpFiles.includes(n))
-          if (addedFiles.length || removedFiles.length) changes.files = { added: addedFiles, removed: removedFiles }
-
-          if (Object.keys(changes).length > 0) {
-            updated++
-            updatedList.push({ name: newName, so: p.name, changes })
-          }
-        }
-      } catch (e) {
-        console.error(`[ERP_PREVIEW] failed: ${p.name}`, e.message)
-      }
-    }))
-
-    res.json({ success: true, total: projects.length, created, updated, createdList, updatedList })
+    const result = await performSync(true) // dry_run = true
+    res.json(result)
   } catch (err) {
     console.error('[ERP_PREVIEW] error:', err.message)
     res.status(500).json({ success: false, error: err.message })
   }
 })
+
+/**
+ * ฟังก์ชันหลักสำหรับ sync โครงการ
+ * @param {boolean} dryRun - ถ้าเป็น true จะไม่บันทึกลง database (preview mode)
+ */
+async function performSync(dryRun = false) {
+  // นับจำนวนโครงการก่อน sync
+  const countBeforeResult = await pool.query('SELECT COUNT(*) FROM tasks')
+  const projectsBeforeSync = parseInt(countBeforeResult.rows[0].count)
+  
+  // ดึงข้อมูลทั้งหมดจาก ERP
+  const fields = encodeURIComponent(JSON.stringify(['name','project_name','status','sales_person','customer','expected_start_date','expected_end_date']))
+  const listRes = await erpGet(`/Project?limit_page_length=All&fields=${fields}`)
+  const projects = (listRes.data || []).filter(p => p.status === 'Open' || p.status === 'Completed')
+
+  let created = 0, updated = 0, failed = 0
+  const createdList = [], updatedList = []
+
+  // Process แต่ละโครงการ
+  await Promise.all(projects.map(async (p) => {
+    try {
+      // ดึง file list จาก ERP
+      const fileFilter = encodeURIComponent(JSON.stringify([['attached_to_name','=',p.name]]))
+      const fileFields = encodeURIComponent(JSON.stringify(['file_name','file_url']))
+      const fileRes = await erpGet(`/File?filters=${fileFilter}&fields=${fileFields}&limit_page_length=100`)
+      const erpFiles = (fileRes.data || []).map(f => ({ erp: true, name: f.file_name, url: f.file_url }))
+
+      const syncedStatus = p.status === 'Completed' ? 'completed' : null
+      const oldRow = await pool.query('SELECT task_name, sale_owner, customer_info, status, files FROM tasks WHERE so_number=$1', [p.name])
+      const oldData = oldRow.rows[0] || null
+
+      // เก็บ local files เดิมไว้
+      const existingFiles = oldData?.files || []
+      const localFiles = Array.isArray(existingFiles)
+        ? existingFiles.filter(f => typeof f === 'string' || !f.erp)
+        : []
+      const mergedFiles = [...localFiles, ...erpFiles]
+
+      if (!oldData) {
+        // โครงการใหม่
+        if (!dryRun) {
+          await pool.query(`
+            INSERT INTO tasks (so_number, task_name, sale_owner, customer_info, status, project_start_date, project_end_date, files, erp_synced, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,true,1)
+          `, [p.name, p.project_name || p.name, p.sales_person || null, p.customer || null,
+              syncedStatus, p.expected_start_date || null, p.expected_end_date || null, JSON.stringify(mergedFiles)])
+        }
+        created++
+        createdList.push({ 
+          name: p.project_name || p.name, 
+          so: p.name,
+          sales_person: p.sales_person,
+          customer: p.customer,
+          status: syncedStatus,
+          files: erpFiles.map(f => f.name)
+        })
+      } else {
+        // ตรวจสอบการเปลี่ยนแปลง
+        const old = oldData
+        const newName = p.project_name || p.name
+        const changes = {}
+        
+        if (old.task_name !== newName) changes.task_name = { old: old.task_name, new: newName }
+        if (old.sale_owner !== (p.sales_person || null)) changes.sale_owner = { old: old.sale_owner, new: p.sales_person || null }
+        if (old.customer_info !== (p.customer || null)) changes.customer_info = { old: old.customer_info, new: p.customer || null }
+        if (old.status !== syncedStatus) changes.status = { old: old.status, new: syncedStatus }
+
+        // track file changes
+        const oldErpFiles = (Array.isArray(old.files) ? old.files : []).filter(f => f && f.erp).map(f => f.name)
+        const newErpFiles = erpFiles.map(f => f.name)
+        const addedFiles = newErpFiles.filter(n => !oldErpFiles.includes(n))
+        const removedFiles = oldErpFiles.filter(n => !newErpFiles.includes(n))
+        if (addedFiles.length || removedFiles.length) changes.files = { added: addedFiles, removed: removedFiles }
+
+        if (Object.keys(changes).length > 0) {
+          if (!dryRun) {
+            await pool.query(`
+              UPDATE tasks SET
+                task_name = $2,
+                sale_owner = $3,
+                customer_info = $4,
+                status = $5,
+                project_start_date = $6,
+                project_end_date = $7,
+                files = $8::jsonb,
+                updated_at = NOW()
+              WHERE so_number = $1 AND erp_synced = true
+            `, [p.name, newName, p.sales_person || null, p.customer || null,
+                syncedStatus, p.expected_start_date || null, p.expected_end_date || null, JSON.stringify(mergedFiles)])
+          }
+          updated++
+          updatedList.push({ name: newName, so: p.name, changes })
+        }
+      }
+    } catch (e) {
+      console.error(`[ERP_SYNC] failed: ${p.name}`, e.message)
+      failed++
+    }
+  }))
+
+  // นับจำนวนโครงการหลัง sync
+  const countAfterResult = await pool.query('SELECT COUNT(*) FROM tasks')
+  const projectsAfterSync = parseInt(countAfterResult.rows[0].count)
+
+  // บันทึก log (เฉพาะเมื่อไม่ใช่ dry run)
+  if (!dryRun) {
+    await pool.query(
+      'INSERT INTO erp_sync_logs (total, created, updated, failed, created_list, updated_list, projects_before_sync, projects_after_sync) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [projects.length, created, updated, failed, JSON.stringify(createdList), JSON.stringify(updatedList), projectsBeforeSync, projectsAfterSync]
+    )
+    await pool.query('DELETE FROM erp_sync_logs WHERE id NOT IN (SELECT id FROM erp_sync_logs ORDER BY synced_at DESC LIMIT 50)')
+  }
+
+  return { 
+    success: true, 
+    total: projects.length, 
+    created, 
+    updated, 
+    failed, 
+    createdList, 
+    updatedList, 
+    projectsBeforeSync, 
+    projectsAfterSync 
+  }
+}
 
 /**
  * POST /api/erp-sync/projects
@@ -154,100 +218,8 @@ router.get('/preview', async (req, res) => {
  */
 router.post('/projects', async (req, res) => {
   try {
-    // นับจำนวนโครงการก่อน sync
-    const countBeforeResult = await pool.query('SELECT COUNT(*) FROM tasks')
-    const projectsBeforeSync = parseInt(countBeforeResult.rows[0].count)
-    
-    // ดึงข้อมูลทั้งหมดในครั้งเดียว (ไม่ต้องดึง detail ทีละตัว)
-    const fields = encodeURIComponent(JSON.stringify(['name','project_name','status','sales_person','customer','expected_start_date','expected_end_date']))
-    const listRes = await erpGet(`/Project?limit_page_length=All&fields=${fields}`)
-    const projects = (listRes.data || []).filter(p => p.status === 'Open' || p.status === 'Completed')
-
-    let created = 0, updated = 0, failed = 0
-    const createdList = [], updatedList = []
-
-    // Step 2: Upsert ทั้งหมดเข้า DB
-    await Promise.all(projects.map(async (p) => {
-      try {
-        // ดึง file list จาก ERP
-        const fileFilter = encodeURIComponent(JSON.stringify([['attached_to_name','=',p.name]]))
-        const fileFields = encodeURIComponent(JSON.stringify(['file_name','file_url']))
-        const fileRes = await erpGet(`/File?filters=${fileFilter}&fields=${fileFields}&limit_page_length=100`)
-        const erpFiles = (fileRes.data || []).map(f => ({ erp: true, name: f.file_name, url: f.file_url }))
-
-        const syncedStatus = p.status === 'Completed' ? 'completed' : null
-        const oldRow = await pool.query('SELECT task_name, sale_owner, customer_info, status, files FROM tasks WHERE so_number=$1', [p.name])
-        const oldData = oldRow.rows[0] || null
-
-        // เก็บ local files เดิมไว้ ไม่ทับ
-        const existingFiles = oldData?.files || []
-        const localFiles = Array.isArray(existingFiles)
-          ? existingFiles.filter(f => typeof f === 'string' || !f.erp)
-          : []
-        const mergedFiles = [...localFiles, ...erpFiles]
-
-        const result = await pool.query(`
-          INSERT INTO tasks (so_number, task_name, sale_owner, customer_info, status, project_start_date, project_end_date, files, erp_synced, created_by)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,true,1)
-          ON CONFLICT (so_number) WHERE erp_synced = true DO UPDATE SET
-            task_name          = EXCLUDED.task_name,
-            sale_owner         = EXCLUDED.sale_owner,
-            customer_info      = EXCLUDED.customer_info,
-            status             = EXCLUDED.status,
-            project_start_date = EXCLUDED.project_start_date,
-            project_end_date   = EXCLUDED.project_end_date,
-            files              = EXCLUDED.files,
-            updated_at         = NOW()
-          WHERE (
-            tasks.task_name IS DISTINCT FROM EXCLUDED.task_name OR
-            tasks.sale_owner IS DISTINCT FROM EXCLUDED.sale_owner OR
-            tasks.customer_info IS DISTINCT FROM EXCLUDED.customer_info OR
-            tasks.status IS DISTINCT FROM EXCLUDED.status OR
-            tasks.project_start_date IS DISTINCT FROM EXCLUDED.project_start_date OR
-            tasks.project_end_date IS DISTINCT FROM EXCLUDED.project_end_date OR
-            tasks.files IS DISTINCT FROM EXCLUDED.files
-          )
-          RETURNING (xmax = 0) AS is_insert
-        `, [p.name, p.project_name || p.name, p.sales_person || null, p.customer || null,
-            syncedStatus, p.expected_start_date || null, p.expected_end_date || null, JSON.stringify(mergedFiles)])
-        if (!result.rows[0]) { /* ข้อมูลเหมือนเดิม */ }
-        else if (result.rows[0].is_insert) {
-          created++
-          createdList.push({ name: p.project_name || p.name, so: p.name, files: erpFiles.map(f => f.name) })
-        } else {
-          const old = oldData || {}
-          const newName = p.project_name || p.name
-          const changes = {}
-          if (old.task_name !== newName) changes.task_name = { old: old.task_name, new: newName }
-          if (old.sale_owner !== (p.sales_person || null)) changes.sale_owner = { old: old.sale_owner, new: p.sales_person || null }
-          if (old.customer_info !== (p.customer || null)) changes.customer_info = { old: old.customer_info, new: p.customer || null }
-          if (old.status !== syncedStatus) changes.status = { old: old.status, new: syncedStatus }
-
-          // track file changes
-          const oldErpFiles = (Array.isArray(old.files) ? old.files : []).filter(f => f && f.erp).map(f => f.name)
-          const newErpFiles = erpFiles.map(f => f.name)
-          const addedFiles = newErpFiles.filter(n => !oldErpFiles.includes(n))
-          const removedFiles = oldErpFiles.filter(n => !newErpFiles.includes(n))
-          if (addedFiles.length || removedFiles.length) changes.files = { added: addedFiles, removed: removedFiles }
-
-          updated++
-          updatedList.push({ name: newName, so: p.name, changes: Object.keys(changes).length ? changes : null })
-        }
-      } catch (e) {
-        console.error(`[ERP_SYNC] failed: ${p.name}`, e.message)
-        failed++
-      }
-    }))
-
-    // Step 4: คืนผลลัพธ์สรุป
-    await pool.query(
-      'INSERT INTO erp_sync_logs (total, created, updated, failed, created_list, updated_list) VALUES ($1,$2,$3,$4,$5,$6)',
-      [projects.length, created, updated, failed, JSON.stringify(createdList), JSON.stringify(updatedList)]
-    )
-    // เก็บแค่ 50 รายการล่าสุด ลบอันเก่าออก
-    await pool.query('DELETE FROM erp_sync_logs WHERE id NOT IN (SELECT id FROM erp_sync_logs ORDER BY synced_at DESC LIMIT 50)')
-    res.json({ success: true, total: projects.length, created, updated, failed, createdList, updatedList })
-
+    const result = await performSync(false)
+    res.json(result)
   } catch (err) {
     console.error('[ERP_SYNC] error:', err.message)
     res.status(500).json({ success: false, error: err.message })
