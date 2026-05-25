@@ -67,6 +67,82 @@ const erpGet = (path) =>
   }).then(r => r.json())
 
 /**
+ * GET /api/erp-sync/preview
+ * 
+ * Preview การเปลี่ยนแปลงก่อน sync จริง
+ * - แสดงโครงการใหม่ที่จะถูกสร้าง
+ * - แสดงโครงการที่จะถูกอัปเดต พร้อมรายละเอียดการเปลี่ยนแปลง
+ * 
+ * Response: { total, created, updated, createdList, updatedList }
+ */
+router.get('/preview', async (req, res) => {
+  try {
+    const fields = encodeURIComponent(JSON.stringify(['name','project_name','status','sales_person','customer','expected_start_date','expected_end_date']))
+    const listRes = await erpGet(`/Project?limit_page_length=All&fields=${fields}`)
+    const projects = (listRes.data || []).filter(p => p.status === 'Open' || p.status === 'Completed')
+
+    let created = 0, updated = 0
+    const createdList = [], updatedList = []
+
+    await Promise.all(projects.map(async (p) => {
+      try {
+        // ดึง file list จาก ERP
+        const fileFilter = encodeURIComponent(JSON.stringify([['attached_to_name','=',p.name]]))
+        const fileFields = encodeURIComponent(JSON.stringify(['file_name','file_url']))
+        const fileRes = await erpGet(`/File?filters=${fileFilter}&fields=${fileFields}&limit_page_length=100`)
+        const erpFiles = (fileRes.data || []).map(f => ({ erp: true, name: f.file_name, url: f.file_url }))
+
+        const syncedStatus = p.status === 'Completed' ? 'completed' : null
+        const oldRow = await pool.query('SELECT task_name, sale_owner, customer_info, status, files FROM tasks WHERE so_number=$1', [p.name])
+        const oldData = oldRow.rows[0] || null
+
+        if (!oldData) {
+          // โครงการใหม่
+          created++
+          createdList.push({ 
+            name: p.project_name || p.name, 
+            so: p.name,
+            sales_person: p.sales_person,
+            customer: p.customer,
+            status: syncedStatus,
+            files: erpFiles.map(f => f.name)
+          })
+        } else {
+          // ตรวจสอบการเปลี่ยนแปลง
+          const old = oldData
+          const newName = p.project_name || p.name
+          const changes = {}
+          
+          if (old.task_name !== newName) changes.task_name = { old: old.task_name, new: newName }
+          if (old.sale_owner !== (p.sales_person || null)) changes.sale_owner = { old: old.sale_owner, new: p.sales_person || null }
+          if (old.customer_info !== (p.customer || null)) changes.customer_info = { old: old.customer_info, new: p.customer || null }
+          if (old.status !== syncedStatus) changes.status = { old: old.status, new: syncedStatus }
+
+          // track file changes
+          const oldErpFiles = (Array.isArray(old.files) ? old.files : []).filter(f => f && f.erp).map(f => f.name)
+          const newErpFiles = erpFiles.map(f => f.name)
+          const addedFiles = newErpFiles.filter(n => !oldErpFiles.includes(n))
+          const removedFiles = oldErpFiles.filter(n => !newErpFiles.includes(n))
+          if (addedFiles.length || removedFiles.length) changes.files = { added: addedFiles, removed: removedFiles }
+
+          if (Object.keys(changes).length > 0) {
+            updated++
+            updatedList.push({ name: newName, so: p.name, changes })
+          }
+        }
+      } catch (e) {
+        console.error(`[ERP_PREVIEW] failed: ${p.name}`, e.message)
+      }
+    }))
+
+    res.json({ success: true, total: projects.length, created, updated, createdList, updatedList })
+  } catch (err) {
+    console.error('[ERP_PREVIEW] error:', err.message)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+/**
  * POST /api/erp-sync/projects
  *
  * Sync โครงการทั้งหมดจาก ERPNext เข้า tasks table
@@ -78,6 +154,10 @@ const erpGet = (path) =>
  */
 router.post('/projects', async (req, res) => {
   try {
+    // นับจำนวนโครงการก่อน sync
+    const countBeforeResult = await pool.query('SELECT COUNT(*) FROM tasks')
+    const projectsBeforeSync = parseInt(countBeforeResult.rows[0].count)
+    
     // ดึงข้อมูลทั้งหมดในครั้งเดียว (ไม่ต้องดึง detail ทีละตัว)
     const fields = encodeURIComponent(JSON.stringify(['name','project_name','status','sales_person','customer','expected_start_date','expected_end_date']))
     const listRes = await erpGet(`/Project?limit_page_length=All&fields=${fields}`)
