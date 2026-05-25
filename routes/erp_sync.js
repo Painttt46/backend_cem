@@ -95,8 +95,10 @@ async function performSync(dryRun = false) {
   const listRes = await erpGet(`/Project?limit_page_length=All&fields=${fields}`)
   const projects = (listRes.data || []).filter(p => p.status === 'Open' || p.status === 'Completed')
 
-  let created = 0, updated = 0, failed = 0
+  let created = 0, updated = 0, failed = 0, skipped = 0
   const createdList = [], updatedList = []
+
+  console.log(`[ERP_SYNC] Processing ${projects.length} projects from ERP (dryRun=${dryRun})`)
 
   // Process แต่ละโครงการ
   await Promise.all(projects.map(async (p) => {
@@ -122,36 +124,25 @@ async function performSync(dryRun = false) {
       
       // ทำ UPSERT เฉพาะเมื่อไม่ใช่ dry run
       if (!dryRun) {
-        const result = await pool.query(`
-          INSERT INTO tasks (so_number, task_name, sale_owner, customer_info, status, project_start_date, project_end_date, files, erp_synced, created_by)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,true,1)
-          ON CONFLICT (so_number) DO UPDATE SET
-            task_name = EXCLUDED.task_name,
-            sale_owner = EXCLUDED.sale_owner,
-            customer_info = EXCLUDED.customer_info,
-            status = EXCLUDED.status,
-            project_start_date = EXCLUDED.project_start_date,
-            project_end_date = EXCLUDED.project_end_date,
-            files = EXCLUDED.files,
-            erp_synced = true,
-            updated_at = NOW()
-          WHERE (
-            tasks.task_name IS DISTINCT FROM EXCLUDED.task_name OR
-            tasks.sale_owner IS DISTINCT FROM EXCLUDED.sale_owner OR
-            tasks.customer_info IS DISTINCT FROM EXCLUDED.customer_info OR
-            tasks.status IS DISTINCT FROM EXCLUDED.status OR
-            tasks.project_start_date IS DISTINCT FROM EXCLUDED.project_start_date OR
-            tasks.project_end_date IS DISTINCT FROM EXCLUDED.project_end_date OR
-            tasks.files IS DISTINCT FROM EXCLUDED.files
-          )
-          RETURNING (xmax = 0) AS is_insert
-        `, [p.name, newName, p.sales_person || null, p.customer || null,
-            syncedStatus, p.expected_start_date || null, p.expected_end_date || null, JSON.stringify(mergedFiles)])
-        
-        if (!result.rows[0]) {
-          // ไม่มีการเปลี่ยนแปลง
-        } else if (result.rows[0].is_insert) {
+        // เช็คว่ามีการเปลี่ยนแปลงหรือไม่
+        const hasChanges = !oldData || 
+          oldData.task_name !== newName ||
+          oldData.sale_owner !== (p.sales_person || null) ||
+          oldData.customer_info !== (p.customer || null) ||
+          oldData.status !== syncedStatus ||
+          oldData.project_start_date !== (p.expected_start_date || null) ||
+          oldData.project_end_date !== (p.expected_end_date || null) ||
+          JSON.stringify(oldData.files || []) !== JSON.stringify(mergedFiles)
+
+        if (!oldData) {
           // INSERT ใหม่
+          console.log(`[ERP_SYNC] Creating new: ${p.name} - ${newName}`)
+          await pool.query(`
+            INSERT INTO tasks (so_number, task_name, sale_owner, customer_info, status, project_start_date, project_end_date, files, erp_synced, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,true,1)
+          `, [p.name, newName, p.sales_person || null, p.customer || null,
+              syncedStatus, p.expected_start_date || null, p.expected_end_date || null, JSON.stringify(mergedFiles)])
+          
           created++
           createdList.push({ 
             name: newName, 
@@ -161,9 +152,25 @@ async function performSync(dryRun = false) {
             status: syncedStatus,
             files: erpFiles.map(f => f.name)
           })
-        } else {
+        } else if (hasChanges) {
           // UPDATE
-          const old = oldData || {}
+          console.log(`[ERP_SYNC] Updating: ${p.name} - ${newName}`)
+          await pool.query(`
+            UPDATE tasks SET
+              task_name = $2,
+              sale_owner = $3,
+              customer_info = $4,
+              status = $5,
+              project_start_date = $6,
+              project_end_date = $7,
+              files = $8::jsonb,
+              erp_synced = true,
+              updated_at = NOW()
+            WHERE so_number = $1
+          `, [p.name, newName, p.sales_person || null, p.customer || null,
+              syncedStatus, p.expected_start_date || null, p.expected_end_date || null, JSON.stringify(mergedFiles)])
+
+          const old = oldData
           const changes = {}
           if (old.task_name !== newName) changes.task_name = { old: old.task_name, new: newName }
           if (old.sale_owner !== (p.sales_person || null)) changes.sale_owner = { old: old.sale_owner, new: p.sales_person || null }
@@ -178,6 +185,9 @@ async function performSync(dryRun = false) {
 
           updated++
           updatedList.push({ name: newName, so: p.name, changes: Object.keys(changes).length ? changes : null })
+        } else {
+          // No changes
+          skipped++
         }
       } else {
         // Dry run - เช็คว่าเป็นโครงการใหม่หรืออัปเดต
@@ -220,6 +230,8 @@ async function performSync(dryRun = false) {
   // นับจำนวนโครงการหลัง sync
   const countAfterResult = await pool.query('SELECT COUNT(*) FROM tasks')
   const projectsAfterSync = parseInt(countAfterResult.rows[0].count)
+
+  console.log(`[ERP_SYNC] Summary: total=${projects.length}, created=${created}, updated=${updated}, skipped=${skipped}, failed=${failed}`)
 
   // บันทึก log (เฉพาะเมื่อไม่ใช่ dry run)
   if (!dryRun) {
