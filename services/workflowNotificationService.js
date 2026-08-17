@@ -1,19 +1,15 @@
-import nodemailer from 'nodemailer';
 import pool from '../config/database.js';
 import cron from 'node-cron';
 import dotenv from 'dotenv';
+import { sendMailWithFallback } from './emailService.js';
 
 dotenv.config();
 
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+// หมายเหตุ: เดิมไฟล์นี้สร้าง Gmail transporter แยกของตัวเองและเรียก transporter.sendMail()
+// ตรงๆ ทำให้เมื่อ Gmail App Password หมดอายุ/ถูก revoke (EAUTH) อีเมลจะส่งไม่ได้เลย
+// โดยไม่ fallback ไป Mailjet เหมือนอีเมลอื่นๆในระบบ ตอนนี้เปลี่ยนมาใช้ sendMailWithFallback
+// จาก emailService.js เพื่อให้ fallback ไป Mailjet อัตโนมัติเมื่อ Gmail มีปัญหา
+const transporter = { sendMail: sendMailWithFallback };
 
 // ส่ง email สรุปรายวัน
 async function sendDailySummaryEmail(user, steps) {

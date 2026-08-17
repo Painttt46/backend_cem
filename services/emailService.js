@@ -49,8 +49,23 @@ const isGmailLimitError = (err) => {
   );
 };
 
-// sendMailWithFallback: tries Gmail first, falls back to Mailjet on daily limit error
-const sendMailWithFallback = async (mailOptions) => {
+// ตรวจสอบ error ที่เกิดจากปัญหาการยืนยันตัวตนกับ Gmail (App Password ผิด/หมดอายุ/ถูก revoke)
+// เช่น EAUTH, 534-5.7.9 ฯลฯ — ต้อง fallback ไป Mailjet ทันที ไม่ใช่ throw error ทิ้ง
+const isGmailAuthError = (err) => {
+  const msg = (err.message || '').toLowerCase();
+  const response = (err.response || '').toLowerCase();
+  return (
+    err.code === 'EAUTH' ||
+    response.includes('534-5.7.9') ||
+    response.includes('535-5.7') ||
+    msg.includes('invalid login') ||
+    msg.includes('username and password not accepted')
+  );
+};
+
+// sendMailWithFallback: tries Gmail first, falls back to Mailjet on daily limit
+// or authentication errors (e.g. revoked/expired App Password)
+export const sendMailWithFallback = async (mailOptions) => {
   if (isGmailLimited()) {
     return mailjetTransporter.sendMail({ ...mailOptions, from: process.env.MAILJET_FROM || mailOptions.from });
   }
@@ -61,6 +76,10 @@ const sendMailWithFallback = async (mailOptions) => {
     if (isGmailLimitError(err)) {
       gmailLimitHitAt = Date.now();
       console.warn('[Email] Gmail daily limit reached — switching to Mailjet for 24h');
+      return mailjetTransporter.sendMail({ ...mailOptions, from: process.env.MAILJET_FROM || mailOptions.from });
+    }
+    if (isGmailAuthError(err)) {
+      console.warn('[Email] Gmail authentication failed (App Password may be revoked/expired) — falling back to Mailjet for this email. Please check EMAIL_PASS.', err.message);
       return mailjetTransporter.sendMail({ ...mailOptions, from: process.env.MAILJET_FROM || mailOptions.from });
     }
     throw err;
