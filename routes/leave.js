@@ -207,10 +207,8 @@ async function resetLeaveQuotasForNewYear() {
 
     const defaultQuotas = [
       { leave_type: 'sick', annual_quota: 30 },
-      { leave_type: 'personal', annual_quota: 6 },
-      { leave_type: 'vacation', annual_quota: 6 },
-      { leave_type: 'maternity', annual_quota: 98 },
-      { leave_type: 'other', annual_quota: 3 }
+      { leave_type: 'personal', annual_quota: 3 },
+      { leave_type: 'vacation', annual_quota: 0 }
     ];
 
     for (const user of usersResult.rows) {
@@ -250,10 +248,8 @@ startQuotaResetScheduler();
 async function initializeUserLeaveQuota(userId) {
   const defaultQuotas = [
     { leave_type: 'sick', annual_quota: 30 },
-    { leave_type: 'personal', annual_quota: 6 },
-    { leave_type: 'vacation', annual_quota: 6 },
-    { leave_type: 'maternity', annual_quota: 98 },
-    { leave_type: 'other', annual_quota: 3 }
+    { leave_type: 'personal', annual_quota: 3 },
+    { leave_type: 'vacation', annual_quota: 0 }
   ];
 
   for (const quota of defaultQuotas) {
@@ -1513,13 +1509,10 @@ router.put('/:id/cancel-status', async (req, res) => {
         WHERE user_id = $2 AND leave_type = $3 AND year = $4
       `, [days, leaveRequest.user_id, leaveRequest.leave_type, currentYear]);
 
-      // อัปเดตสถานะเป็น cancelled
-      await pool.query(
-        `UPDATE leave_requests SET status = 'cancelled', approved_by = $1 WHERE id = $2`,
-        [approved_by, id]
-      );
+      // ลบคำขอลาออกเลย
+      await pool.query('DELETE FROM leave_requests WHERE id = $1', [id]);
 
-      res.json({ message: 'Leave cancelled successfully' });
+      res.json({ message: 'Leave cancelled and deleted successfully' });
     } else {
       // ปฏิเสธการยกเลิก - คืนสถานะตามที่อนุมัติไว้
       // ถ้ามี approved_by_level2 แสดงว่าอนุมัติครบแล้ว → approved

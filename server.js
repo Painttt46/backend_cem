@@ -20,11 +20,22 @@ import rolePermissionsRoutes from './routes/role_permissions.js';
 import settingsRoutes from './routes/settings.js';
 import auditLogsRoutes from './routes/audit_logs.js';
 import erpSyncRoutes from './routes/erp_sync.js';
+import procurementRoutes from './routes/procurement.js';
 import { startCarBookingScheduler } from './services/carBookingScheduler.js';
 import { startWorkflowScheduler } from './services/workflowNotificationService.js';
 import { sendPendingLeaveReminders } from './services/leaveReminderService.js';
 
 dotenv.config();
+
+// Prevent unhandled DB connection errors from crashing the whole process.
+// Log and keep the process alive; individual route handlers still return
+// proper error responses to their own requests.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection (process kept alive):', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception (process kept alive):', err);
+});
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -89,7 +100,7 @@ app.use(cookieParser());
 // Security: Rate limiting
 const limiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 2000, // Limit each IP to 100 requests per windowMs
+  max: 5000, // Limit each IP to 5000 requests per windowMs
   message: 'Too many requests from this IP, please try again later.'
 });
 
@@ -106,7 +117,7 @@ const authLimiter = rateLimit({
 
 // CORS configuration
 app.use(cors({
-  origin: ['http://172.30.101.52:8080', 'http://localhost:3001', 'http://127.0.0.1:8080'],
+  origin: ['http://172.30.101.52:8080', 'http://172.30.101.52:3000', 'http://172.30.101.52', 'http://localhost:3001', 'http://localhost:3000', 'http://localhost', 'http://127.0.0.1:8080', 'http://127.0.0.1:3000', 'http://127.0.0.1'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -156,6 +167,7 @@ app.use('/api/role-permissions', verifyToken, rolePermissionsRoutes);
 app.use('/api/settings', verifyToken, settingsRoutes);
 app.use('/api/audit-logs', verifyToken, auditLogsRoutes);
 app.use('/api/erp-sync', verifyToken, erpSyncRoutes);
+app.use('/api/procurement', verifyToken, procurementRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {

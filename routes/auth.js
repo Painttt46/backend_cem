@@ -11,7 +11,14 @@ const router = express.Router();
 
 // Login with bcrypt password verification
 router.post('/login', async (req, res) => {
-  const client = await pool.connect();
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (connError) {
+    console.error('Login DB connection error:', connError);
+    return res.status(503).json({ error: 'Service temporarily unavailable, please try again' });
+  }
+
   try {
     const { username, password } = req.body;
     
@@ -97,7 +104,7 @@ router.post('/login', async (req, res) => {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
