@@ -55,27 +55,18 @@ router.post('/', async (req, res) => {
     
     // Initialize leave quotas for new user
     const currentYear = new Date().getFullYear();
-    const leaveTypesResult = await pool.query(`
-      SELECT DISTINCT leave_type, annual_quota 
-      FROM user_leave_quotas 
-      WHERE year = $1 
-      GROUP BY leave_type, annual_quota
-    `, [currentYear]);
-    
-    // Get the most common quota for each leave type
-    const quotaMap = {};
-    for (const row of leaveTypesResult.rows) {
-      if (!quotaMap[row.leave_type]) {
-        quotaMap[row.leave_type] = row.annual_quota;
-      }
-    }
-    
-    // Insert quotas for new user
-    for (const [leaveType, quota] of Object.entries(quotaMap)) {
+    const defaultQuotas = [
+      { leave_type: 'sick', annual_quota: 30 },
+      { leave_type: 'personal', annual_quota: 3 },
+      { leave_type: 'vacation', annual_quota: 0 }
+    ];
+
+    for (const quota of defaultQuotas) {
       await pool.query(`
         INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year)
         VALUES ($1, $2, $3, $4)
-      `, [newUser.id, leaveType, quota, currentYear]);
+        ON CONFLICT (user_id, leave_type, year) DO NOTHING
+      `, [newUser.id, quota.leave_type, quota.annual_quota, currentYear]);
     }
     
     // Log audit
