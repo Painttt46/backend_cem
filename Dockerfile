@@ -1,5 +1,10 @@
 FROM node:18-alpine
 
+# ติดตั้ง tzdata เพื่อให้ TZ=Asia/Bangkok (จาก docker-compose.yml) ทำงานได้จริง
+# Alpine ไม่มี timezone data ติดมาโดย default ทำให้ TZ env ไม่มีผล (date จะเป็น UTC เสมอ)
+# ส่งผลให้ node-cron ที่ตั้ง { timezone: 'Asia/Bangkok' } รันผิดเวลา
+RUN apk add --no-cache tzdata
+
 WORKDIR /app
 
 COPY package*.json ./
