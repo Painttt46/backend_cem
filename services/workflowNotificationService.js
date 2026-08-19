@@ -254,29 +254,19 @@ async function checkAndNotifyDaily() {
     
     for (const user of usersResult.rows) {
       // ดึง steps ที่ user เป็นผู้รับผิดชอบ
+      // ใช้ jsonb_path_exists เพื่อค้นหา {id: user.id} ใน array ไม่ว่า object จะมี field อื่นด้วยหรือไม่
       const stepsResult = await pool.query(`
         SELECT ts.*, t.task_name, t.so_number
         FROM task_steps ts
         JOIN tasks t ON ts.task_id = t.id
-        WHERE ts.assigned_users @> $1::jsonb
+        WHERE ts.assigned_users IS NOT NULL
+          AND ts.assigned_users != 'null'::jsonb
+          AND jsonb_path_exists(ts.assigned_users, '$[*] ? (@.id == $uid)', jsonb_build_object('uid', $1::int))
           AND (ts.status IS NULL OR ts.status != 'completed')
         ORDER BY ts.end_date ASC NULLS LAST
-      `, [JSON.stringify([{ id: user.id }])]);
+      `, [user.id]);
       
-      // ถ้าไม่เจอแบบ object ลองแบบ id ตรงๆ
-      let steps = stepsResult.rows;
-      if (steps.length === 0) {
-        const stepsResult2 = await pool.query(`
-          SELECT ts.*, t.task_name, t.so_number
-          FROM task_steps ts
-          JOIN tasks t ON ts.task_id = t.id
-          WHERE ts.assigned_users::text LIKE $1
-            AND (ts.status IS NULL OR ts.status != 'completed')
-          ORDER BY ts.end_date ASC NULLS LAST
-        `, [`%"id":${user.id}%`]);
-        steps = stepsResult2.rows;
-      }
-      
+      const steps = stepsResult.rows;
       if (steps.length === 0) continue;
       
       // แยกประเภท
