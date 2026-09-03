@@ -21,6 +21,8 @@ import settingsRoutes from './routes/settings.js';
 import auditLogsRoutes from './routes/audit_logs.js';
 import erpSyncRoutes from './routes/erp_sync.js';
 import procurementRoutes from './routes/procurement.js';
+import procurementImportRoutes from './routes/procurementImport.js';
+import salesVisitsRoutes from './routes/salesVisits.js';
 import { startCarBookingScheduler } from './services/carBookingScheduler.js';
 import { startWorkflowScheduler } from './services/workflowNotificationService.js';
 import { sendPendingLeaveReminders } from './services/leaveReminderService.js';
@@ -168,6 +170,8 @@ app.use('/api/settings', verifyToken, settingsRoutes);
 app.use('/api/audit-logs', verifyToken, auditLogsRoutes);
 app.use('/api/erp-sync', verifyToken, erpSyncRoutes);
 app.use('/api/procurement', verifyToken, procurementRoutes);
+app.use('/api/procurement/import', verifyToken, procurementImportRoutes);
+app.use('/api/sales-visits', verifyToken, salesVisitsRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {
