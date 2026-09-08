@@ -27,6 +27,18 @@ pool.query(`
   CREATE INDEX IF NOT EXISTS idx_procurement_items_step_id ON procurement_items(step_id);
   CREATE INDEX IF NOT EXISTS idx_procurement_items_task_id ON procurement_items(task_id);
   CREATE INDEX IF NOT EXISTS idx_procurement_items_status ON procurement_items(status);
+
+  -- หมายเหตุระดับ vendor (ใช้ร่วมทุกรายการของ vendor เดียวกันใน step)
+  CREATE TABLE IF NOT EXISTS procurement_vendor_notes (
+    id SERIAL PRIMARY KEY,
+    step_id INTEGER NOT NULL REFERENCES task_steps(id) ON DELETE CASCADE,
+    vendor_name VARCHAR(255) NOT NULL,
+    comment TEXT,
+    updated_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE (step_id, vendor_name)
+  );
 `).catch(() => {});
 
 // Get distinct vendor names for autocomplete
@@ -38,6 +50,52 @@ router.get('/vendors', async (req, res) => {
     res.json(result.rows.map(r => r.vendor_name));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch vendors' });
+  }
+});
+
+// ===== Vendor-level notes (หมายเหตุระดับ vendor ต่อ step) =====
+
+// Get all vendor notes
+router.get('/vendor-notes', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT pvn.*, u.firstname || ' ' || u.lastname as updated_by_name
+      FROM procurement_vendor_notes pvn
+      LEFT JOIN users u ON pvn.updated_by = u.id
+      ORDER BY pvn.updated_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching vendor notes:', error);
+    res.status(500).json({ error: 'Failed to fetch vendor notes' });
+  }
+});
+
+// Upsert vendor note (บันทึก/แก้ไขหมายเหตุของ vendor ใน step)
+router.put('/vendor-notes', async (req, res) => {
+  try {
+    const { step_id, vendor_name, comment } = req.body;
+    if (!step_id || !vendor_name) {
+      return res.status(400).json({ error: 'step_id and vendor_name are required' });
+    }
+    const result = await pool.query(`
+      INSERT INTO procurement_vendor_notes (step_id, vendor_name, comment, updated_by)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (step_id, vendor_name)
+      DO UPDATE SET comment = $3, updated_by = $4, updated_at = NOW()
+      RETURNING *
+    `, [step_id, String(vendor_name).trim(), comment || null, req.user?.id || null]);
+
+    await logAudit(req, {
+      action: 'UPDATE', tableName: 'procurement_vendor_notes',
+      recordId: result.rows[0].id, recordName: `Vendor note: ${vendor_name}`,
+      newData: { step_id, vendor_name, comment: comment || null }
+    });
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error saving vendor note:', error);
+    res.status(500).json({ error: 'Failed to save vendor note' });
   }
 });
 
