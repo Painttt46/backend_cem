@@ -1,8 +1,26 @@
 import express from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
+
+// Upload ไฟล์แนบระดับ vendor → uploads/procurement/
+const vendorFileStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(process.cwd(), 'uploads', 'procurement');
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    // ป้องกันชื่อไฟล์แปลก ๆ — เก็บชื่อจริงไว้ใน DB ส่วนบนดิสก์ใช้ชื่อ unique
+    cb(null, unique + path.extname(file.originalname || '').slice(0, 20));
+  }
+});
+const vendorFileUpload = multer({ storage: vendorFileStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 // Ensure table exists
 pool.query(`
@@ -39,6 +57,20 @@ pool.query(`
     updated_at TIMESTAMP DEFAULT NOW(),
     UNIQUE (step_id, vendor_name)
   );
+
+  -- ไฟล์แนบระดับ vendor (ใบเสนอราคา, PO, ใบส่งของ ฯลฯ)
+  CREATE TABLE IF NOT EXISTS procurement_vendor_files (
+    id SERIAL PRIMARY KEY,
+    step_id INTEGER NOT NULL REFERENCES task_steps(id) ON DELETE CASCADE,
+    vendor_name VARCHAR(255) NOT NULL,
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size INTEGER,
+    mime_type VARCHAR(150),
+    uploaded_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_procurement_vendor_files_step ON procurement_vendor_files(step_id);
 `).catch(() => {});
 
 // Get distinct vendor names for autocomplete
@@ -96,6 +128,76 @@ router.put('/vendor-notes', async (req, res) => {
   } catch (error) {
     console.error('Error saving vendor note:', error);
     res.status(500).json({ error: 'Failed to save vendor note' });
+  }
+});
+
+// ===== Vendor files (ไฟล์แนบระดับ vendor ต่อ step) =====
+
+// Get all vendor files
+router.get('/vendor-files', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT pvf.*, u.firstname || ' ' || u.lastname as uploaded_by_name
+      FROM procurement_vendor_files pvf
+      LEFT JOIN users u ON pvf.uploaded_by = u.id
+      ORDER BY pvf.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching vendor files:', error);
+    res.status(500).json({ error: 'Failed to fetch vendor files' });
+  }
+});
+
+// Upload vendor file
+router.post('/vendor-files', vendorFileUpload.single('file'), async (req, res) => {
+  try {
+    const { step_id, vendor_name } = req.body;
+    if (!step_id || !vendor_name || !req.file) {
+      return res.status(400).json({ error: 'step_id, vendor_name and file are required' });
+    }
+    const result = await pool.query(`
+      INSERT INTO procurement_vendor_files
+        (step_id, vendor_name, file_name, file_path, file_size, mime_type, uploaded_by)
+      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *
+    `, [step_id, String(vendor_name).trim(), req.file.originalname,
+        '/uploads/procurement/' + req.file.filename,
+        req.file.size || null, req.file.mimetype || null, req.user?.id || null]);
+
+    await logAudit(req, {
+      action: 'CREATE', tableName: 'procurement_vendor_files',
+      recordId: result.rows[0].id, recordName: `Vendor file: ${req.file.originalname}`,
+      newData: { step_id, vendor_name, file_name: req.file.originalname }
+    });
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    // ลบไฟล์ที่เพิ่ง upload ถ้าบันทึก DB ไม่สำเร็จ
+    if (req.file) { try { fs.unlinkSync(req.file.path); } catch { /* ignore */ } }
+    console.error('Error uploading vendor file:', error);
+    res.status(500).json({ error: 'Failed to upload vendor file' });
+  }
+});
+
+// Delete vendor file
+router.delete('/vendor-files/:id', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM procurement_vendor_files WHERE id = $1', [req.params.id]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+    const row = result.rows[0];
+    // ลบไฟล์ออกจากดิสก์ (path ที่เก็บเป็น URL → แปลงกลับเป็น path จริง)
+    const diskPath = path.join(process.cwd(), 'uploads', 'procurement', path.basename(row.file_path));
+    try { fs.unlinkSync(diskPath); } catch { /* ignore */ }
+    await pool.query('DELETE FROM procurement_vendor_files WHERE id = $1', [req.params.id]);
+    await logAudit(req, {
+      action: 'DELETE', tableName: 'procurement_vendor_files',
+      recordId: row.id, recordName: `Vendor file: ${row.file_name}`,
+      oldData: { step_id: row.step_id, vendor_name: row.vendor_name, file_name: row.file_name }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting vendor file:', error);
+    res.status(500).json({ error: 'Failed to delete vendor file' });
   }
 });
 
