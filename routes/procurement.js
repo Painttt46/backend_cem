@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
+import { sendMailWithFallback } from '../services/emailService.js';
 
 const router = express.Router();
 
@@ -45,6 +46,9 @@ pool.query(`
   CREATE INDEX IF NOT EXISTS idx_procurement_items_step_id ON procurement_items(step_id);
   CREATE INDEX IF NOT EXISTS idx_procurement_items_task_id ON procurement_items(task_id);
   CREATE INDEX IF NOT EXISTS idx_procurement_items_status ON procurement_items(status);
+
+  -- star: mark รายการที่ต้องแจ้งเตือน PM ทางอีเมลเมื่อสถานะเปลี่ยน
+  ALTER TABLE procurement_items ADD COLUMN IF NOT EXISTS notify_pm BOOLEAN DEFAULT false;
 
   -- หมายเหตุระดับ vendor (ใช้ร่วมทุกรายการของ vendor เดียวกันใน step)
   CREATE TABLE IF NOT EXISTS procurement_vendor_notes (
@@ -282,7 +286,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { vendor_name, item_description, po_number, order_date, delivery_date, status, notes, assigned_user_id, assigned_user_name, status_remark } = req.body;
+    const { vendor_name, item_description, po_number, order_date, delivery_date, status, notes, assigned_user_id, assigned_user_name, status_remark, notify_pm } = req.body;
 
     const oldResult = await pool.query('SELECT * FROM procurement_items WHERE id = $1', [id]);
     if (oldResult.rows.length === 0) {
@@ -315,10 +319,11 @@ router.put('/:id', async (req, res) => {
           assigned_user_id = $8,
           assigned_user_name = COALESCE($9, assigned_user_name),
           status_history = $10::jsonb,
+          notify_pm = COALESCE($11::boolean, notify_pm),
           updated_at = NOW()
-      WHERE id = $11
+      WHERE id = $12
       RETURNING *
-    `, [vendor_name, item_description, po_number, order_date !== undefined ? order_date : old.order_date, delivery_date !== undefined ? delivery_date : old.delivery_date, status, notes, assigned_user_id !== undefined ? assigned_user_id : old.assigned_user_id, assigned_user_name, JSON.stringify(statusHistory), id]);
+    `, [vendor_name, item_description, po_number, order_date !== undefined ? order_date : old.order_date, delivery_date !== undefined ? delivery_date : old.delivery_date, status, notes, assigned_user_id !== undefined ? assigned_user_id : old.assigned_user_id, assigned_user_name, JSON.stringify(statusHistory), typeof notify_pm === 'boolean' ? notify_pm : null, id]);
 
     // Update parent step status based on items
     await updateStepStatus(old.step_id);
@@ -332,10 +337,44 @@ router.put('/:id', async (req, res) => {
       newData: { status: status || old.status }
     });
 
+    // แจ้งเตือน Project Manager ทางอีเมลเมื่อสถานะเปลี่ยน — เฉพาะรายการที่ถูก mark (star) ไว้
+    if (status && status !== old.status && result.rows[0].notify_pm === true) {
+      notifyProcurementStatusChange({
+        item: result.rows[0],
+        oldStatus: old.status,
+        newStatus: status,
+        changedBy: req.user ? `${req.user.firstname} ${req.user.lastname}` : '',
+        remark: status_remark || ''
+      }).catch(err => console.error('Procurement notify error:', err));
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error updating procurement item:', error);
     res.status(500).json({ error: 'Failed to update procurement item' });
+  }
+});
+
+// Toggle star: เปิด/ปิดการแจ้งเตือน PM ของรายการ
+router.put('/:id/notify', async (req, res) => {
+  try {
+    const oldResult = await pool.query('SELECT notify_pm FROM procurement_items WHERE id = $1', [req.params.id]);
+    if (oldResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Procurement item not found' });
+    }
+    const newVal = !oldResult.rows[0].notify_pm;
+    await pool.query('UPDATE procurement_items SET notify_pm = $1, updated_at = NOW() WHERE id = $2', [newVal, req.params.id]);
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'procurement_items',
+      recordId: parseInt(req.params.id),
+      recordName: 'toggle notify_pm',
+      newData: { notify_pm: newVal }
+    });
+    res.json({ notify_pm: newVal });
+  } catch (error) {
+    console.error('Error toggling notify flag:', error);
+    res.status(500).json({ error: 'Failed to toggle notify flag' });
   }
 });
 
@@ -368,6 +407,110 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: 'Failed to delete procurement item' });
   }
 });
+
+// ===== แจ้งเตือน Project Manager เมื่อสถานะสินค้าเปลี่ยน =====
+const PROC_STATUS_LABELS = {
+  pending: 'รอใบเสนอราคา',
+  negotiating: 'ต่อรอง',
+  approved: 'อนุมัติแล้ว',
+  ordered: 'สั่งซื้อแล้ว',
+  awaiting_payment: 'รอชำระเงิน',
+  waiting: 'รอของ',
+  ready_to_ship: 'ของพร้อมส่ง',
+  received: 'ของมาแล้ว',
+  completed: 'เสร็จสิ้น'
+};
+
+async function notifyProcurementStatusChange({ item, oldStatus, newStatus, changedBy, remark }) {
+  try {
+    // ดึงข้อมูลโครงการ (project_manager เป็นชื่อ "ชื่อ นามสกุล")
+    const taskResult = await pool.query(
+      'SELECT task_name, so_number, project_manager FROM tasks WHERE id = $1',
+      [item.task_id]
+    );
+    const task = taskResult.rows[0];
+    if (!task || !task.project_manager) return;
+
+    // หา user ของ PM จากชื่อเต็ม (ต้องมี email)
+    const pmResult = await pool.query(`
+      SELECT id, firstname, lastname, email
+      FROM users
+      WHERE (firstname || ' ' || lastname) = $1 AND email IS NOT NULL
+      LIMIT 1
+    `, [task.project_manager]);
+    const pm = pmResult.rows[0];
+    if (!pm || !pm.email) return;
+
+    const fmtDate = (d) => d ? new Date(d).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+    const statusChip = (s) => {
+      const colors = { pending: '#64748b|#f1f5f9', negotiating: '#a21caf|#fdf4ff', approved: '#b45309|#fef3c7', ordered: '#1d4ed8|#dbeafe', awaiting_payment: '#c2410c|#ffedd5', waiting: '#6d28d9|#ede9fe', ready_to_ship: '#0e7490|#cffafe', received: '#065f46|#d1fae5', completed: '#16a34a|#dcfce7' };
+      const [c, bg] = (colors[s] || '#64748b|#f1f5f9').split('|');
+      return `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;color:${c};background:${bg};">${PROC_STATUS_LABELS[s] || s}</span>`;
+    };
+
+    const infoRow = (label, value) => value ? `
+      <tr>
+        <td style="padding:6px 14px;font-size:13px;color:#64748b;width:110px;white-space:nowrap;">${label}</td>
+        <td style="padding:6px 14px;font-size:13px;color:#0f172a;font-weight:600;">${value}</td>
+      </tr>` : '';
+
+    const html = `
+    <body style="margin:0;padding:0;background:#f1f5f9;">
+    <center>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0;">
+        <tr><td align="center">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+            <tr>
+              <td style="background:linear-gradient(135deg,#4A90E2,#7c3aed);padding:20px 28px;">
+                <div style="color:#ffffff;font-size:17px;font-weight:800;">🛒 แจ้งเตือน: สถานะรายการจัดซื้อเปลี่ยน</div>
+                <div style="color:rgba(255,255,255,0.85);font-size:12px;margin-top:4px;">ระบบจัดซื้อ — Gent-CEM</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 28px;">
+                <div style="font-size:14px;color:#334155;line-height:1.7;">
+                  เรียน ${task.project_manager}<br/>
+                  สถานะรายการจัดซื้อของโครงการที่ท่านดูแลได้รับการเปลี่ยนแปลง โปรดตรวจสอบ
+                </div>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:12px;margin:14px 0;border:1px solid #eef2f6;">
+                  ${infoRow('Vendor', item.vendor_name)}
+                  ${infoRow('รายละเอียด', item.item_description)}
+                  ${infoRow('เลข PO', item.po_number)}
+                  ${infoRow('ยอดเงิน', item.amount !== null && item.amount !== undefined ? '฿' + Number(item.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 }) : '')}
+                  ${infoRow('สถานะเดิม', statusChip(oldStatus))}
+                  <tr>
+                    <td style="padding:6px 14px;font-size:13px;color:#64748b;white-space:nowrap;">สถานะใหม่</td>
+                    <td style="padding:6px 14px;">${statusChip(newStatus)}</td>
+                  </tr>
+                  ${infoRow('แก้ไขโดย', changedBy)}
+                  ${infoRow('เวลา', fmtDate(new Date()))}
+                  ${remark ? `<tr><td colspan="2" style="padding:6px 14px;"><div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;">💬 ${remark}</div></td></tr>` : ''}
+                </table>
+                <div style="font-size:11px;color:#94a3b8;">โครงการ: ${task.so_number ? '[' + task.so_number + '] ' : ''}${task.task_name || '-'}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:#f8fafc;padding:14px 28px;border-top:1px solid #f1f5f9;">
+                <div style="font-size:11px;color:#94a3b8;">อีเมลนี้ถูกส่งโดยอัตโนมัติจากระบบจัดซื้อ Gent-CEM โปรดอย่าตอบกลับ</div>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+      </table>
+    </center>
+    </body>`;
+
+    await sendMailWithFallback({
+      from: process.env.EMAIL_FROM,
+      to: pm.email,
+      subject: `[Gent-CEM] ${PROC_STATUS_LABELS[newStatus] || newStatus} — ${item.vendor_name}${item.po_number ? ' (' + item.po_number + ')' : ''}`,
+      html
+    });
+    console.log(`Procurement status notification sent to PM (${pm.email}) for item #${item.id}`);
+  } catch (error) {
+    console.error('Error sending procurement status notification:', error);
+  }
+}
 
 // Helper: Update step status based on procurement items
 async function updateStepStatus(stepId) {
