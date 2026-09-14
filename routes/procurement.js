@@ -160,11 +160,13 @@ router.post('/vendor-files', vendorFileUpload.single('file'), async (req, res) =
     if (!step_id || !vendor_name || !req.file) {
       return res.status(400).json({ error: 'step_id, vendor_name and file are required' });
     }
+    // busboy ส่ง originalname มาเป็น latin1 — decode กลับเป็น UTF-8 ให้ชื่อไทยถูกต้อง
+    const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
     const result = await pool.query(`
       INSERT INTO procurement_vendor_files
         (step_id, vendor_name, file_name, file_path, file_size, mime_type, uploaded_by)
       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *
-    `, [step_id, String(vendor_name).trim(), req.file.originalname,
+    `, [step_id, String(vendor_name).trim(), originalName,
         '/uploads/procurement/' + req.file.filename,
         req.file.size || null, req.file.mimetype || null, req.user?.id || null]);
 
