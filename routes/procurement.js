@@ -250,18 +250,20 @@ router.get('/step/:stepId', async (req, res) => {
 // Create procurement item
 router.post('/', async (req, res) => {
   try {
-    const { step_id, task_id, vendor_name, item_description, po_number, order_date, delivery_date, status, notes, assigned_user_id, assigned_user_name } = req.body;
+    const { step_id, task_id, vendor_name, item_description, amount, po_number, order_date, delivery_date, status, notes, assigned_user_id, assigned_user_name } = req.body;
     const created_by = req.user?.id || null;
 
     if (!step_id || !task_id || !vendor_name) {
       return res.status(400).json({ error: 'step_id, task_id, and vendor_name are required' });
     }
 
+    const amountVal = (amount === '' || amount === undefined || amount === null) ? null : Number(amount);
+
     const result = await pool.query(`
-      INSERT INTO procurement_items (step_id, task_id, vendor_name, item_description, po_number, order_date, delivery_date, status, notes, assigned_user_id, assigned_user_name, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      INSERT INTO procurement_items (step_id, task_id, vendor_name, item_description, amount, po_number, order_date, delivery_date, status, notes, assigned_user_id, assigned_user_name, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
-    `, [step_id, task_id, vendor_name, item_description, po_number, order_date || null, delivery_date || null, status || 'pending', notes, assigned_user_id || null, assigned_user_name, created_by]);
+    `, [step_id, task_id, vendor_name, item_description, amountVal, po_number, order_date || null, delivery_date || null, status || 'pending', notes, assigned_user_id || null, assigned_user_name, created_by]);
 
     // Update step status to in_progress when first item is added
     await pool.query(`
@@ -288,7 +290,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { vendor_name, item_description, po_number, order_date, delivery_date, status, notes, assigned_user_id, assigned_user_name, status_remark, notify_pm } = req.body;
+    const { vendor_name, item_description, amount, po_number, order_date, delivery_date, status, notes, assigned_user_id, assigned_user_name, status_remark, notify_pm } = req.body;
 
     const oldResult = await pool.query('SELECT * FROM procurement_items WHERE id = $1', [id]);
     if (oldResult.rows.length === 0) {
@@ -309,23 +311,26 @@ router.put('/:id', async (req, res) => {
       });
     }
 
+    const amountVal = (amount === '' || amount === undefined || amount === null) ? null : Number(amount);
+
     const result = await pool.query(`
       UPDATE procurement_items 
       SET vendor_name = COALESCE($1, vendor_name),
           item_description = COALESCE($2, item_description),
-          po_number = COALESCE($3, po_number),
-          order_date = $4,
-          delivery_date = $5,
-          status = COALESCE($6, status),
-          notes = COALESCE($7, notes),
-          assigned_user_id = $8,
-          assigned_user_name = COALESCE($9, assigned_user_name),
-          status_history = $10::jsonb,
-          notify_pm = COALESCE($11::boolean, notify_pm),
+          amount = $3,
+          po_number = COALESCE($4, po_number),
+          order_date = $5,
+          delivery_date = $6,
+          status = COALESCE($7, status),
+          notes = COALESCE($8, notes),
+          assigned_user_id = $9,
+          assigned_user_name = COALESCE($10, assigned_user_name),
+          status_history = $11::jsonb,
+          notify_pm = COALESCE($12::boolean, notify_pm),
           updated_at = NOW()
-      WHERE id = $12
+      WHERE id = $13
       RETURNING *
-    `, [vendor_name, item_description, po_number, order_date !== undefined ? order_date : old.order_date, delivery_date !== undefined ? delivery_date : old.delivery_date, status, notes, assigned_user_id !== undefined ? assigned_user_id : old.assigned_user_id, assigned_user_name, JSON.stringify(statusHistory), typeof notify_pm === 'boolean' ? notify_pm : null, id]);
+    `, [vendor_name, item_description, amount !== undefined ? amountVal : old.amount, po_number, order_date !== undefined ? order_date : old.order_date, delivery_date !== undefined ? delivery_date : old.delivery_date, status, notes, assigned_user_id !== undefined ? assigned_user_id : old.assigned_user_id, assigned_user_name, JSON.stringify(statusHistory), typeof notify_pm === 'boolean' ? notify_pm : null, id]);
 
     // Update parent step status based on items
     await updateStepStatus(old.step_id);

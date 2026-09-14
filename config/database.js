@@ -1,6 +1,10 @@
 import pkg from 'pg';
 const { Pool } = pkg;
 
+// DATE column (oid 1082) → คืนเป็น string 'YYYY-MM-DD' ตรง ๆ
+// กัน node-postgres แปลงเป็น Date local-midnight แล้ว JSON.stringify เป็น UTC (วันที่เพี้ยน -1)
+pkg.types.setTypeParser(1082, (val) => val);
+
 const pool = new Pool({
   user: process.env.DB_USER || 'postgres',
   host: process.env.DB_HOST || 'postgres', 
