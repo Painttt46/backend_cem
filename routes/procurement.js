@@ -21,7 +21,7 @@ const vendorFileStorage = multer.diskStorage({
     cb(null, unique + path.extname(file.originalname || '').slice(0, 20));
   }
 });
-const vendorFileUpload = multer({ storage: vendorFileStorage, limits: { fileSize: 20 * 1024 * 1024 } });
+const vendorFileUpload = multer({ storage: vendorFileStorage, limits: { fileSize: 200 * 1024 * 1024 } });
 
 // Ensure table exists
 pool.query(`
