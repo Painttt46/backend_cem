@@ -40,6 +40,7 @@ import https from 'https'
 import fs from 'fs'
 import path from 'path'
 import pool from '../config/database.js'
+import { requireRole } from '../middleware/auth.js'
 
 const router = express.Router()
 
@@ -77,7 +78,7 @@ router.get('/preview', async (req, res) => {
     res.json(result)
   } catch (err) {
     console.error('[ERP_PREVIEW] error:', err.message)
-    res.status(500).json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: 'ไม่สามารถดึงข้อมูล preview จาก ERP ได้' })
   }
 })
 
@@ -265,13 +266,13 @@ async function performSync(dryRun = false) {
  *
  * Response: { success, total, created, updated, failed }
  */
-router.post('/projects', async (req, res) => {
+router.post('/projects', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const result = await performSync(false)
     res.json(result)
   } catch (err) {
     console.error('[ERP_SYNC] error:', err.message)
-    res.status(500).json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: 'ไม่สามารถ sync ข้อมูลจาก ERP ได้' })
   }
 })
 
@@ -279,10 +280,15 @@ router.post('/projects', async (req, res) => {
  * GET /api/erp-sync/history — ดึงประวัติ sync 5 ครั้งล่าสุดจาก DB
  */
 router.get('/history', async (req, res) => {
-  const result = await pool.query(
-    'SELECT * FROM erp_sync_logs ORDER BY synced_at DESC LIMIT 50'
-  )
-  res.json(result.rows)
+  try {
+    const result = await pool.query(
+      'SELECT * FROM erp_sync_logs ORDER BY synced_at DESC LIMIT 50'
+    )
+    res.json(result.rows)
+  } catch (err) {
+    console.error('[ERP_HISTORY] error:', err.message)
+    res.status(500).json({ error: 'ไม่สามารถโหลดประวัติ sync ได้' })
+  }
 })
 
 /**
@@ -294,10 +300,15 @@ router.get('/history', async (req, res) => {
  * Response: { synced_tasks: number }
  */
 router.get('/status', async (req, res) => {
-  const result = await pool.query(
-    `SELECT COUNT(*) FROM tasks WHERE so_number LIKE 'SO%' OR so_number LIKE 'DEV%'`
-  )
-  res.json({ synced_tasks: parseInt(result.rows[0].count) })
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*) FROM tasks WHERE so_number LIKE 'SO%' OR so_number LIKE 'DEV%'`
+    )
+    res.json({ synced_tasks: parseInt(result.rows[0].count) })
+  } catch (err) {
+    console.error('[ERP_STATUS] error:', err.message)
+    res.status(500).json({ error: 'ไม่สามารถโหลดสถานะ sync ได้' })
+  }
 })
 
 /**
@@ -319,7 +330,8 @@ router.get('/file', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filePath.split('/').pop()}"`)
     response.body.pipe(res)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    console.error('[ERP_FILE] error:', err.message)
+    res.status(500).json({ error: 'ไม่สามารถดึงไฟล์จาก ERP ได้' })
   }
 })
 

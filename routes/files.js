@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { logAudit } from '../utils/auditHelper.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -83,9 +84,9 @@ router.post('/upload', (req, res) => {
   upload.array('files', 5)(req, res, async (err) => {
     if (err) {
       console.error('Multer error:', err);
-      return res.status(400).json({ 
-        success: false, 
-        error: err.message 
+      return res.status(400).json({
+        success: false,
+        error: 'ไม่สามารถอัพโหลดไฟล์ได้ กรุณาตรวจสอบขนาด/จำนวนไฟล์'
       });
     }
     
@@ -148,20 +149,26 @@ router.get('/view/:filename', (req, res) => {
 });
 
 // Delete file
-router.delete('/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const filePath = findFile(filename);
-  
-  if (filePath) {
-    fs.unlinkSync(filePath);
-    logAudit(req, {
-      action: 'DELETE',
-      tableName: 'files',
-      recordName: `ลบไฟล์: ${filename}`
-    });
-    res.json({ success: true, message: 'ลบไฟล์สำเร็จ' });
-  } else {
-    res.status(404).json({ error: 'ไฟล์ไม่พบ' });
+// ไม่มีการ track เจ้าของไฟล์ในระบบ (ไม่มี DB row ต่อไฟล์) จึงจำกัดสิทธิ์ลบไว้ที่ role ผู้ดูแลเท่านั้น
+router.delete('/:filename', requireRole('admin', 'superadmin'), (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = findFile(filename);
+
+    if (filePath) {
+      fs.unlinkSync(filePath);
+      logAudit(req, {
+        action: 'DELETE',
+        tableName: 'files',
+        recordName: `ลบไฟล์: ${filename}`
+      });
+      res.json({ success: true, message: 'ลบไฟล์สำเร็จ' });
+    } else {
+      res.status(404).json({ error: 'ไฟล์ไม่พบ' });
+    }
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    res.status(500).json({ error: 'ไม่สามารถลบไฟล์ได้' });
   }
 });
 

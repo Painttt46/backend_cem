@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyToken, requireRole } from '../middleware/auth.js';
 import { sendPendingLeaveReminders } from '../services/leaveReminderService.js';
 
 const router = express.Router();
@@ -13,57 +13,60 @@ router.get('/categories', async (req, res) => {
   try {
     // Add color column if not exists
     await pool.query(`
-      ALTER TABLE task_categories 
+      ALTER TABLE task_categories
       ADD COLUMN IF NOT EXISTS color VARCHAR(20)
     `);
-    
+
     const result = await pool.query(
       'SELECT * FROM task_categories ORDER BY sort_order, id'
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching task categories:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดหมวดหมู่งานได้' });
   }
 });
 
 // POST new category
-router.post('/categories', async (req, res) => {
+router.post('/categories', requireRole('admin', 'superadmin'), async (req, res) => {
   const { label, value, icon, color } = req.body;
   try {
     // Add color column if not exists
     await pool.query(`
-      ALTER TABLE task_categories 
+      ALTER TABLE task_categories
       ADD COLUMN IF NOT EXISTS color VARCHAR(20)
     `);
-    
+
     const maxOrder = await pool.query('SELECT MAX(sort_order) as max FROM task_categories');
     const sortOrder = (maxOrder.rows[0].max || 0) + 1;
-    
+
     const result = await pool.query(
       'INSERT INTO task_categories (label, value, icon, color, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [label, value, icon, color, sortOrder]
     );
-    
+
     await logAudit(req, { action: 'CREATE', tableName: 'settings', recordName: `หมวดหมู่งาน: ${label}`, newData: { label, value } });
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error creating task category:', error);
+    res.status(500).json({ error: 'ไม่สามารถสร้างหมวดหมู่งานได้' });
   }
 });
 
 // DELETE category
-router.delete('/categories/:value', async (req, res) => {
+router.delete('/categories/:value', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     await pool.query('DELETE FROM task_categories WHERE value = $1', [req.params.value]);
     await logAudit(req, { action: 'DELETE', tableName: 'settings', recordName: `หมวดหมู่งาน: ${req.params.value}` });
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error deleting task category:', error);
+    res.status(500).json({ error: 'ไม่สามารถลบหมวดหมู่งานได้' });
   }
 });
 
 // PUT update single category
-router.put('/categories/:value', async (req, res) => {
+router.put('/categories/:value', requireRole('admin', 'superadmin'), async (req, res) => {
   const { label, color } = req.body;
   try {
     await pool.query(
@@ -72,12 +75,13 @@ router.put('/categories/:value', async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error updating task category:', error);
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขหมวดหมู่งานได้' });
   }
 });
 
 // PUT update category order
-router.put('/categories/reorder', async (req, res) => {
+router.put('/categories/reorder', requireRole('admin', 'superadmin'), async (req, res) => {
   const { categories } = req.body;
   try {
     for (let i = 0; i < categories.length; i++) {
@@ -88,15 +92,16 @@ router.put('/categories/reorder', async (req, res) => {
     }
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error reordering task categories:', error);
+    res.status(500).json({ error: 'ไม่สามารถจัดเรียงหมวดหมู่งานได้' });
   }
 });
 
 // PUT update category labels (migration)
-router.put('/categories/update-labels', async (req, res) => {
+router.put('/categories/update-labels', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM task_categories');
-    
+
     for (const category of result.rows) {
       if (category.icon && category.icon.startsWith('emoji:')) {
         const emoji = category.icon.replace('emoji:', '');
@@ -110,24 +115,25 @@ router.put('/categories/update-labels', async (req, res) => {
         }
       }
     }
-    
+
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error migrating task category labels:', error);
+    res.status(500).json({ error: 'ไม่สามารถอัปเดตชื่อหมวดหมู่งานได้' });
   }
 });
 
 // PUT update category colors (migration)
-router.put('/categories/update-colors', async (req, res) => {
+router.put('/categories/update-colors', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     await pool.query(`
-      ALTER TABLE task_categories 
+      ALTER TABLE task_categories
       ADD COLUMN IF NOT EXISTS color VARCHAR(20)
     `);
-    
+
     const colors = ['#6366f1', '#14b8a6', '#f97316', '#a855f7', '#06b6d4', '#84cc16', '#d946ef', '#0ea5e9', '#22c55e', '#eab308'];
     const result = await pool.query('SELECT * FROM task_categories WHERE color IS NULL ORDER BY id');
-    
+
     for (let i = 0; i < result.rows.length; i++) {
       const color = colors[i % colors.length];
       await pool.query(
@@ -135,10 +141,11 @@ router.put('/categories/update-colors', async (req, res) => {
         [color, result.rows[i].id]
       );
     }
-    
+
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error migrating task category colors:', error);
+    res.status(500).json({ error: 'ไม่สามารถอัปเดตสีหมวดหมู่งานได้' });
   }
 });
 
@@ -149,32 +156,33 @@ router.get('/statuses', async (req, res) => {
   try {
     // Add color column if not exists
     await pool.query(`
-      ALTER TABLE work_statuses 
+      ALTER TABLE work_statuses
       ADD COLUMN IF NOT EXISTS color VARCHAR(20)
     `);
-    
+
     const result = await pool.query(
       'SELECT * FROM work_statuses ORDER BY sort_order, id'
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching work statuses:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดสถานะงานได้' });
   }
 });
 
 // POST new status
-router.post('/statuses', async (req, res) => {
+router.post('/statuses', requireRole('admin', 'superadmin'), async (req, res) => {
   const { label, value, icon, color } = req.body;
   try {
     // Add color column if not exists
     await pool.query(`
-      ALTER TABLE work_statuses 
+      ALTER TABLE work_statuses
       ADD COLUMN IF NOT EXISTS color VARCHAR(20)
     `);
-    
+
     const maxOrder = await pool.query('SELECT MAX(sort_order) as max FROM work_statuses');
     const sortOrder = (maxOrder.rows[0].max || 0) + 1;
-    
+
     const result = await pool.query(
       'INSERT INTO work_statuses (label, value, icon, color, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [label, value, icon, color, sortOrder]
@@ -182,23 +190,25 @@ router.post('/statuses', async (req, res) => {
     await logAudit(req, { action: 'CREATE', tableName: 'settings', recordName: `สถานะงาน: ${label}`, newData: { label, value } });
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error creating work status:', error);
+    res.status(500).json({ error: 'ไม่สามารถสร้างสถานะงานได้' });
   }
 });
 
 // DELETE status
-router.delete('/statuses/:value', async (req, res) => {
+router.delete('/statuses/:value', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     await pool.query('DELETE FROM work_statuses WHERE value = $1', [req.params.value]);
     await logAudit(req, { action: 'DELETE', tableName: 'settings', recordName: `สถานะงาน: ${req.params.value}` });
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error deleting work status:', error);
+    res.status(500).json({ error: 'ไม่สามารถลบสถานะงานได้' });
   }
 });
 
 // PUT update single status
-router.put('/statuses/:value', async (req, res) => {
+router.put('/statuses/:value', requireRole('admin', 'superadmin'), async (req, res) => {
   const { label, color } = req.body;
   try {
     await pool.query(
@@ -207,12 +217,13 @@ router.put('/statuses/:value', async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error updating work status:', error);
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขสถานะงานได้' });
   }
 });
 
 // PUT update status order
-router.put('/statuses/reorder', async (req, res) => {
+router.put('/statuses/reorder', requireRole('admin', 'superadmin'), async (req, res) => {
   const { statuses } = req.body;
   try {
     for (let i = 0; i < statuses.length; i++) {
@@ -223,21 +234,22 @@ router.put('/statuses/reorder', async (req, res) => {
     }
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error reordering work statuses:', error);
+    res.status(500).json({ error: 'ไม่สามารถจัดเรียงสถานะงานได้' });
   }
 });
 
 // PUT update status colors (migration)
-router.put('/statuses/update-colors', async (req, res) => {
+router.put('/statuses/update-colors', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     await pool.query(`
-      ALTER TABLE work_statuses 
+      ALTER TABLE work_statuses
       ADD COLUMN IF NOT EXISTS color VARCHAR(20)
     `);
-    
+
     const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
     const result = await pool.query('SELECT * FROM work_statuses WHERE color IS NULL ORDER BY id');
-    
+
     for (let i = 0; i < result.rows.length; i++) {
       const color = colors[i % colors.length];
       await pool.query(
@@ -245,10 +257,11 @@ router.put('/statuses/update-colors', async (req, res) => {
         [color, result.rows[i].id]
       );
     }
-    
+
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error migrating work status colors:', error);
+    res.status(500).json({ error: 'ไม่สามารถอัปเดตสีสถานะงานได้' });
   }
 });
 
@@ -271,10 +284,10 @@ async function ensureLeaveApprovalTable() {
       UNIQUE(approval_level, user_id)
     )
   `);
-  
+
   // Add columns if not exist (for existing tables)
   await pool.query(`
-    ALTER TABLE leave_approval_settings 
+    ALTER TABLE leave_approval_settings
     ADD COLUMN IF NOT EXISTS department_ids TEXT[] DEFAULT '{}',
     ADD COLUMN IF NOT EXISTS position_ids TEXT[] DEFAULT '{}'
   `);
@@ -284,9 +297,9 @@ async function ensureLeaveApprovalTable() {
 router.get('/leave-approval', async (req, res) => {
   try {
     await ensureLeaveApprovalTable();
-    
+
     const result = await pool.query(`
-      SELECT 
+      SELECT
         las.*,
         u.firstname || ' ' || u.lastname as user_name,
         u.email,
@@ -295,41 +308,43 @@ router.get('/leave-approval', async (req, res) => {
       JOIN users u ON las.user_id = u.id
       ORDER BY las.approval_level, u.firstname
     `);
-    
+
     const level1 = result.rows.filter(r => r.approval_level === 1);
     const level2 = result.rows.filter(r => r.approval_level === 2);
-    
+
     res.json({ level1, level2 });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching leave approval settings:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดการตั้งค่าผู้อนุมัติได้' });
   }
 });
 
 // POST add approver
-router.post('/leave-approval', async (req, res) => {
+router.post('/leave-approval', requireRole('admin', 'superadmin'), async (req, res) => {
   const { approval_level, user_id, receive_email, can_approve } = req.body;
-  
+
   try {
     await ensureLeaveApprovalTable();
-    
+
     const result = await pool.query(`
       INSERT INTO leave_approval_settings (approval_level, user_id, receive_email, can_approve)
       VALUES ($1, $2, $3, $4)
-      ON CONFLICT (approval_level, user_id) 
+      ON CONFLICT (approval_level, user_id)
       DO UPDATE SET receive_email = $3, can_approve = $4, updated_at = NOW()
       RETURNING *
     `, [approval_level, user_id, receive_email !== false, can_approve !== false]);
-    
+
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error adding leave approver:', error);
+    res.status(500).json({ error: 'ไม่สามารถเพิ่มผู้อนุมัติได้' });
   }
 });
 
 // DELETE remove approver
-router.delete('/leave-approval/:level/:userId', async (req, res) => {
+router.delete('/leave-approval/:level/:userId', requireRole('admin', 'superadmin'), async (req, res) => {
   const { level, userId } = req.params;
-  
+
   try {
     await pool.query(
       'DELETE FROM leave_approval_settings WHERE approval_level = $1 AND user_id = $2',
@@ -337,26 +352,28 @@ router.delete('/leave-approval/:level/:userId', async (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error removing leave approver:', error);
+    res.status(500).json({ error: 'ไม่สามารถลบผู้อนุมัติได้' });
   }
 });
 
 // PUT update approver settings
-router.put('/leave-approval/:level/:userId', async (req, res) => {
+router.put('/leave-approval/:level/:userId', requireRole('admin', 'superadmin'), async (req, res) => {
   const { level, userId } = req.params;
   const { receive_email, can_approve, department_ids, position_ids } = req.body;
-  
+
   try {
     const result = await pool.query(`
-      UPDATE leave_approval_settings 
+      UPDATE leave_approval_settings
       SET receive_email = $1, can_approve = $2, department_ids = $3, position_ids = $4, updated_at = NOW()
       WHERE approval_level = $5 AND user_id = $6
       RETURNING *
     `, [receive_email, can_approve, department_ids || [], position_ids || [], level, userId]);
-    
+
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error updating leave approver settings:', error);
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขการตั้งค่าผู้อนุมัติได้' });
   }
 });
 
@@ -385,7 +402,8 @@ router.get('/role-work-hours', async (req, res) => {
     const result = await pool.query('SELECT * FROM role_work_hours ORDER BY role');
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching role work hours:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดเวลาทำงานตาม Role ได้' });
   }
 });
 
@@ -394,7 +412,7 @@ router.get('/role-work-hours/:role', async (req, res) => {
   try {
     await ensureRoleWorkHoursTable();
     const result = await pool.query('SELECT * FROM role_work_hours WHERE role = $1', [req.params.role]);
-    
+
     if (result.rows.length === 0) {
       // Return default work hours
       res.json({
@@ -408,38 +426,41 @@ router.get('/role-work-hours/:role', async (req, res) => {
       res.json(result.rows[0]);
     }
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching role work hours:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดเวลาทำงานตาม Role ได้' });
   }
 });
 
 // POST/PUT upsert role work hours
-router.post('/role-work-hours', async (req, res) => {
+router.post('/role-work-hours', requireRole('admin', 'superadmin'), async (req, res) => {
   const { role, start_time, end_time, lunch_start, lunch_end } = req.body;
-  
+
   try {
     await ensureRoleWorkHoursTable();
-    
+
     const result = await pool.query(`
       INSERT INTO role_work_hours (role, start_time, end_time, lunch_start, lunch_end)
       VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (role) 
+      ON CONFLICT (role)
       DO UPDATE SET start_time = $2, end_time = $3, lunch_start = $4, lunch_end = $5, updated_at = NOW()
       RETURNING *
     `, [role, start_time, end_time, lunch_start || '12:00', lunch_end || '13:00']);
-    
+
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error saving role work hours:', error);
+    res.status(500).json({ error: 'ไม่สามารถบันทึกเวลาทำงานตาม Role ได้' });
   }
 });
 
 // DELETE role work hours
-router.delete('/role-work-hours/:role', async (req, res) => {
+router.delete('/role-work-hours/:role', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     await pool.query('DELETE FROM role_work_hours WHERE role = $1', [req.params.role]);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error deleting role work hours:', error);
+    res.status(500).json({ error: 'ไม่สามารถลบเวลาทำงานตาม Role ได้' });
   }
 });
 
@@ -472,12 +493,13 @@ router.get('/user-work-hours', async (req, res) => {
     `);
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching user work hours:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดเวลาทำงานรายบุคคลได้' });
   }
 });
 
 // POST/PUT upsert user work hours
-router.post('/user-work-hours', async (req, res) => {
+router.post('/user-work-hours', requireRole('admin', 'superadmin'), async (req, res) => {
   const { user_id, start_time, end_time, lunch_start, lunch_end } = req.body;
   if (!user_id || !start_time || !end_time) {
     return res.status(400).json({ error: 'user_id, start_time, end_time are required' });
@@ -493,17 +515,19 @@ router.post('/user-work-hours', async (req, res) => {
     `, [user_id, start_time, end_time, lunch_start || '12:00', lunch_end || '13:00']);
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error saving user work hours:', error);
+    res.status(500).json({ error: 'ไม่สามารถบันทึกเวลาทำงานรายบุคคลได้' });
   }
 });
 
 // DELETE user work hours
-router.delete('/user-work-hours/:userId', async (req, res) => {
+router.delete('/user-work-hours/:userId', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     await pool.query('DELETE FROM user_work_hours WHERE user_id = $1', [req.params.userId]);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error deleting user work hours:', error);
+    res.status(500).json({ error: 'ไม่สามารถลบเวลาทำงานรายบุคคลได้' });
   }
 });
 
@@ -517,7 +541,8 @@ router.get('/departments', verifyToken, async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching departments:', err);
+    res.status(500).json({ error: 'ไม่สามารถโหลดรายชื่อแผนกได้' });
   }
 });
 
@@ -531,7 +556,8 @@ router.get('/positions', verifyToken, async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching positions:', err);
+    res.status(500).json({ error: 'ไม่สามารถโหลดรายชื่อตำแหน่งได้' });
   }
 });
 
@@ -561,11 +587,12 @@ router.get('/workflow-templates', async (req, res) => {
     `);
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching workflow templates:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลด workflow template ได้' });
   }
 });
 
-router.post('/workflow-templates', verifyToken, async (req, res) => {
+router.post('/workflow-templates', verifyToken, requireRole('admin', 'superadmin'), async (req, res) => {
   const { name, description, steps } = req.body;
   try {
     await ensureTemplateTable();
@@ -575,30 +602,29 @@ router.post('/workflow-templates', verifyToken, async (req, res) => {
     );
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error creating workflow template:', error);
+    res.status(500).json({ error: 'ไม่สามารถสร้าง workflow template ได้' });
   }
 });
 
-router.delete('/workflow-templates/:id', verifyToken, async (req, res) => {
+router.delete('/workflow-templates/:id', verifyToken, requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     await pool.query('DELETE FROM workflow_templates WHERE id = $1', [req.params.id]);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error deleting workflow template:', error);
+    res.status(500).json({ error: 'ไม่สามารถลบ workflow template ได้' });
   }
 });
 
 // Manual trigger for pending leave reminders (admin only)
-router.post('/leave-approval/send-reminders', verifyToken, async (req, res) => {
+router.post('/leave-approval/send-reminders', verifyToken, requireRole('admin', 'superadmin'), async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin only' });
-    }
     const result = await sendPendingLeaveReminders();
     res.json(result);
   } catch (error) {
     console.error('Error sending leave reminders:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถส่งการแจ้งเตือนได้' });
   }
 });
 
@@ -613,7 +639,7 @@ router.get('/dashboard-summary', async (req, res) => {
     `);
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching dashboard summary:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดข้อมูลสรุปได้' });
   }
 });
-

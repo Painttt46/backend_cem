@@ -63,7 +63,10 @@ router.get('/customers', async (req, res) => {
       ORDER BY c.company_name ASC
     `);
     res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('Error fetching customers:', e);
+    res.status(500).json({ error: 'ไม่สามารถโหลดรายชื่อลูกค้าได้' });
+  }
 });
 
 // POST create customer
@@ -76,13 +79,17 @@ router.post('/customers', async (req, res) => {
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
     `, [company_name, industry, address, phone, email, website, contact_name, contact_position, notes, req.user?.id]);
     res.status(201).json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('Error creating customer:', e);
+    res.status(500).json({ error: 'ไม่สามารถสร้างลูกค้าได้' });
+  }
 });
 
 // PUT update customer
 router.put('/customers/:id', async (req, res) => {
   try {
     const { company_name, industry, address, phone, email, website, contact_name, contact_position, notes } = req.body;
+    if (!company_name) return res.status(400).json({ error: 'company_name is required' });
     const result = await pool.query(`
       UPDATE customers SET company_name=$1, industry=$2, address=$3, phone=$4, email=$5, website=$6,
         contact_name=$7, contact_position=$8, notes=$9, updated_at=NOW()
@@ -90,7 +97,10 @@ router.put('/customers/:id', async (req, res) => {
     `, [company_name, industry, address, phone, email, website, contact_name, contact_position, notes, req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('Error updating customer:', e);
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขข้อมูลลูกค้าได้' });
+  }
 });
 
 // ========== SALES VISITS ==========
@@ -136,7 +146,10 @@ router.get('/', async (req, res) => {
       ORDER BY sv.visit_date DESC
     `, params);
     res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('Error fetching sales visits:', e);
+    res.status(500).json({ error: 'ไม่สามารถโหลดรายการเข้าพบลูกค้าได้' });
+  }
 });
 
 // GET single visit
@@ -155,8 +168,20 @@ router.get('/:id', async (req, res) => {
     `, [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('Error fetching sales visit:', e);
+    res.status(500).json({ error: 'ไม่สามารถโหลดข้อมูลการเข้าพบลูกค้าได้' });
+  }
 });
+
+// เช็คสิทธิ์แก้ไข/ลบ visit: เจ้าของ record หรือ role ที่มีสิทธิ์บริหารเท่านั้น
+async function canManageVisit(req, id) {
+  const result = await pool.query('SELECT created_by FROM sales_visits WHERE id = $1', [id]);
+  if (!result.rows.length) return { found: false, allowed: false };
+  const isPrivileged = ['superadmin', 'admin', 'hr'].includes(req.user?.role);
+  const isOwner = String(result.rows[0].created_by) === String(req.user?.id);
+  return { found: true, allowed: isPrivileged || isOwner };
+}
 
 // POST create visit
 router.post('/', async (req, res) => {
@@ -193,7 +218,10 @@ router.post('/', async (req, res) => {
     });
 
     res.status(201).json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('Error creating sales visit:', e);
+    res.status(500).json({ error: 'ไม่สามารถบันทึกการเข้าพบลูกค้าได้' });
+  }
 });
 
 // PUT update visit
@@ -204,6 +232,12 @@ router.put('/:id', async (req, res) => {
       location, latitude, longitude, status, agenda, summary,
       action_items, next_visit_date, internal_attendees, customer_attendees
     } = req.body;
+
+    if (!visit_date) return res.status(400).json({ error: 'visit_date is required' });
+
+    const { found, allowed } = await canManageVisit(req, req.params.id);
+    if (!found) return res.status(404).json({ error: 'Not found' });
+    if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์แก้ไขรายการนี้' });
 
     const result = await pool.query(`
       UPDATE sales_visits SET
@@ -231,16 +265,26 @@ router.put('/:id', async (req, res) => {
     });
 
     res.json(result.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('Error updating sales visit:', e);
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขข้อมูลการเข้าพบลูกค้าได้' });
+  }
 });
 
 // DELETE visit
 router.delete('/:id', async (req, res) => {
   try {
+    const { found, allowed } = await canManageVisit(req, req.params.id);
+    if (!found) return res.status(404).json({ error: 'Not found' });
+    if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์ลบรายการนี้' });
+
     const result = await pool.query('DELETE FROM sales_visits WHERE id=$1 RETURNING id', [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json({ message: 'Deleted successfully' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('Error deleting sales visit:', e);
+    res.status(500).json({ error: 'ไม่สามารถลบข้อมูลการเข้าพบลูกค้าได้' });
+  }
 });
 
 export default router;

@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import bcrypt from 'bcrypt';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyToken, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
@@ -35,7 +35,7 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // Create new user
-router.post('/', async (req, res) => {
+router.post('/', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, nickname} = req.body;
     
@@ -90,7 +90,7 @@ router.post('/', async (req, res) => {
 });
 
 // Update user
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const { id } = req.params;
     const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname } = req.body;
@@ -140,11 +140,16 @@ router.put('/:id/password', async (req, res) => {
   try {
     const { id } = req.params;
     const { currentPassword, password } = req.body;
-    
+
+    // Users may only change their own password
+    if (String(req.user.id) !== String(id)) {
+      return res.status(403).json({ error: 'Forbidden: cannot change another user\'s password' });
+    }
+
     if (!currentPassword || !password) {
       return res.status(400).json({ error: 'Current password and new password are required' });
     }
-    
+
     // Get current user data
     const userResult = await pool.query('SELECT password FROM users WHERE id = $1', [id]);
     
@@ -174,7 +179,7 @@ router.put('/:id/password', async (req, res) => {
 });
 
 // Update user leave quota
-router.put('/:id/leave-quota', async (req, res) => {
+router.put('/:id/leave-quota', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const { id } = req.params;
     const { sick_leave_quota, personal_leave_quota, vacation_leave_quota } = req.body;
@@ -194,7 +199,7 @@ router.put('/:id/leave-quota', async (req, res) => {
 });
 
 // Delete user
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const { id } = req.params;
     

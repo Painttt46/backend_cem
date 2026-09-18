@@ -5,6 +5,15 @@ import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
 
+// เช็คสิทธิ์แก้ไข/ลบ daily work record: เจ้าของ record หรือ role ที่มีสิทธิ์บริหารเท่านั้น
+async function canManageDailyWork(req, id) {
+  const result = await pool.query('SELECT user_id FROM daily_work_records WHERE id = $1', [id]);
+  if (!result.rows.length) return { found: false, allowed: false };
+  const isPrivileged = ['superadmin', 'admin', 'hr'].includes(req.user?.role);
+  const isOwner = String(result.rows[0].user_id) === String(req.user?.id);
+  return { found: true, allowed: isPrivileged || isOwner };
+}
+
 // Calendar event creation function using Microsoft Graph API
 async function sendCalendarEvent(data) {
 
@@ -622,7 +631,7 @@ router.post('/check-missing', async (req, res) => {
     }
   } catch (error) {
     console.error('Error checking missing work:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถตรวจสอบงานที่ยังไม่ได้บันทึกได้' });
   }
 });
 
@@ -704,7 +713,8 @@ router.get('/', async (req, res) => {
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching daily work records:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดข้อมูลงานประจำวันได้' });
   }
 });
 
@@ -831,7 +841,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Database error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถบันทึกงานประจำวันได้' });
   }
 });
 
@@ -840,6 +850,10 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { task_id, step_id, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
+
+    const { found, allowed } = await canManageDailyWork(req, id);
+    if (!found) return res.status(404).json({ error: 'Daily work record not found' });
+    if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์แก้ไขรายการนี้' });
 
     // คำนวณ total_hours จาก start_time และ end_time
     let total_hours = 0;
@@ -894,10 +908,14 @@ router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
+    const { found, allowed } = await canManageDailyWork(req, id);
+    if (!found) return res.status(404).json({ error: 'Daily work record not found' });
+    if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์ลบรายการนี้' });
+
     // Get data before delete for audit and rollback
     const oldResult = await pool.query('SELECT * FROM daily_work_records WHERE id = $1', [id]);
     const oldData = oldResult.rows[0];
-    
+
     if (oldData) {
       const userId = oldData.user_id;
       let stepIds = [];
@@ -947,7 +965,8 @@ router.delete('/:id', async (req, res) => {
     
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error deleting daily work record:', error);
+    res.status(500).json({ error: 'ไม่สามารถลบงานประจำวันได้' });
   }
 });
 
@@ -958,7 +977,8 @@ router.post('/trigger-workflow-summary', async (req, res) => {
     await sendWorkflowSummaryToTeams();
     res.json({ success: true, message: 'Workflow summary sent to Teams' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error sending workflow summary:', error);
+    res.status(500).json({ error: 'ไม่สามารถส่งสรุปงานได้' });
   }
 });
 
@@ -1003,7 +1023,8 @@ router.get('/summary', async (req, res) => {
     `);
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching daily work summary:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดสรุปงานประจำวันได้' });
   }
 });
 

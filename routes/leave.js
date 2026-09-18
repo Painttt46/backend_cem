@@ -4,6 +4,7 @@ import pool from '../config/database.js';
 import fetch from 'node-fetch';
 import { sendLeaveNotificationEmail } from '../services/emailService.js';
 import { logAudit } from '../utils/auditHelper.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -502,7 +503,7 @@ router.get('/database-status', async (req, res) => {
 
   } catch (error) {
     console.error('Database status error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถตรวจสอบสถานะฐานข้อมูลได้' });
   }
 });
 
@@ -598,14 +599,14 @@ router.get('/setup-database', async (req, res) => {
     console.error('Database setup error:', error);
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: 'ไม่สามารถตั้งค่าฐานข้อมูลได้',
       message: 'Failed to setup database'
     });
   }
 });
 
 // Manual reset quotas for new year (admin endpoint)
-router.post('/reset-quotas', async (req, res) => {
+router.post('/reset-quotas', requireRole('admin', 'superadmin', 'hr'), async (req, res) => {
   try {
     await resetLeaveQuotasForNewYear();
     res.json({
@@ -614,12 +615,12 @@ router.post('/reset-quotas', async (req, res) => {
     });
   } catch (error) {
     console.error('Error resetting quotas:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถรีเซ็ตโควต้าการลาได้' });
   }
 });
 
 // Initialize quota for all users (admin endpoint)
-router.post('/init-quotas', async (req, res) => {
+router.post('/init-quotas', requireRole('admin', 'superadmin', 'hr'), async (req, res) => {
   try {
     const usersResult = await pool.query('SELECT id FROM users WHERE is_active = true');
 
@@ -630,12 +631,12 @@ router.post('/init-quotas', async (req, res) => {
     res.json({ message: 'Leave quotas initialized for all users', count: usersResult.rows.length });
   } catch (error) {
     console.error('Error initializing quotas:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถตั้งค่าโควต้าการลาเริ่มต้นได้' });
   }
 });
 
 // Update user quota
-router.put('/quota/:userId/:leaveType', async (req, res) => {
+router.put('/quota/:userId/:leaveType', requireRole('admin', 'superadmin', 'hr'), async (req, res) => {
   try {
     const { userId, leaveType } = req.params;
     const { quota, remaining, addQuota } = req.body;
@@ -682,7 +683,7 @@ router.put('/quota/:userId/:leaveType', async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating quota:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขโควต้าการลาได้' });
   }
 });
 
@@ -708,7 +709,7 @@ router.get('/quota/:userId', async (req, res) => {
     res.json(quotaData);
   } catch (error) {
     console.error('Error getting leave quota:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถโหลดโควต้าการลาได้' });
   }
 });
 
@@ -767,7 +768,7 @@ router.get('/leave-types', async (req, res) => {
     res.json(leaveTypes);
   } catch (error) {
     console.error('Error getting leave types:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถโหลดประเภทการลาได้' });
   }
 });
 
@@ -817,7 +818,7 @@ router.post('/leave-types', async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating leave type:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถเพิ่มประเภทการลาได้' });
   }
 });
 
@@ -858,7 +859,7 @@ router.put('/leave-types/:leaveType', async (req, res) => {
     res.json({ message: 'อัปเดตประเภทการลาสำเร็จ' });
   } catch (error) {
     console.error('Error updating leave type:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขประเภทการลาได้' });
   }
 });
 
@@ -889,7 +890,7 @@ router.delete('/leave-types/:leaveType', async (req, res) => {
     });
   } catch (error) {
     console.error('Error deleting leave type:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถลบประเภทการลาได้' });
   }
 });
 
@@ -922,7 +923,7 @@ router.get('/holidays', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching holidays:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถโหลดวันหยุดได้' });
   }
 });
 
@@ -957,7 +958,7 @@ router.post('/holidays', async (req, res) => {
     res.json({ message: 'เพิ่มวันหยุดสำเร็จ', added });
   } catch (error) {
     console.error('Error adding holidays:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถเพิ่มวันหยุดได้' });
   }
 });
 
@@ -969,7 +970,7 @@ router.delete('/holidays/:id', async (req, res) => {
     res.json({ message: 'ลบวันหยุดสำเร็จ' });
   } catch (error) {
     console.error('Error deleting holiday:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถลบวันหยุดได้' });
   }
 });
 
@@ -1001,7 +1002,8 @@ router.get('/', async (req, res) => {
     `);
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching all leave requests:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดรายการคำขอลาได้' });
   }
 });
 
@@ -1088,14 +1090,17 @@ router.post('/', async (req, res) => {
     res.status(201).json(leaveData);
   } catch (error) {
     console.error('Database error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถบันทึกคำขอลาได้' });
   }
 });
 
 // Update leave status
 router.put('/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status, approved_by, approved_by_id, reject_reason } = req.body;
+  const { status, reject_reason } = req.body;
+  // ใช้ตัวตนผู้อนุมัติ/ปฏิเสธจาก token ที่ยืนยันแล้วเท่านั้น ห้ามเชื่อค่าที่ client ส่งมาใน body
+  const approverId = req.user.id;
+  const approverName = `${req.user.firstname || ''} ${req.user.lastname || ''}`.trim();
 
   try {
     await ensureUsedDaysNumeric();
@@ -1122,13 +1127,18 @@ router.put('/:id/status', async (req, res) => {
 
     const { user_id, leave_type, total_days, status: currentStatus, current_level } = leaveRequest.rows[0];
 
-    // Check approval permission
-    if (status === 'approved' && approved_by_id) {
-      const approvalLevel = currentStatus === 'pending' ? 1 : (currentStatus === 'pending_level2' ? 2 : 0);
-      const hasPermission = await canUserApprove(approved_by_id, user_id, approvalLevel);
+    // ระดับการอนุมัติ/ปฏิเสธ อิงจากสถานะปัจจุบันของคำขอ (ใช้ร่วมกันทั้ง approve และ reject)
+    const actionLevel = currentStatus === 'pending' ? 1 : (currentStatus === 'pending_level2' ? 2 : 0);
+
+    // ตรวจสิทธิ์ทุกครั้งที่มีการอนุมัติหรือปฏิเสธ โดยใช้ตัวตนจาก token เท่านั้น
+    // (ห้าม bypass ได้ด้วยการไม่ส่ง approved_by_id มา เหมือนโค้ดเดิม)
+    if (status === 'approved' || status === 'rejected') {
+      const hasPermission = await canUserApprove(approverId, user_id, actionLevel);
       if (!hasPermission) {
-        return res.status(403).json({ 
-          error: 'คุณไม่มีสิทธิ์อนุมัติใบลานี้ (ไม่ตรงกับแผนก/ตำแหน่งที่ดูแล)' 
+        return res.status(403).json({
+          error: status === 'approved'
+            ? 'คุณไม่มีสิทธิ์อนุมัติใบลานี้ (ไม่ตรงกับแผนก/ตำแหน่งที่ดูแล)'
+            : 'คุณไม่มีสิทธิ์ปฏิเสธใบลานี้ (ไม่ตรงกับแผนก/ตำแหน่งที่ดูแล)'
         });
       }
     }
@@ -1175,26 +1185,26 @@ router.put('/:id/status', async (req, res) => {
         WHERE id = $5 
         RETURNING *
       `;
-      updateParams = [newStatus, approved_by, approved_by_id, newApprovalLevel, id];
+      updateParams = [newStatus, approverName, approverId, newApprovalLevel, id];
     } else if (newApprovalLevel === 2 && newStatus === 'approved') {
       // Level 2 approved
       updateQuery = `
-        UPDATE leave_requests 
-        SET status = $1, approved_by_level2 = $2, approved_by_level2_id = $3, approved_by = $4, approval_level = $5, updated_at = NOW() 
-        WHERE id = $6 
+        UPDATE leave_requests
+        SET status = $1, approved_by_level2 = $2, approved_by_level2_id = $3, approved_by = $4, approval_level = $5, updated_at = NOW()
+        WHERE id = $6
         RETURNING *
       `;
-      updateParams = [newStatus, approved_by, approved_by_id, approved_by, newApprovalLevel, id];
+      updateParams = [newStatus, approverName, approverId, approverName, newApprovalLevel, id];
     } else {
       // Rejected or other
-      const rejectedLevel = currentStatus === 'pending' ? 1 : (currentStatus === 'pending_level2' ? 2 : 0);
+      const rejectedLevel = actionLevel;
       updateQuery = `
-        UPDATE leave_requests 
-        SET status = $1, approved_by = $2, approval_level = $3, rejected_by = $4, rejected_level = $5, reject_reason = $6, updated_at = NOW() 
-        WHERE id = $7 
+        UPDATE leave_requests
+        SET status = $1, approved_by = $2, approval_level = $3, rejected_by = $4, rejected_level = $5, reject_reason = $6, updated_at = NOW()
+        WHERE id = $7
         RETURNING *
       `;
-      updateParams = [newStatus, approved_by, rejectedLevel, approved_by, rejectedLevel, reject_reason || null, id];
+      updateParams = [newStatus, approverName, rejectedLevel, approverName, rejectedLevel, reject_reason || null, id];
     }
 
     const result = await pool.query(updateQuery, updateParams);
@@ -1301,14 +1311,14 @@ router.put('/:id/status', async (req, res) => {
       recordId: parseInt(id),
       recordName: `${updatedData.employee_name} - ${getLeaveTypeLabel(updatedData.leave_type)}`,
       oldData: { status: currentStatus },
-      newData: { status: newStatus, approved_by }
+      newData: { status: newStatus, approved_by: approverName }
     });
 
     res.json(updatedData);
   } catch (error) {
     console.error('Error updating leave status:', error);
     console.error('Error stack:', error.stack);
-    res.status(500).json({ error: error.message, details: error.stack });
+    res.status(500).json({ error: 'ไม่สามารถอัปเดตสถานะการลาได้' });
   }
 });
 
@@ -1356,7 +1366,7 @@ router.put('/:id/attachments', async (req, res) => {
     res.json({ success: true, attachments: attachments || [] });
   } catch (error) {
     console.error('Error updating attachments:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขไฟล์แนบได้' });
   }
 });
 
@@ -1406,7 +1416,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: 'Leave request deleted successfully', deleted: result.rows[0] });
   } catch (error) {
     console.error('Delete error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถลบคำขอลาได้' });
   }
 });
 
@@ -1472,7 +1482,7 @@ router.post('/:id/request-cancel', async (req, res) => {
     res.json({ message: 'Cancellation request submitted successfully' });
   } catch (error) {
     console.error('Request cancel error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถส่งคำขอยกเลิกการลาได้' });
   }
 });
 
@@ -1528,7 +1538,7 @@ router.put('/:id/cancel-status', async (req, res) => {
     }
   } catch (error) {
     console.error('Cancel status error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถอัปเดตสถานะการยกเลิกได้' });
   }
 });
 
@@ -1590,7 +1600,7 @@ router.delete('/:id/admin-reset', async (req, res) => {
   } catch (error) {
     console.error('[admin-reset] Error:', error);
     console.error('[admin-reset] Stack:', error.stack);
-    res.status(500).json({ error: error.message || 'เกิดข้อผิดพลาดในการดำเนินการ' });
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดำเนินการ' });
   }
 });
 

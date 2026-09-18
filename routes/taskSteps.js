@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { notifyNextStep, notifyNewAssignees, sendWorkflowSummaryToTeams } from '../services/workflowNotificationService.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -229,7 +230,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // Delete step
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const { id } = req.params;
     

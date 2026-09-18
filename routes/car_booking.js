@@ -10,6 +10,15 @@ const setTimezone = async () => {
   await pool.query("SET timezone = 'Asia/Bangkok'");
 };
 
+// เช็คสิทธิ์แก้ไข/ลบ booking: เจ้าของ record หรือ role ที่มีสิทธิ์บริหารเท่านั้น
+async function canManageBooking(req, id) {
+  const result = await pool.query('SELECT user_id FROM car_bookings WHERE id = $1', [id]);
+  if (!result.rows.length) return { found: false, allowed: false };
+  const isPrivileged = ['superadmin', 'admin', 'hr'].includes(req.user?.role);
+  const isOwner = String(result.rows[0].user_id) === String(req.user?.id);
+  return { found: true, allowed: isPrivileged || isOwner };
+}
+
 // Teams notification function
 async function sendTeamsNotification(type, data) {
   const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4bffff1623c14e5ba6d5247b4aa8f145/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TbXoIRcOZXL2QHHESf0jIDJ-JMr4jvh-XRovQya1_hM';
@@ -189,13 +198,14 @@ router.get('/latest-fuel', async (req, res) => {
       ORDER BY updated_at DESC 
       LIMIT 1
     `);
-    res.json({ 
+    res.json({
       fuel_level: result.rows[0]?.fuel_level_return || 50,
       easy_pass_balance: result.rows[0]?.easy_pass_return || 500,
       return_location: result.rows[0]?.return_location || null
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching latest fuel level:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดข้อมูลได้' });
   }
 });
 
@@ -312,7 +322,8 @@ router.get('/', async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching car bookings:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดรายการจองรถได้' });
   }
 });
 
@@ -325,7 +336,8 @@ router.get('/:id/images', async (req, res) => {
     const result = await pool.query('SELECT images FROM car_bookings WHERE id = $1', [id]);
     res.json(result.rows[0]?.images || []);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching booking images:', error);
+    res.status(500).json({ error: 'ไม่สามารถโหลดรูปภาพได้' });
   }
 });
 
@@ -457,7 +469,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(bookingData);
   } catch (error) {
     console.error('Database error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถสร้างรายการจองรถได้' });
   }
 });
 
@@ -465,8 +477,12 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { images, return_name, return_location, return_description, return_time, return_date, fuel_level_return, easy_pass_return } = req.body;
-  
+
   try {
+    const { found, allowed } = await canManageBooking(req, id);
+    if (!found) return res.status(404).json({ error: 'Record not found' });
+    if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์แก้ไขรายการนี้' });
+
     await setTimezone();
     let query, params;
     
@@ -536,15 +552,19 @@ router.put('/:id', async (req, res) => {
     res.json(updatedData);
   } catch (error) {
     console.error('Database update error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขรายการจองรถได้' });
   }
 });
 
 // Delete car booking record
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
-  
+
   try {
+    const { found, allowed } = await canManageBooking(req, id);
+    if (!found) return res.status(404).json({ error: 'Record not found' });
+    if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์ลบรายการนี้' });
+
     await setTimezone();
     // Get data with user info before deleting for Teams notification
     const beforeDelete = await pool.query(`
@@ -583,7 +603,8 @@ router.delete('/:id', async (req, res) => {
     // Return the data with user info for Teams notification
     res.json(oldData);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error deleting car booking:', error);
+    res.status(500).json({ error: 'ไม่สามารถลบรายการจองรถได้' });
   }
 });
 
@@ -592,26 +613,13 @@ router.get('/server-time', async (req, res) => {
   try {
     await setTimezone();
     const result = await pool.query("SELECT NOW() as server_time");
-    res.json({ 
+    res.json({
       serverTime: result.rows[0].server_time,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get server time
-router.get('/server-time', async (req, res) => {
-  try {
-    await setTimezone();
-    const result = await pool.query("SELECT NOW() as server_time");
-    res.json({ 
-      serverTime: result.rows[0].server_time,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching server time:', error);
+    res.status(500).json({ error: 'ไม่สามารถดึงเวลาเซิร์ฟเวอร์ได้' });
   }
 });
 

@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ router.get('/:role', async (req, res) => {
 });
 
 // Save/Update permissions for a role
-router.post('/', async (req, res) => {
+router.post('/', requireRole('admin', 'superadmin'), async (req, res) => {
   const client = await pool.connect();
   
   try {
