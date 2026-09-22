@@ -5,6 +5,13 @@ import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
 
+// Auto-migrate: เวลาคืนรถที่ตั้งไว้ตอนจอง + ธงคืนอัตโนมัติ
+pool.query(`
+  ALTER TABLE car_bookings ADD COLUMN IF NOT EXISTS expected_return_date DATE;
+  ALTER TABLE car_bookings ADD COLUMN IF NOT EXISTS expected_return_time VARCHAR(5);
+  ALTER TABLE car_bookings ADD COLUMN IF NOT EXISTS auto_returned BOOLEAN DEFAULT false;
+`).catch(() => {});
+
 // Set timezone for PostgreSQL queries
 const setTimezone = async () => {
   await pool.query("SET timezone = 'Asia/Bangkok'");
@@ -306,11 +313,12 @@ router.get('/', async (req, res) => {
     processBookingStatuses().catch(() => {});
 
     const result = await pool.query(`
-      SELECT 
-        c.id, c.type, c.location, c.project, c.task_id, c.discription, c.selected_date, c.time, c.license, 
+      SELECT
+        c.id, c.type, c.location, c.project, c.task_id, c.discription, c.selected_date, c.time, c.license,
         c.return_name, c.return_location, c.colleagues, c.created_at, c.updated_at,
         c.return_time, c.return_date, c.status, c.user_id, c.fuel_level_borrow, c.fuel_level_return,
         c.easy_pass_borrow, c.easy_pass_return,
+        c.expected_return_date, c.expected_return_time, c.auto_returned,
         CASE WHEN c.images IS NOT NULL AND c.images != '[]'::jsonb AND c.images != 'null'::jsonb THEN true ELSE false END as has_images,
         u.firstname || ' ' || u.lastname as name, u.nickname,
         t.so_number, t.customer_info
@@ -343,9 +351,10 @@ router.get('/:id/images', async (req, res) => {
 
 // Create car booking record
 router.post('/', async (req, res) => {
-  const { 
+  const {
     type, location, task_id, description,
-    selected_date, time, license, colleagues, images, user_id, fuel_level_borrow, easy_pass_borrow
+    selected_date, time, license, colleagues, images, user_id, fuel_level_borrow, easy_pass_borrow,
+    expected_return_date, expected_return_time
   } = req.body;
   
   try {
@@ -402,27 +411,43 @@ router.post('/', async (req, res) => {
       });
     }
     
+    // เวลาคืนที่ตั้งไว้ต้องหลังเวลารับ (ถ้ากรอกมา)
+    if (expected_return_time) {
+      const expDate = new Date(expected_return_date || selected_date);
+      const [eh, em] = String(expected_return_time).split(':').map(Number);
+      expDate.setHours(eh, em, 0, 0);
+      const pickupDate = new Date(selected_date);
+      const [ph, pm] = String(time || '09:00').split(':').map(Number);
+      pickupDate.setHours(ph, pm, 0, 0);
+      if (expDate <= pickupDate) {
+        return res.status(400).json({ error: 'เวลาคืนรถต้องเป็นเวลาหลังจากเวลารับรถ' });
+      }
+    }
+
     const result = await pool.query(`
       INSERT INTO car_bookings (
         type, location, project, task_id, discription,
-        selected_date, time, license, colleagues, images, user_id, status, fuel_level_borrow, easy_pass_borrow
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) 
+        selected_date, time, license, colleagues, images, user_id, status, fuel_level_borrow, easy_pass_borrow,
+        expected_return_date, expected_return_time
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *
     `, [
-      type, 
-      location || '', 
+      type,
+      location || '',
       project || '',
       task_id || null,
       description || '',
-      selected_date, 
-      time || '09:00', 
-      license || 'FXAG-2032', 
+      selected_date,
+      time || '09:00',
+      license || 'FXAG-2032',
       JSON.stringify(colleagues || []),
       JSON.stringify(images || []),
       user_id,
       'pending',
       fuel_level_borrow || null,
-      easy_pass_borrow || null
+      easy_pass_borrow || null,
+      expected_return_time ? (expected_return_date || selected_date) : null,
+      expected_return_time || null
     ]);
     
     // Get created data with user info for Teams notification

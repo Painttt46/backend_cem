@@ -72,6 +72,20 @@ function createCarBookingMessage(type, data) {
         ['เหตุผล', data.reason || 'มีการใช้รถจริงในวันเดียวกัน']
       ];
       break;
+    case 'auto_return':
+      title = '⏱️ คืนรถอัตโนมัติ — ครบเวลาที่กำหนดตอนจอง';
+      color = 'Good';
+      tableData = [
+        ['Ticket ID', data.id.toString()],
+        ['ผู้ใช้', data.name || 'ไม่ระบุ'],
+        ['โครงการ', data.project || 'ไม่ระบุ'],
+        ['ทะเบียนรถ', data.license || 'ไม่ระบุ'],
+        ['วันที่ใช้', data.selected_date ? new Date(data.selected_date).toLocaleDateString('th-TH') : 'ไม่ระบุ'],
+        ['เวลารับรถ', data.time || 'ไม่ระบุ'],
+        ['เวลาคืน (อัตโนมัติ)', data.return_time || 'ไม่ระบุ'],
+        ['สถานะ', 'คืนรถแล้ว — รถพร้อมให้จองได้']
+      ];
+      break;
     default:
       return null;
   }
@@ -114,19 +128,55 @@ async function checkAndUpdateBookingStatus() {
       await pool.query("SET timezone = 'Asia/Bangkok'");
       
       const result = await pool.query(`
-        SELECT 
-          c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
+        SELECT
+          c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license,
           c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
           c.return_time, c.return_date, c.status, c.user_id,
+          c.expected_return_date, c.expected_return_time, c.auto_returned,
           u.firstname || ' ' || u.lastname as name
         FROM car_bookings c
         LEFT JOIN users u ON c.user_id = u.id
         WHERE c.status IN ('pending', 'active')
         ORDER BY c.selected_date, c.time
       `);
-      
+
       const now = new Date();
       const activeBooking = result.rows.find(r => r.status === 'active');
+
+      // Auto-return: active booking ที่ถึงเวลาคืนที่ตั้งไว้ตอนจอง → ปิดรายการให้เอง
+      // ปลดล็อกรถให้คนถัดไปจองได้ทันที ไม่ต้องมาคอยแจ้งคืน (Teams จะแจ้งแทน)
+      if (activeBooking && activeBooking.expected_return_time) {
+        const expBase = new Date(activeBooking.expected_return_date || activeBooking.selected_date);
+        const [eh, em] = String(activeBooking.expected_return_time).split(':').map(Number);
+        const expDateTime = new Date(expBase);
+        expDateTime.setHours(eh, em, 0, 0);
+
+        if (now >= expDateTime) {
+          const expDateStr = `${expBase.getFullYear()}-${String(expBase.getMonth() + 1).padStart(2, '0')}-${String(expBase.getDate()).padStart(2, '0')}`;
+          await pool.query(`
+            UPDATE car_bookings
+            SET status = 'returned',
+                return_time = $1,
+                return_date = $2,
+                return_name = $3,
+                return_location = $4,
+                auto_returned = true,
+                updated_at = NOW()
+            WHERE id = $5 AND status = 'active'
+          `, [
+            activeBooking.expected_return_time,
+            expDateStr,
+            activeBooking.name || 'ไม่ระบุ',
+            `${activeBooking.location || 'ไม่ระบุ'} (คืนอัตโนมัติตามเวลา)`,
+            activeBooking.id
+          ]);
+          console.log(`[Scheduler] Auto-returned booking #${activeBooking.id} at expected time ${activeBooking.expected_return_time}`);
+          sendTeamsNotification('auto_return', {
+            ...activeBooking,
+            return_time: activeBooking.expected_return_time
+          });
+        }
+      }
       
       // Cancel pending bookings that conflict with active booking
       if (activeBooking) {
