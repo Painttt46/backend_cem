@@ -214,6 +214,13 @@ app.use((error, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+// Node 18+ ตัด request ที่รับไม่เสร็จใน 5 นาที (requestTimeout) — ไฟล์ใหญ่ (หลักร้อย MB) ผ่านเครือข่ายช้าจะถูกตัดกลางทาง
+// ปิด timeout ระดับ request ให้ upload ไฟล์ใหญ่ได้ (nginx/axios คุม timeout ฝั่งตัวเองอยู่แล้ว)
+server.requestTimeout = 0;
+server.timeout = 0;
+server.headersTimeout = 65 * 1000;
+server.keepAliveTimeout = 65 * 1000;
