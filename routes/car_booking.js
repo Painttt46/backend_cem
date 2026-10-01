@@ -5,12 +5,20 @@ import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
 
-// Auto-migrate: เวลาคืนรถที่ตั้งไว้ตอนจอง + ธงคืนอัตโนมัติ
+// Auto-migrate: เวลาคืนรถที่ตั้งไว้ตอนจอง + ธงคืนอัตโนมัติ + กันจองซ้ำระดับ DB
 pool.query(`
   ALTER TABLE car_bookings ADD COLUMN IF NOT EXISTS expected_return_date DATE;
   ALTER TABLE car_bookings ADD COLUMN IF NOT EXISTS expected_return_time VARCHAR(5);
   ALTER TABLE car_bookings ADD COLUMN IF NOT EXISTS auto_returned BOOLEAN DEFAULT false;
 `).catch(() => {});
+
+// unique index กัน pending ซ้ำของคันเดียวกันในวันเดียวกัน (ให้ conflict check เป็นตัวสำรอง)
+// ถ้ามีข้อมูลซ้ำค้างอยู่ index จะสร้างไม่ได้ — ต้องเก็บกวาด duplicate ก่อน จึง catch ไว้ไม่ให้ crash
+pool.query(`
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_car_bookings_pending_license_date
+  ON car_bookings (license, selected_date)
+  WHERE status = 'pending'
+`).catch((e) => console.error('[car_booking] create unique index failed (มี pending ซ้ำค้างอยู่):', e.message));
 
 // Set timezone for PostgreSQL queries
 const setTimezone = async () => {
@@ -223,7 +231,7 @@ async function processBookingStatuses() {
     await setTimezone();
     const now = new Date();
 
-    const activeResult = await pool.query(`SELECT id, selected_date, return_date FROM car_bookings WHERE status = 'active' LIMIT 1`);
+    const activeResult = await pool.query(`SELECT id, license, selected_date, return_date FROM car_bookings WHERE status = 'active' LIMIT 1`);
     const activeBooking = activeResult.rows[0] || null;
 
     const pendingResult = await pool.query(`
@@ -238,15 +246,19 @@ async function processBookingStatuses() {
       ORDER BY c.selected_date, c.time
     `);
 
+    // คันรถที่มี active อยู่ — จัดสถานะเป็นรายคัน (รองรับหลายคัน ไม่ assume active เดียวทั้ง fleet)
+    const activeLicenses = new Set(activeBooking ? [activeBooking.license] : []);
+
     for (const record of pendingResult.rows) {
       const [hour, minute] = record.time.split(':').map(Number);
       const borrowDateTime = new Date(record.selected_date);
       borrowDateTime.setHours(hour, minute, 0, 0);
       if (now < borrowDateTime) continue;
 
-      if (!activeBooking) {
+      if (!activeLicenses.has(record.license)) {
         await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
         sendTeamsNotification('active', { ...record, status: 'active' }).catch(() => {});
+        activeLicenses.add(record.license);
 
         const dupes = await pool.query(
           `SELECT c.id, c.project, c.license, c.selected_date, c.time, c.user_id,
@@ -257,45 +269,49 @@ async function processBookingStatuses() {
         );
         if (dupes.rows.length > 0) {
           await pool.query(
-            `DELETE FROM car_bookings WHERE id != $1 AND license = $2 AND selected_date = $3 AND status = 'pending'`,
+            `UPDATE car_bookings SET status = 'cancelled', updated_at = NOW() WHERE id != $1 AND license = $2 AND selected_date = $3 AND status = 'pending'`,
             [record.id, record.license, record.selected_date]
           );
           for (const d of dupes.rows) {
             sendTeamsNotification('auto_cancel_duplicate', { ...d, reason: `มีการใช้รถจริงในวันเดียวกัน (Ticket ID: ${record.id})` }).catch(() => {});
           }
         }
-        break;
-      } else {
-        const activeBorrowDate = new Date(activeBooking.selected_date);
-        activeBorrowDate.setHours(0, 0, 0, 0);
-        const pendingDate = new Date(record.selected_date);
-        pendingDate.setHours(0, 0, 0, 0);
+        continue;
+      }
 
-        if (!activeBooking.return_date && pendingDate >= activeBorrowDate) {
-          console.log('[processBookingStatuses] Cancelling pending booking:', {
-            pendingId: record.id,
-            pendingStatus: record.status,
-            pendingDate: pendingDate.toISOString(),
-            activeBookingId: activeBooking.id,
-            activeBorrowDate: activeBorrowDate.toISOString(),
-            reason: 'รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า'
-          });
-          
-          // ลบเฉพาะการจอง pending เท่านั้น ไม่ลบ active
-          const deleteResult = await pool.query(
-            'DELETE FROM car_bookings WHERE id = $1 AND status = $2 RETURNING id', 
-            [record.id, 'pending']
-          );
-          
-          if (deleteResult.rows.length > 0) {
-            console.log('[processBookingStatuses] Successfully deleted pending booking:', record.id);
-            sendTeamsNotification('overdue_cancel', {
-              ...record,
-              cancellation_reason: `รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า (ใช้งานตั้งแต่ ${activeBorrowDate.toLocaleDateString('th-TH')})`
-            }).catch(() => {});
-          } else {
-            console.warn('[processBookingStatuses] No pending booking deleted (may already be active or deleted):', record.id);
-          }
+      // คันนี้มี active อยู่แล้ว — ยกเลิก pending ที่ค้างของ "คันเดียวกัน" เท่านั้น
+      const activeForLicense = activeBooking && activeBooking.license === record.license ? activeBooking : null;
+      if (!activeForLicense) continue;
+
+      const activeBorrowDate = new Date(activeForLicense.selected_date);
+      activeBorrowDate.setHours(0, 0, 0, 0);
+      const pendingDate = new Date(record.selected_date);
+      pendingDate.setHours(0, 0, 0, 0);
+
+      if (!activeForLicense.return_date && pendingDate >= activeBorrowDate) {
+        console.log('[processBookingStatuses] Cancelling pending booking:', {
+          pendingId: record.id,
+          pendingStatus: record.status,
+          pendingDate: pendingDate.toISOString(),
+          activeBookingId: activeForLicense.id,
+          activeBorrowDate: activeBorrowDate.toISOString(),
+          reason: 'รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า'
+        });
+
+        // เก็บประวัติ — ยกเลิก (ไม่ลบถาวร) เฉพาะการจอง pending เท่านั้น
+        const cancelResult = await pool.query(
+          `UPDATE car_bookings SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = $2 RETURNING id`, 
+          [record.id, 'pending']
+        );
+        
+        if (cancelResult.rows.length > 0) {
+          console.log('[processBookingStatuses] Successfully cancelled pending booking:', record.id);
+          sendTeamsNotification('overdue_cancel', {
+            ...record,
+            cancellation_reason: `รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า (ใช้งานตั้งแต่ ${activeBorrowDate.toLocaleDateString('th-TH')})`
+          }).catch(() => {});
+        } else {
+          console.warn('[processBookingStatuses] No pending booking cancelled (may already be active or cancelled):', record.id);
         }
       }
     }
@@ -442,7 +458,8 @@ router.post('/', async (req, res) => {
       license || 'FXAG-2032',
       JSON.stringify(colleagues || []),
       JSON.stringify(images || []),
-      user_id,
+      // ใช้ user_id จาก token เท่านั้น กันสร้างรายการในนามผู้อื่น (IDOR)
+      req.user?.id || user_id || null,
       'pending',
       fuel_level_borrow || null,
       easy_pass_borrow || null,
@@ -578,6 +595,49 @@ router.put('/:id', async (req, res) => {
   } catch (error) {
     console.error('Database update error:', error);
     res.status(500).json({ error: 'ไม่สามารถแก้ไขรายการจองรถได้' });
+  }
+});
+
+// Append images to a booking (merge — ไม่ทับรูปเดิม, รองรับ legacy object shape {borrow, return})
+router.post('/:id/images', async (req, res) => {
+  const { id } = req.params;
+  const { images } = req.body || {};
+
+  try {
+    if (!Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ error: 'ไม่มีรูปที่ต้องการเพิ่ม' });
+    }
+
+    const current = await pool.query('SELECT images, user_id FROM car_bookings WHERE id = $1', [id]);
+    if (current.rows.length === 0) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    // สิทธิ์: เจ้าของ booking หรือ admin/hr/superadmin
+    const role = (req.user?.role || '').toLowerCase();
+    const isPrivileged = ['admin', 'hr', 'superadmin'].includes(role);
+    if (String(current.rows[0].user_id) !== String(req.user?.id) && !isPrivileged) {
+      return res.status(403).json({ error: 'คุณไม่มีสิทธิ์เพิ่มรูปในรายการนี้' });
+    }
+
+    // normalize legacy shapes → flat array ของ object {src}
+    let existing = current.rows[0].images || [];
+    if (!Array.isArray(existing)) {
+      // legacy object form: {borrow: [...], return: [...]}
+      existing = Object.values(existing).flat().filter(Boolean);
+    }
+    existing = existing.filter(img => img && (img.src || typeof img === 'string'));
+
+    const merged = [...existing, ...images];
+    await pool.query(
+      'UPDATE car_bookings SET images = $1::jsonb, updated_at = NOW() WHERE id = $2',
+      [JSON.stringify(merged), id]
+    );
+
+    res.json({ success: true, images: merged });
+  } catch (error) {
+    console.error('Error appending booking images:', error);
+    res.status(500).json({ error: 'ไม่สามารถเพิ่มรูปได้' });
   }
 });
 

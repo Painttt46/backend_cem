@@ -8,42 +8,59 @@ import { requireRole } from '../middleware/auth.js';
 const router = express.Router();
 
 // Base uploads directory
-const uploadsDir = './uploads';
+const uploadsDir = path.resolve('./uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
+// type ที่อนุญาต — กัน path traversal ผ่าน query/body type
+const ALLOWED_TYPES = ['daily_work', 'tasks', 'leave', 'procurement', 'general'];
+
 // Helper: สร้าง path ตาม type/year/month/day
 const getUploadPath = (type) => {
+  const safeType = ALLOWED_TYPES.includes(type) ? type : 'general';
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
-  
-  const uploadPath = path.join(uploadsDir, type || 'general', String(year), month, day);
-  
+
+  const uploadPath = path.join(uploadsDir, safeType, String(year), month, day);
+
   // สร้างโฟลเดอร์ถ้ายังไม่มี
   if (!fs.existsSync(uploadPath)) {
     fs.mkdirSync(uploadPath, { recursive: true });
   }
-  
+
   return uploadPath;
 };
 
-// Helper: หาไฟล์ (รองรับทั้งที่เก่าและใหม่)
+// Helper: กัน path traversal — ต้องเป็นชื่อไฟล์ล้วน และ path จริงต้องอยู่ใน uploads เท่านั้น
+const resolveSafeFilePath = (filename) => {
+  if (!filename || filename.includes('/') || filename.includes('\\') || filename.includes('..')) return null;
+  const resolved = path.resolve(uploadsDir, filename);
+  if (!resolved.startsWith(uploadsDir + path.sep) && resolved !== uploadsDir) return null;
+  if (!fs.existsSync(resolved)) return null;
+  return resolved;
+};
+
+// Helper: หาไฟล์ (รองรับทั้งที่เก่าและใหม่) — คืน path ที่ปลอดภัยแล้วเท่านั้น
 const findFile = (filename) => {
+  // กัน path traversal: ห้าม /, \, ..
+  if (!filename || filename.includes('/') || filename.includes('\\') || filename.includes('..')) return null;
+
   // 1. เช็คที่ root uploads ก่อน (ไฟล์เก่า)
-  const oldPath = path.join(uploadsDir, filename);
-  if (fs.existsSync(oldPath)) {
+  const oldPath = path.resolve(uploadsDir, filename);
+  if (oldPath.startsWith(uploadsDir + path.sep) && fs.existsSync(oldPath) && fs.statSync(oldPath).isFile()) {
     return oldPath;
   }
-  
-  // 2. หาในโฟลเดอร์ย่อย (ไฟล์ใหม่)
+
+  // 2. หาในโฟลเดอร์ย่อย (ไฟล์ใหม่) — ตรวจผลลัพธ์ว่ายังอยู่ใน uploads เท่านั้น
   const searchInDir = (dir) => {
     if (!fs.existsSync(dir)) return null;
     const items = fs.readdirSync(dir);
     for (const item of items) {
-      const itemPath = path.join(dir, item);
+      const itemPath = path.resolve(dir, item);
+      if (!itemPath.startsWith(uploadsDir + path.sep)) continue;
       const stat = fs.statSync(itemPath);
       if (stat.isDirectory()) {
         const found = searchInDir(itemPath);
@@ -54,7 +71,7 @@ const findFile = (filename) => {
     }
     return null;
   };
-  
+
   return searchInDir(uploadsDir);
 };
 
@@ -74,19 +91,34 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage: storage,
-  limits: {
-    fileSize: 200 * 1024 * 1024 // 200MB limit
+  // ไม่จำกัดขนาดไฟล์ (จำกัดแค่จำนวนไฟล์ที่ upload.array('files', 20))
+  // บล็อกนามสกุลที่รันฝั่ง browser ได้ (stored XSS) — ชนิดอื่นอัปโหลดได้ตามปกติ
+  fileFilter: (req, file, cb) => {
+    const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8').toLowerCase();
+    const blocked = ['.html', '.htm', '.svg', '.js', '.mjs', '.xhtml', '.xht'];
+    const isBlocked = blocked.some(ext => originalName.endsWith(ext));
+    if (isBlocked) {
+      cb(new Error('ไม่อนุญาตให้อัปโหลดไฟล์ประเภทนี้ (html/svg/js)'));
+      return;
+    }
+    cb(null, true);
   }
 });
 
 // Upload files
 router.post('/upload', (req, res) => {
-  upload.array('files', 5)(req, res, async (err) => {
+  upload.array('files', 20)(req, res, async (err) => {
     if (err) {
       console.error('Multer error:', err);
+      let message = 'ไม่สามารถอัพโหลดไฟล์ได้ กรุณาตรวจสอบขนาด/จำนวนไฟล์';
+      if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.code === 'LIMIT_FILE_COUNT') {
+        message = 'แนบไฟล์ได้สูงสุด 20 ไฟล์ต่อครั้ง';
+      } else if (err.code === 'LIMIT_FILE_SIZE') {
+        message = 'ไฟล์ใหญ่เกิน 200MB';
+      }
       return res.status(400).json({
         success: false,
-        error: 'ไม่สามารถอัพโหลดไฟล์ได้ กรุณาตรวจสอบขนาด/จำนวนไฟล์'
+        error: message
       });
     }
     
@@ -142,7 +174,13 @@ router.get('/view/:filename', (req, res) => {
   const filePath = findFile(filename);
   
   if (filePath) {
-    res.sendFile(path.resolve(filePath));
+    // บังคับดาวน์โหลด + ห้าม sniff กัน stored XSS ผ่านไฟล์ที่อัปโหลด
+    res.sendFile(path.resolve(filePath), {
+      headers: {
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename.split('-').slice(2).join('-'))}`
+      }
+    });
   } else {
     res.status(404).json({ error: 'ไฟล์ไม่พบ' });
   }

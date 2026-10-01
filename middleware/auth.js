@@ -26,9 +26,9 @@ export const verifyToken = async (req, res, next) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
-      // ตรวจสอบว่า user ยังมีอยู่และ active
+      // ตรวจสอบว่า user ยังมีอยู่และ active + token ยังไม่ถูก revoke ด้วย token_version
       const result = await pool.query(
-        'SELECT id, username, role, firstname, lastname FROM users WHERE id = $1 AND is_active = true',
+        'SELECT id, username, role, firstname, lastname, token_version FROM users WHERE id = $1 AND is_active = true',
         [decoded.userId]
       );
       
@@ -36,7 +36,21 @@ export const verifyToken = async (req, res, next) => {
         return res.status(401).json({ error: 'Invalid token' });
       }
       
-      req.user = result.rows[0];
+      const user = result.rows[0];
+      
+      // token เก่า (ก่อนเพิ่ม token_version) ยังใช้ได้จนหมดอายุ — token ใหม่จะมี tv เสมอ
+      const tokenVersion = decoded.tv ?? 0;
+      if ((user.token_version || 0) !== tokenVersion) {
+        return res.status(401).json({ error: 'Token revoked', revoked: true });
+      }
+      
+      req.user = {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        firstname: user.firstname,
+        lastname: user.lastname
+      };
       next();
     } catch (jwtError) {
       if (jwtError.name === 'TokenExpiredError') {

@@ -110,9 +110,10 @@ async function performSync(dryRun = false) {
       const fileRes = await erpGet(`/File?filters=${fileFilter}&fields=${fileFields}&limit_page_length=100`)
       const erpFiles = (fileRes.data || []).map(f => ({ erp: true, name: f.file_name, url: f.file_url }))
 
-      const syncedStatus = p.status === 'Completed' ? 'completed' : null
       const oldRow = await pool.query('SELECT task_name, sale_owner, customer_info, status, files FROM tasks WHERE so_number=$1', [p.name])
       const oldData = oldRow.rows[0] || null
+      // ERP รายงาน Completed เท่านั้นที่บังคับสถานะ — นอกนั้นคงสถานะที่ทีมงานตั้งเองไว้ (กัน sync ทับเป็น null)
+      const syncedStatus = p.status === 'Completed' ? 'completed' : (oldData.status || null)
 
       // เก็บ local files เดิมไว้
       const existingFiles = oldData?.files || []

@@ -727,6 +727,9 @@ router.post('/', async (req, res) => {
     attendees, create_teams_meeting, meeting_room, event_details
   } = req.body;
 
+  // ใช้ user_id จาก token เท่านั้น กันลงงานในนามผู้อื่น (IDOR)
+  const ownerId = req.user?.id || user_id || null;
+
   // รองรับทั้ง step_id (single) และ step_ids (array)
   const finalStepIds = step_ids || (step_id ? [step_id] : [null]);
 
@@ -762,12 +765,12 @@ router.post('/', async (req, res) => {
     `, [
       task_id, finalStepIds[0], JSON.stringify(finalStepIds.filter(id => id !== null)), task_name, so_number, contract_number, sale_owner,
       work_date, start_time, end_time, total_hours,
-      work_status, location, work_description, JSON.stringify(files || []), user_id, submitted_at
+      work_status, location, work_description, JSON.stringify(files || []), ownerId, submitted_at
     ]);
 
     // Auto-add user to assigned_users if not already assigned
-    if (user_id && finalStepIds.length > 0) {
-      const userResult = await pool.query('SELECT id, firstname, lastname FROM users WHERE id = $1', [user_id]);
+    if (ownerId && finalStepIds.length > 0) {
+      const userResult = await pool.query('SELECT id, firstname, lastname FROM users WHERE id = $1', [ownerId]);
       if (userResult.rows.length > 0) {
         const user = userResult.rows[0];
         const userData = { id: user.id, name: `${user.firstname} ${user.lastname}` };

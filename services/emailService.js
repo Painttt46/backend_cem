@@ -168,7 +168,7 @@ export const sendForgotPasswordEmail = async (email, userData) => {
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">Hello, <b>${userData.email}</b></p>
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">เราได้ส่งอีเมลฉบับนี้ถึงคุณเพื่อตอบสนองคำขอของคุณในการรีเซ็ตรหัสผ่านบน <strong>GenT-CEM</strong>.</p>
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">รหัสผ่านใหม่ของคุณ คือ : <b>${userData.password || 'ไม่พบข้อมูล'}</b></p>
-                <p><a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to Login Internal</a> | <a style="color:#4a90e2;" href="http://61.91.51.126:3000/login" target="_blank">Click to Login External</a></p>
+                <p><a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'https://172.30.101.52:3000'}/login" target="_blank">Click to Login Internal</a> | <a style="color:#4a90e2;" href="https://61.91.51.126:3000/login" target="_blank">Click to Login External</a></p>
                 <p style="margin:0 0 18px;font-size:13px;line-height:20px;color:#8a8a8a;font-style:italic;">โปรดเปลี่ยนรหัสผ่านของคุณอีกครั้งหลังจากเข้าสู่ระบบสำเร็จแล้ว</p>
               </td>
             </tr>
@@ -422,7 +422,7 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
                 </p>
 
                 <p style="margin:0 0 18px;font-size:16px;line-height:26px;">
-                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login" target="_blank">Click to Login Internal</a> | <a style="color:#4a90e2;" href="http://61.91.51.126:3000/login" target="_blank">Click to Login External</a>
+                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'https://172.30.101.52:3000'}/login" target="_blank">Click to Login Internal</a> | <a style="color:#4a90e2;" href="https://61.91.51.126:3000/login" target="_blank">Click to Login External</a>
                 </p>
 
                 ${footerNote ? `<p style="margin:0 0 18px;font-size:13px;line-height:20px;color:#8a8a8a;font-style:italic;">${footerNote}</p>` : ''}
@@ -652,7 +652,7 @@ export const sendPendingLeaveReminder = async (approver, pendingLeaves) => {
                       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                         <tr>
                           <td align="center" style="background:linear-gradient(135deg,#4A90E2,#D73527);border-radius:8px;">
-                            <a href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/leave"
+                            <a href="${process.env.FRONTEND_URL || 'https://172.30.101.52:3000'}/leave"
                               style="display:inline-block;padding:12px 32px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;">
                               เข้าสู่ระบบเพื่ออนุมัติ
                             </a>
@@ -664,9 +664,9 @@ export const sendPendingLeaveReminder = async (approver, pendingLeaves) => {
                 </table>
 
                 <p style="margin:16px 0 0;font-size:12px;line-height:18px;color:#aaaaaa;text-align:center;">
-                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'http://172.30.101.52:3000'}/login">Internal</a>
+                  <a style="color:#4a90e2;" href="${process.env.FRONTEND_URL || 'https://172.30.101.52:3000'}/login">Internal</a>
                   &nbsp;|&nbsp;
-                  <a style="color:#4a90e2;" href="http://61.91.51.126:3000/login">External</a>
+                  <a style="color:#4a90e2;" href="https://61.91.51.126:3000/login">External</a>
                 </p>
 
               </td>

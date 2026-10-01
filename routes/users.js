@@ -38,11 +38,16 @@ router.get('/', verifyToken, async (req, res) => {
 router.post('/', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, nickname} = req.body;
-    
+
     if (!username || !password || !firstname || !lastname) {
       return res.status(400).json({ error: 'Required fields missing' });
     }
-    
+
+    // กัน privilege escalation: มีแค่ superadmin เท่านั้นที่สร้าง user เป็น superadmin ได้
+    if (role === 'superadmin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'เฉพาะ superadmin เท่านั้นที่สร้างบัญชี superadmin ได้' });
+    }
+
     // Hash password before saving
     const hashedPassword = await bcrypt.hash(password, 10);
     
@@ -94,17 +99,28 @@ router.put('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const { id } = req.params;
     const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname } = req.body;
-    
+
     // Get old data for audit
     const oldResult = await pool.query('SELECT username, firstname, lastname, role, email, position, department, is_active, nickname FROM users WHERE id = $1', [id]);
     const oldData = oldResult.rows[0];
-    
+
+    // กัน privilege escalation: มีแค่ superadmin เท่านั้นที่แตะบัญชี/สิทธิ์ superadmin ได้
+    const targetIsSuper = oldData?.role === 'superadmin' || role === 'superadmin';
+    if (targetIsSuper && req.user.role !== 'superadmin' && String(req.user.id) !== String(id)) {
+      return res.status(403).json({ error: 'เฉพาะ superadmin เท่านั้นที่แก้ไขบัญชี superadmin ได้' });
+    }
+    if (role === 'superadmin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'เฉพาะ superadmin เท่านั้นที่มอบสิทธิ์ superadmin ได้' });
+    }
+
     let values = [username, firstname, lastname, role, email, phone, employee_id, position, department, is_active !== false, nickname];
     let query = 'UPDATE users SET username = $1, firstname = $2, lastname = $3, role = $4, email = $5, phone = $6, employee_id = $7, position = $8, department = $9, is_active = $10, nickname = $11';
-    
+
     if (password) {
-      query += ', password = $12 WHERE id = $13';
-      values.push(password, id);
+      // เข้ารหัส password ก่อนบันทึกเสมอ (เดิมบั๊ก: เก็บ plain text ทำให้ login ไม่ได้)
+      const hashedPassword = await bcrypt.hash(password, 10);
+      query += ', password = $12, token_version = COALESCE(token_version, 0) + 1 WHERE id = $13';
+      values.push(hashedPassword, id);
     } else {
       query += ' WHERE id = $12';
       values.push(id);
@@ -168,8 +184,8 @@ router.put('/:id/password', async (req, res) => {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     
-    // Update password
-    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, id]);
+    // Update password + revoke token เดิมทั้งหมด
+    await pool.query('UPDATE users SET password = $1, token_version = COALESCE(token_version, 0) + 1 WHERE id = $2', [hashedPassword, id]);
     
     res.json({ message: 'Password updated successfully' });
   } catch (error) {

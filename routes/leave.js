@@ -85,7 +85,11 @@ async function notifyApprovers(level, leaveData, notificationType) {
 // Check if user can approve based on department/position settings
 async function canUserApprove(approverId, requesterId, level) {
   try {
-    
+    // admin/superadmin อนุมัติได้เสมอ (ไม่ขึ้นกับตารางตั้งค่า)
+    const roleCheck = await pool.query(`SELECT role FROM users WHERE id = $1`, [approverId]);
+    const approverRole = (roleCheck.rows[0]?.role || '').toLowerCase();
+    if (approverRole === 'admin' || approverRole === 'superadmin') return true;
+
     // Check if table exists
     const tableCheck = await pool.query(`
       SELECT EXISTS (
@@ -95,7 +99,7 @@ async function canUserApprove(approverId, requesterId, level) {
     `);
 
     if (!tableCheck.rows[0].exists) {
-      return true; // If table doesn't exist, allow all approvals
+      return false; // ไม่มีระบบตั้งค่าผู้อนุมัติ = ปฏิเสธ (default-deny)
     }
 
     const approverResult = await pool.query(`
@@ -106,7 +110,7 @@ async function canUserApprove(approverId, requesterId, level) {
 
 
     if (approverResult.rows.length === 0) {
-      return true; // If no settings, allow approval
+      return false; // ไม่มีสิทธิ์ตั้งค่าผู้อนุมัติ = ไม่ให้อนุมัติ (default-deny)
     }
     
     const { can_approve, department_ids, position_ids } = approverResult.rows[0];
@@ -137,7 +141,7 @@ async function canUserApprove(approverId, requesterId, level) {
   } catch (error) {
     console.error('[canUserApprove] Error checking approval permission:', error);
     console.error('[canUserApprove] Stack:', error.stack);
-    return true; // On error, allow approval to prevent blocking
+    return false; // default-deny — เกิด error ให้ปฏิเสธ ไม่ใช่อนุมัติ
   }
 }
 
@@ -1016,20 +1020,10 @@ router.post('/', async (req, res) => {
   } = req.body;
 
   try {
-    // ดึง user_id จาก request body หรือ token
-    let userId = req.body.user_id;
+    // ใช้ user_id จาก token ที่ยืนยันแล้วเท่านั้น (IDOR) — ไม่รับจาก body
+    const userId = req.user?.id;
 
-    if (!userId) {
-      // ลองดึงจาก token
-      const token = req.headers.authorization?.replace('Bearer ', '');
-
-      if (token && token.startsWith('token_')) {
-        userId = token.split('_')[1];
-      }
-    }
-
-
-    if (!userId || isNaN(parseInt(userId))) {
+    if (!userId || !/^\d+$/.test(String(userId))) {
       return res.status(401).json({ error: 'Invalid user ID' });
     }
 
@@ -1116,7 +1110,7 @@ router.put('/:id/status', async (req, res) => {
 
     // Get leave request details
     const leaveRequest = await pool.query(`
-      SELECT user_id, leave_type, total_days, status, COALESCE(approval_level, 0) as current_level
+      SELECT user_id, leave_type, total_days, status, start_datetime, COALESCE(approval_level, 0) as current_level
       FROM leave_requests 
       WHERE id = $1
     `, [id]);
@@ -1126,6 +1120,11 @@ router.put('/:id/status', async (req, res) => {
     }
 
     const { user_id, leave_type, total_days, status: currentStatus, current_level } = leaveRequest.rows[0];
+
+    // อนุญาตเฉพาะสถานะ approved/rejected — ค่าอื่น ๆ เขียนไม่ได้ (กันเขียนทับสถานะโดยไม่ผ่านการตรวจสิทธิ์)
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'สถานะไม่ถูกต้อง (อนุญาตเฉพาะ approved หรือ rejected)' });
+    }
 
     // ระดับการอนุมัติ/ปฏิเสธ อิงจากสถานะปัจจุบันของคำขอ (ใช้ร่วมกันทั้ง approve และ reject)
     const actionLevel = currentStatus === 'pending' ? 1 : (currentStatus === 'pending_level2' ? 2 : 0);
@@ -1178,40 +1177,48 @@ router.put('/:id/status', async (req, res) => {
     let updateQuery, updateParams;
     
     if (newApprovalLevel === 1 && newStatus === 'pending_level2') {
-      // Level 1 approved
+      // Level 1 approved — guard สถานะใน SQL กันอนุมัติซ้ำจาก 2 request พร้อมกัน
       updateQuery = `
         UPDATE leave_requests 
         SET status = $1, approved_by_level1 = $2, approved_by_level1_id = $3, approval_level = $4, updated_at = NOW() 
-        WHERE id = $5 
+        WHERE id = $5 AND status = 'pending'
         RETURNING *
       `;
       updateParams = [newStatus, approverName, approverId, newApprovalLevel, id];
     } else if (newApprovalLevel === 2 && newStatus === 'approved') {
-      // Level 2 approved
+      // Level 2 approved — guard สถานะกันตัดโควตาซ้ำ
       updateQuery = `
         UPDATE leave_requests
         SET status = $1, approved_by_level2 = $2, approved_by_level2_id = $3, approved_by = $4, approval_level = $5, updated_at = NOW()
-        WHERE id = $6
+        WHERE id = $6 AND status = 'pending_level2'
         RETURNING *
       `;
       updateParams = [newStatus, approverName, approverId, approverName, newApprovalLevel, id];
     } else {
-      // Rejected or other
+      // Rejected — guard ให้สถานะยังอยู่ระดับที่อนุญาตปฏิเสธ
       const rejectedLevel = actionLevel;
+      const guardStatus = currentStatus === 'pending' ? 'pending' : 'pending_level2';
       updateQuery = `
         UPDATE leave_requests
         SET status = $1, approved_by = $2, approval_level = $3, rejected_by = $4, rejected_level = $5, reject_reason = $6, updated_at = NOW()
-        WHERE id = $7
+        WHERE id = $7 AND status = $8
         RETURNING *
       `;
-      updateParams = [newStatus, approverName, rejectedLevel, approverName, rejectedLevel, reject_reason || null, id];
+      updateParams = [newStatus, approverName, rejectedLevel, approverName, rejectedLevel, reject_reason || null, id, guardStatus];
     }
 
     const result = await pool.query(updateQuery, updateParams);
 
-    // If fully approved, update quota
-    if (newStatus === 'approved' && currentStatus !== 'approved') {
-      const currentYear = new Date().getFullYear();
+    if (result.rows.length === 0 && currentStatus !== 'approved') {
+      // ไม่มีแถวอัปเดต = ใบลาถูกดำเนินการไปแล้วจาก request อื่น (race) — ไม่ตัดโควตาซ้ำ
+      return res.status(409).json({ error: 'คำขอนี้ถูกดำเนินการไปแล้ว (อนุมัติ/ปฏิเสธไปก่อนหน้า)' });
+    }
+
+    // If fully approved, update quota — ตัดตาม "ปีของวันที่เริ่มลา" ไม่ใช่ปีที่อนุมัติ
+    if (newStatus === 'approved' && currentStatus !== 'approved' && result.rows.length > 0) {
+      const quotaYear = leaveRequest.start_datetime
+        ? new Date(leaveRequest.start_datetime).getFullYear()
+        : new Date().getFullYear();
       const days = parseFloat(total_days) || 0;
 
 
@@ -1220,20 +1227,21 @@ router.put('/:id/status', async (req, res) => {
         SET used_days = COALESCE(used_days, 0) + $1
         WHERE user_id = $2 AND leave_type = $3 AND year = $4
         RETURNING *
-      `, [days, user_id, leave_type, currentYear]);
+      `, [days, user_id, leave_type, quotaYear]);
 
 
       if (quotaUpdateResult.rows.length === 0) {
-        console.error('[QUOTA UPDATE] ERROR: No quota record found for user:', user_id, 'leave_type:', leave_type, 'year:', currentYear);
+        console.error('[QUOTA UPDATE] ERROR: No quota record found for user:', user_id, 'leave_type:', leave_type, 'year:', quotaYear);
         console.error('[QUOTA UPDATE] Attempting to create quota record...');
-        
+
         try {
+          // คอลัมน์จริงคือ annual_quota (ไม่มี total_days)
           await pool.query(`
-            INSERT INTO user_leave_quotas (user_id, leave_type, year, total_days, used_days)
+            INSERT INTO user_leave_quotas (user_id, leave_type, year, annual_quota, used_days)
             VALUES ($1, $2, $3, 10, $4)
             ON CONFLICT (user_id, leave_type, year) 
             DO UPDATE SET used_days = user_leave_quotas.used_days + $4
-          `, [user_id, leave_type, currentYear, days]);
+          `, [user_id, leave_type, quotaYear, days]);
           
         } catch (insertError) {
           console.error('[QUOTA UPDATE] Failed to create quota record:', insertError);
@@ -1492,6 +1500,10 @@ router.put('/:id/cancel-status', async (req, res) => {
   const { action, approved_by } = req.body; // action: 'approve' or 'reject'
 
   try {
+    const approverId = req.user.id;
+    const role = (req.user.role || '').toLowerCase();
+    const isPrivileged = ['admin', 'hr', 'superadmin'].includes(role);
+
     await ensureUsedDaysNumeric();
     const checkResult = await pool.query(
       'SELECT id, user_id, status, leave_type, total_days, start_datetime, end_datetime, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
@@ -1503,6 +1515,12 @@ router.put('/:id/cancel-status', async (req, res) => {
     }
 
     const leaveRequest = checkResult.rows[0];
+
+    // สิทธิ์จริง: ต้องเป็น level2 approver ของใบนี้ หรือ admin/hr/superadmin
+    const isLevel2OfThisLeave = String(leaveRequest.approved_by_level2 || '') === String(approverId);
+    if (!isLevel2OfThisLeave && !isPrivileged) {
+      return res.status(403).json({ error: 'คุณไม่มีสิทธิ์อนุมัติการยกเลิกใบลานี้' });
+    }
 
     if (leaveRequest.status !== 'cancel') {
       return res.status(400).json({ error: 'No cancellation request found' });

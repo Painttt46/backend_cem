@@ -148,6 +148,7 @@ router.put('/:id', async (req, res) => {
     const finalStartDate = start_date !== undefined ? start_date : existing.start_date;
     const finalEndDate = end_date !== undefined ? end_date : existing.end_date;
     const finalStatus = status !== undefined ? status : existing.status;
+    const finalDescription = description !== undefined ? description : existing.description;
     const finalProjectStatuses = project_statuses !== undefined ? project_statuses : existing.project_statuses;
     const finalStepType = step_type !== undefined ? step_type : existing.step_type;
     
@@ -164,7 +165,7 @@ router.put('/:id', async (req, res) => {
           step_type = $13
       WHERE id = $12
       RETURNING *
-    `, [finalStepName, finalStepOrder, finalStartDate, finalEndDate, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, description, JSON.stringify(finalProjectStatuses || []), completed_by, completed_at, late_reason || null, id, finalStepType]);
+    `, [finalStepName, finalStepOrder, finalStartDate, finalEndDate, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, finalDescription, JSON.stringify(finalProjectStatuses || []), completed_by, completed_at, late_reason || null, id, finalStepType]);
     
     // เช็คว่า steps ทั้งหมดเสร็จหรือยัง
     const allSteps = await pool.query('SELECT status FROM task_steps WHERE task_id = $1', [existing.task_id]);

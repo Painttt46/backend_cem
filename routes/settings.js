@@ -66,7 +66,8 @@ router.delete('/categories/:value', requireRole('admin', 'superadmin'), async (r
 });
 
 // PUT update single category
-router.put('/categories/:value', requireRole('admin', 'superadmin'), async (req, res) => {
+// :value ต้องไม่ใช่คำว่า reorder — ไม่งั้นจะบัง route /categories/reorder ด้านล่าง
+router.put('/categories/:value((?!reorder$)[^/]+)', requireRole('admin', 'superadmin'), async (req, res) => {
   const { label, color } = req.body;
   try {
     await pool.query(
@@ -208,7 +209,7 @@ router.delete('/statuses/:value', requireRole('admin', 'superadmin'), async (req
 });
 
 // PUT update single status
-router.put('/statuses/:value', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/statuses/:value((?!reorder$)[^/]+)', requireRole('admin', 'superadmin'), async (req, res) => {
   const { label, color } = req.body;
   try {
     await pool.query(

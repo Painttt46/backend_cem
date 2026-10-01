@@ -22,7 +22,7 @@ const vendorFileStorage = multer.diskStorage({
     cb(null, unique + path.extname(file.originalname || '').slice(0, 20));
   }
 });
-const vendorFileUpload = multer({ storage: vendorFileStorage, limits: { fileSize: 200 * 1024 * 1024 } });
+const vendorFileUpload = multer({ storage: vendorFileStorage }); // ไม่จำกัดขนาดไฟล์
 
 // Ensure table exists
 pool.query(`
@@ -76,6 +76,8 @@ pool.query(`
     created_at TIMESTAMP DEFAULT NOW()
   );
   CREATE INDEX IF NOT EXISTS idx_procurement_vendor_files_step ON procurement_vendor_files(step_id);
+  -- ไม่จำกัดขนาดไฟล์ → INTEGER (2GB) ไม่พอ
+  ALTER TABLE procurement_vendor_files ALTER COLUMN file_size TYPE BIGINT;
 `).catch(() => {});
 
 // Get distinct vendor names for autocomplete

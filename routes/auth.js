@@ -28,7 +28,7 @@ router.post('/login', async (req, res) => {
     
     // Find user by username
     const result = await client.query(
-      'SELECT id, username, firstname, lastname, role, email, employee_id, position, department, password, is_active FROM users WHERE username = $1',
+      'SELECT id, username, firstname, lastname, role, email, employee_id, position, department, password, is_active, COALESCE(token_version, 0) as token_version FROM users WHERE username = $1',
       [username]
     );
     
@@ -53,12 +53,13 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
     
-    // Generate JWT token
+    // Generate JWT token (ฝัง token_version เพื่อให้ revoke ได้)
     const token = jwt.sign(
       { 
         userId: user.id,
         username: user.username,
-        role: user.role
+        role: user.role,
+        tv: user.token_version || 0
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '3h' }
@@ -135,7 +136,8 @@ router.post('/refresh', verifyToken, async (req, res) => {
       { 
         userId: req.user.id,
         username: req.user.username,
-        role: req.user.role
+        role: req.user.role,
+        tv: req.user.token_version || 0
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '3h' }
@@ -186,7 +188,8 @@ router.post('/forgot-password', async (req, res) => {
     }
     
     const user = result.rows[0];
-    const newPassword = crypto.randomBytes(6).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) + crypto.randomInt(100, 999);
+    // รหัสชั่วคราวที่ยาวพอควร (16 ตัวอักษร+ตัวเลข) — เดิม 8 ตัวสั้นเกินไป
+    const newPassword = crypto.randomBytes(9).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) + crypto.randomInt(1000, 9999);
     
     // ส่ง email ก่อน ถ้าสำเร็จค่อยเปลี่ยน password
     try {
@@ -196,9 +199,9 @@ router.post('/forgot-password', async (req, res) => {
       });
       
       if (emailResult.success) {
-        // ส่ง email สำเร็จ ค่อยเปลี่ยน password
+        // ส่ง email สำเร็จ ค่อยเปลี่ยน password + revoke token เดิม
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, user.id]);
+        await pool.query('UPDATE users SET password = $1, token_version = COALESCE(token_version, 0) + 1 WHERE id = $2', [hashedPassword, user.id]);
         
         return res.json({ 
           message: 'ส่งข้อมูลการเข้าสู่ระบบไปยังอีเมลของคุณเรียบร้อยแล้ว',

@@ -43,12 +43,18 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 
-// Create indexes for performance
+// Create indexes for performance + schema migration (token_version)
 pool.query(`
   CREATE INDEX IF NOT EXISTS idx_dwr_work_date ON daily_work_records(work_date);
   CREATE INDEX IF NOT EXISTS idx_dwr_step_id ON daily_work_records(step_id);
   CREATE INDEX IF NOT EXISTS idx_dwr_user_id ON daily_work_records(user_id);
   CREATE INDEX IF NOT EXISTS idx_task_steps_task_id ON task_steps(task_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+  CREATE INDEX IF NOT EXISTS idx_car_bookings_license_date ON car_bookings(license, selected_date);
+  CREATE INDEX IF NOT EXISTS idx_car_bookings_status ON car_bookings(status);
+  CREATE INDEX IF NOT EXISTS idx_leave_requests_status_user ON leave_requests(status, user_id);
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER DEFAULT 0;
+  ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP;
 `).catch(() => {});
 
 // Start schedulers
@@ -119,7 +125,13 @@ const authLimiter = rateLimit({
 
 // CORS configuration
 app.use(cors({
-  origin: ['http://172.30.101.52:8080', 'http://172.30.101.52:3000', 'http://172.30.101.52', 'http://localhost:3001', 'http://localhost:3000', 'http://localhost', 'http://127.0.0.1:8080', 'http://127.0.0.1:3000', 'http://127.0.0.1'],
+  origin: [
+    // production (TLS ผ่าน nginx-ssl-proxy port 3000)
+    'https://172.30.101.52:3000', 'https://61.91.51.126:3000', 'https://172.30.101.52',
+    // dev / legacy http
+    'http://172.30.101.52:8080', 'http://172.30.101.52:3000', 'http://172.30.101.52',
+    'http://localhost:3001', 'http://localhost:3000', 'http://localhost', 'http://127.0.0.1:8080', 'http://127.0.0.1:3000', 'http://127.0.0.1'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -128,8 +140,8 @@ app.use(cors({
 app.use(express.json({ limit: '200mb' }));
 app.use(express.urlencoded({ extended: true, limit: '200mb' }));
 
-// Static files - serve uploads folder
-app.use('/uploads', express.static('uploads'));
+// Static files - serve uploads folder (ต้องยืนยันตัวตน — รองรับ ?token= สำหรับ <a>/<img> links)
+app.use('/uploads', verifyToken, express.static('uploads'));
 
 // Health check endpoint
 app.get("/health", async (req, res) => {
@@ -155,7 +167,21 @@ app.get("/api/server-time", async (req, res) => {
   }
 });
 // Routes - Auth routes ไม่ต้องใช้ middleware (เพราะเป็น login)
+// Forgot-password: limiter แบบเข้ม (นับ request สำเร็จด้วย) กันยิงรีเซ็ตรหัสผ่านคนอื่นเป็นวง
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'พยายามรีเซ็ตรหัสผ่านหลายครั้งเกินไป กรุณาลองใหม่ภายหลัง',
+  skipSuccessfulRequests: false
+});
+app.use('/api/auth/forgot-password', forgotPasswordLimiter);
 app.use('/api/auth', authLimiter, authRoutes);
+
+// Endpoint ที่ยิง notification/ดึงข้อมูลภายนอก — จำกัดเป็นพิเศษ กันสแปม Teams/ERP
+const actionLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: 'เรียกใช้งานบ่อยเกินไป กรุณาลองใหม่ภายหลัง' });
+app.use('/api/daily-work/check-missing', actionLimiter);
+app.use('/api/daily-work/trigger-workflow-summary', actionLimiter);
+app.use('/api/erp-sync/preview', actionLimiter);
 
 // Protected routes - ใช้ verifyToken middleware ทั้งหมด
 app.use('/api/leave', verifyToken, leaveRoutes);
@@ -176,9 +202,14 @@ app.use('/api/sales-visits', verifyToken, salesVisitsRoutes);
 // Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Server Error:', error);
-  res.status(500).json({
+  // payload เกินขนาด (413) ต้องบอกผู้ใช้ตรง ๆ ไม่ใช่ 500 กลบหมด
+  const isTooLarge = error.type === 'entity.too.large' || error.statusCode === 413 || error.status === 413;
+  const status = isTooLarge ? 413 : (error.status || error.statusCode || 500);
+  res.status(status).json({
     success: false,
-    error: error.message,
+    error: isTooLarge
+      ? 'ข้อมูล/ไฟล์ที่ส่งมาใหญ่เกิน 200MB กรุณาลดจำนวนหรือขนาดไฟล์'
+      : error.message,
     stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
   });
 });

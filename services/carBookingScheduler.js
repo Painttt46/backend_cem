@@ -141,7 +141,7 @@ async function checkAndUpdateBookingStatus() {
       `);
 
       const now = new Date();
-      const activeBooking = result.rows.find(r => r.status === 'active');
+      let activeBooking = result.rows.find(r => r.status === 'active');
 
       // Auto-return: active booking ที่ถึงเวลาคืนที่ตั้งไว้ตอนจอง → ปิดรายการให้เอง
       // ปลดล็อกรถให้คนถัดไปจองได้ทันที ไม่ต้องมาคอยแจ้งคืน (Teams จะแจ้งแทน)
@@ -175,16 +175,19 @@ async function checkAndUpdateBookingStatus() {
             ...activeBooking,
             return_time: activeBooking.expected_return_time
           });
+          // active state เปลี่ยนแล้ว — ไม่ใช้ค่าเก่าไปตัดสิน pending ใน tick นี้
+          activeBooking = null;
         }
       }
       
-      // Cancel pending bookings that conflict with active booking
+      // Cancel pending bookings that conflict with active booking (เทียบทะเบียนรถเดียวกันเท่านั้น)
       if (activeBooking) {
         const activeBorrowDate = new Date(activeBooking.selected_date);
         activeBorrowDate.setHours(0, 0, 0, 0);
         
         const conflictingPending = result.rows.filter(record => {
           if (record.status !== 'pending') return false;
+          if (record.license !== activeBooking.license) return false; // กันยกเลิกข้ามคันรถ
           
           const pendingDate = new Date(record.selected_date);
           pendingDate.setHours(0, 0, 0, 0);
@@ -204,7 +207,8 @@ async function checkAndUpdateBookingStatus() {
         });
         
         for (const pending of conflictingPending) {
-          await pool.query('DELETE FROM car_bookings WHERE id = $1', [pending.id]);
+          // เก็บประวัติไว้ — ยกเลิกแทนการลบถาวร
+          await pool.query(`UPDATE car_bookings SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = 'pending'`, [pending.id]);
           await sendTeamsNotification('overdue_cancel', {
             ...pending,
             cancellation_reason: `รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า`
@@ -236,7 +240,7 @@ async function checkAndUpdateBookingStatus() {
             `, [record.id, record.license, record.selected_date]);
             
             for (const dup of duplicates.rows) {
-              await pool.query('DELETE FROM car_bookings WHERE id = $1', [dup.id]);
+              await pool.query(`UPDATE car_bookings SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = 'pending'`, [dup.id]);
               await sendTeamsNotification('auto_cancel_duplicate', {
                 ...dup,
                 reason: `มีการใช้รถจริงในวันเดียวกัน (Ticket ID: ${record.id})`

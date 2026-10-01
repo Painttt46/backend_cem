@@ -131,17 +131,25 @@ router.put('/:id', async (req, res) => {
 
 // Delete task
 router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
     
-    const oldResult = await pool.query('SELECT task_name, so_number FROM tasks WHERE id = $1', [id]);
+    const oldResult = await client.query('SELECT task_name, so_number FROM tasks WHERE id = $1', [id]);
     const oldData = oldResult.rows[0];
     
-    await pool.query('DELETE FROM daily_work_records WHERE task_id = $1', [id]);
-    await pool.query('DELETE FROM task_steps WHERE task_id = $1', [id]);
-    await pool.query('DELETE FROM car_bookings WHERE task_id = $1', [id]);
-    
-    const result = await pool.query('DELETE FROM tasks WHERE id = $1 RETURNING *', [id]);
+    if (!oldData) {
+      client.release();
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    // ลบทั้งชุดใน transaction เดียว — กันลบครึ่งทางแล้วข้อมูลเสียหาย
+    await client.query('BEGIN');
+    await client.query('DELETE FROM daily_work_records WHERE task_id = $1', [id]);
+    await client.query('DELETE FROM task_steps WHERE task_id = $1', [id]);
+    await client.query('DELETE FROM car_bookings WHERE task_id = $1', [id]);
+    const result = await client.query('DELETE FROM tasks WHERE id = $1 RETURNING *', [id]);
+    await client.query('COMMIT');
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });
@@ -159,8 +167,11 @@ router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
     
     res.json({ message: 'Task deleted successfully' });
   } catch (error) {
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
     console.error('Error deleting task:', error);
     res.status(500).json({ error: 'Failed to delete task' });
+  } finally {
+    client.release();
   }
 });
 
