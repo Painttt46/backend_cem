@@ -1,4 +1,5 @@
 import express from 'express';
+import { runOnce } from '../utils/runOnce.js';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { verifyToken, requireRole } from '../middleware/auth.js';
@@ -6,16 +7,20 @@ import { sendPendingLeaveReminders } from '../services/leaveReminderService.js';
 
 const router = express.Router();
 
+// เพิ่มคอลัมน์ color ให้ตารางเก่า — รันครั้งเดียวต่อโปรเซส (เดิมรัน ALTER TABLE ซ้ำทุกครั้งที่เปิดหน้าที่ดึงหมวดหมู่/สถานะ)
+const ensureCategoryColor = runOnce(async () => {
+  await pool.query(`ALTER TABLE task_categories ADD COLUMN IF NOT EXISTS color VARCHAR(20)`);
+});
+const ensureStatusColor = runOnce(async () => {
+  await pool.query(`ALTER TABLE work_statuses ADD COLUMN IF NOT EXISTS color VARCHAR(20)`);
+});
+
 // ========== TASK CATEGORIES ==========
 
 // GET all categories
 router.get('/categories', async (req, res) => {
   try {
-    // Add color column if not exists
-    await pool.query(`
-      ALTER TABLE task_categories
-      ADD COLUMN IF NOT EXISTS color VARCHAR(20)
-    `);
+    await ensureCategoryColor();
 
     const result = await pool.query(
       'SELECT * FROM task_categories ORDER BY sort_order, id'
@@ -31,11 +36,7 @@ router.get('/categories', async (req, res) => {
 router.post('/categories', requireRole('admin', 'superadmin'), async (req, res) => {
   const { label, value, icon, color } = req.body;
   try {
-    // Add color column if not exists
-    await pool.query(`
-      ALTER TABLE task_categories
-      ADD COLUMN IF NOT EXISTS color VARCHAR(20)
-    `);
+    await ensureCategoryColor();
 
     const maxOrder = await pool.query('SELECT MAX(sort_order) as max FROM task_categories');
     const sortOrder = (maxOrder.rows[0].max || 0) + 1;
@@ -127,10 +128,7 @@ router.put('/categories/update-labels', requireRole('admin', 'superadmin'), asyn
 // PUT update category colors (migration)
 router.put('/categories/update-colors', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
-    await pool.query(`
-      ALTER TABLE task_categories
-      ADD COLUMN IF NOT EXISTS color VARCHAR(20)
-    `);
+    await ensureCategoryColor();
 
     const colors = ['#6366f1', '#14b8a6', '#f97316', '#a855f7', '#06b6d4', '#84cc16', '#d946ef', '#0ea5e9', '#22c55e', '#eab308'];
     const result = await pool.query('SELECT * FROM task_categories WHERE color IS NULL ORDER BY id');
@@ -155,11 +153,7 @@ router.put('/categories/update-colors', requireRole('admin', 'superadmin'), asyn
 // GET all statuses
 router.get('/statuses', async (req, res) => {
   try {
-    // Add color column if not exists
-    await pool.query(`
-      ALTER TABLE work_statuses
-      ADD COLUMN IF NOT EXISTS color VARCHAR(20)
-    `);
+    await ensureStatusColor();
 
     const result = await pool.query(
       'SELECT * FROM work_statuses ORDER BY sort_order, id'
@@ -175,11 +169,7 @@ router.get('/statuses', async (req, res) => {
 router.post('/statuses', requireRole('admin', 'superadmin'), async (req, res) => {
   const { label, value, icon, color } = req.body;
   try {
-    // Add color column if not exists
-    await pool.query(`
-      ALTER TABLE work_statuses
-      ADD COLUMN IF NOT EXISTS color VARCHAR(20)
-    `);
+    await ensureStatusColor();
 
     const maxOrder = await pool.query('SELECT MAX(sort_order) as max FROM work_statuses');
     const sortOrder = (maxOrder.rows[0].max || 0) + 1;
@@ -243,10 +233,7 @@ router.put('/statuses/reorder', requireRole('admin', 'superadmin'), async (req, 
 // PUT update status colors (migration)
 router.put('/statuses/update-colors', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
-    await pool.query(`
-      ALTER TABLE work_statuses
-      ADD COLUMN IF NOT EXISTS color VARCHAR(20)
-    `);
+    await ensureStatusColor();
 
     const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
     const result = await pool.query('SELECT * FROM work_statuses WHERE color IS NULL ORDER BY id');
@@ -270,7 +257,7 @@ router.put('/statuses/update-colors', requireRole('admin', 'superadmin'), async 
 // ========== LEAVE APPROVAL SETTINGS ==========
 
 // Create table if not exists
-async function ensureLeaveApprovalTable() {
+const ensureLeaveApprovalTable = runOnce(async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS leave_approval_settings (
       id SERIAL PRIMARY KEY,
@@ -292,7 +279,7 @@ async function ensureLeaveApprovalTable() {
     ADD COLUMN IF NOT EXISTS department_ids TEXT[] DEFAULT '{}',
     ADD COLUMN IF NOT EXISTS position_ids TEXT[] DEFAULT '{}'
   `);
-}
+});
 
 // GET leave approval settings
 router.get('/leave-approval', async (req, res) => {
@@ -381,7 +368,7 @@ router.put('/leave-approval/:level/:userId', requireRole('admin', 'superadmin'),
 // ========== ROLE WORK HOURS ==========
 
 // Create table if not exists
-async function ensureRoleWorkHoursTable() {
+const ensureRoleWorkHoursTable = runOnce(async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS role_work_hours (
       id SERIAL PRIMARY KEY,
@@ -394,7 +381,7 @@ async function ensureRoleWorkHoursTable() {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
-}
+});
 
 // GET all role work hours
 router.get('/role-work-hours', async (req, res) => {
@@ -467,7 +454,7 @@ router.delete('/role-work-hours/:role', requireRole('admin', 'superadmin'), asyn
 
 // ========== USER WORK HOURS ==========
 
-async function ensureUserWorkHoursTable() {
+const ensureUserWorkHoursTable = runOnce(async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_work_hours (
       id SERIAL PRIMARY KEY,
@@ -480,7 +467,7 @@ async function ensureUserWorkHoursTable() {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
-}
+});
 
 // GET all user work hours (with user info)
 router.get('/user-work-hours', async (req, res) => {
@@ -564,7 +551,7 @@ router.get('/positions', verifyToken, async (req, res) => {
 
 // ========== WORKFLOW TEMPLATES ==========
 
-const ensureTemplateTable = async () => {
+const ensureTemplateTable = runOnce(async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS workflow_templates (
       id SERIAL PRIMARY KEY,
@@ -575,7 +562,7 @@ const ensureTemplateTable = async () => {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
-};
+});
 
 router.get('/workflow-templates', async (req, res) => {
   try {

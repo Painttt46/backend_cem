@@ -1,4 +1,5 @@
 import express from 'express';
+import { DEFAULT_LEAVE_QUOTAS } from '../config/leaveDefaults.js';
 import pool from '../config/database.js';
 import bcrypt from 'bcrypt';
 import { verifyToken, requireRole } from '../middleware/auth.js';
@@ -60,11 +61,7 @@ router.post('/', requireRole('admin', 'superadmin'), async (req, res) => {
     
     // Initialize leave quotas for new user
     const currentYear = new Date().getFullYear();
-    const defaultQuotas = [
-      { leave_type: 'sick', annual_quota: 30 },
-      { leave_type: 'personal', annual_quota: 3 },
-      { leave_type: 'vacation', annual_quota: 0 }
-    ];
+    const defaultQuotas = DEFAULT_LEAVE_QUOTAS;
 
     for (const quota of defaultQuotas) {
       await pool.query(`
@@ -113,8 +110,9 @@ router.put('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
       return res.status(403).json({ error: 'เฉพาะ superadmin เท่านั้นที่มอบสิทธิ์ superadmin ได้' });
     }
 
-    let values = [username, firstname, lastname, role, email, phone, employee_id, position, department, is_active !== false, nickname];
-    let query = 'UPDATE users SET username = $1, firstname = $2, lastname = $3, role = $4, email = $5, phone = $6, employee_id = $7, position = $8, department = $9, is_active = $10, nickname = $11';
+    // ไม่ส่ง is_active มา = คงค่าเดิม (เดิมกลายเป็น true ทำให้แก้ข้อมูลแล้วบัญชีที่ปิดไว้ถูกเปิดกลับมา)
+    let values = [username, firstname, lastname, role, email, phone, employee_id, position, department, is_active === undefined ? null : is_active !== false, nickname];
+    let query = 'UPDATE users SET username = $1, firstname = $2, lastname = $3, role = $4, email = $5, phone = $6, employee_id = $7, position = $8, department = $9, is_active = COALESCE($10::boolean, is_active), nickname = $11';
 
     if (password) {
       // เข้ารหัส password ก่อนบันทึกเสมอ (เดิมบั๊ก: เก็บ plain text ทำให้ login ไม่ได้)

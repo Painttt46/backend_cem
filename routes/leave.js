@@ -1,19 +1,68 @@
 import express from 'express';
+import { DEFAULT_LEAVE_QUOTAS } from '../config/leaveDefaults.js';
+import { TEAMS_WEBHOOKS } from '../config/teams.js';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
 import { sendLeaveNotificationEmail } from '../services/emailService.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { requireRole } from '../middleware/auth.js';
+import { removeFilesIfUnreferenced } from '../utils/fileCleanup.js';
+import { runOnce } from '../utils/runOnce.js';
 
 const router = express.Router();
 
-async function ensureUsedDaysNumeric() {
+// DDL ที่ต้องรับประกันว่ามีก่อนใช้งาน — รันครั้งเดียวต่อโปรเซส (ดู utils/runOnce.js)
+const ensureUsedDaysNumeric = runOnce(async () => {
   await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS used_days NUMERIC(10,4) DEFAULT 0`);
   await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN used_days SET DEFAULT 0`);
   await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN used_days TYPE NUMERIC(10,4) USING COALESCE(used_days, 0)::numeric`);
   await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN annual_quota TYPE NUMERIC(10,4) USING COALESCE(annual_quota, 0)::numeric`);
-}
+});
+
+const ensureQuotaDisplayColumns = runOnce(async () => {
+  await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS color VARCHAR(20)`);
+  await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS advance_days INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);
+});
+
+const ensureHolidaysTable = runOnce(async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS holidays (
+      id SERIAL PRIMARY KEY,
+      holiday_date DATE NOT NULL UNIQUE,
+      description VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+});
+
+const ensureCancelColumns = runOnce(async () => {
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancel_reason TEXT`);
+});
+
+// ขยายขนาด status column (รองรับสถานะ pending_level2 ฯลฯ)
+const ensureStatusWide = runOnce(async () => {
+  await pool.query(`ALTER TABLE leave_requests ALTER COLUMN status TYPE VARCHAR(50)`);
+});
+
+const ensureApprovalColumns = runOnce(async () => {
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT`);
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1_id INTEGER`);
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2_id INTEGER`);
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_by TEXT`);
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_level INTEGER`);
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS reject_reason TEXT`);
+});
+
+// เตรียม schema ตั้งแต่สตาร์ท (คำขอแรกจึงไม่ต้องรอ) — ล้มเหลวได้ เพราะแต่ละ handler จะเรียก ensure ซ้ำเมื่อใช้งานจริง
+Promise.all([
+  ensureUsedDaysNumeric(), ensureQuotaDisplayColumns(), ensureHolidaysTable(),
+  ensureCancelColumns(), ensureStatusWide(), ensureApprovalColumns()
+]).catch((error) => console.error('[leave] schema setup deferred:', error.message));
 
 // Get approvers by level and send email notification
 async function notifyApprovers(level, leaveData, notificationType) {
@@ -161,7 +210,7 @@ router.get('/is-level2-approver/:userId', async (req, res) => {
 
 // Teams notification function
 async function sendTeamsNotification(type, data) {
-  const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/5a51a63928354152a300aa86dd237a77/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=RTyDkT4FoSgIlqjbLVUx7hkJgUl4DODurrfM1f5howw';
+  const webhookUrl = TEAMS_WEBHOOKS.leave;
 
   try {
     const message = await createLeaveMessage(type, data);
@@ -210,11 +259,7 @@ async function resetLeaveQuotasForNewYear() {
     // Get all active users
     const usersResult = await pool.query('SELECT id FROM users WHERE is_active = true');
 
-    const defaultQuotas = [
-      { leave_type: 'sick', annual_quota: 30 },
-      { leave_type: 'personal', annual_quota: 3 },
-      { leave_type: 'vacation', annual_quota: 0 }
-    ];
+    const defaultQuotas = DEFAULT_LEAVE_QUOTAS;
 
     for (const user of usersResult.rows) {
       for (const quota of defaultQuotas) {
@@ -251,11 +296,7 @@ startQuotaResetScheduler();
 
 // Initialize leave quota for user (call when creating new user)
 async function initializeUserLeaveQuota(userId) {
-  const defaultQuotas = [
-    { leave_type: 'sick', annual_quota: 30 },
-    { leave_type: 'personal', annual_quota: 3 },
-    { leave_type: 'vacation', annual_quota: 0 }
-  ];
+  const defaultQuotas = DEFAULT_LEAVE_QUOTAS;
 
   for (const quota of defaultQuotas) {
     await pool.query(`
@@ -723,9 +764,7 @@ router.get('/leave-types', async (req, res) => {
     const currentYear = new Date().getFullYear();
 
     // Add columns if not exists
-    await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS color VARCHAR(20)`);
-    await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS advance_days INTEGER DEFAULT 0`);
-    await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);
+    await ensureQuotaDisplayColumns();
 
     const result = await pool.query(`
       SELECT leave_type, 
@@ -903,15 +942,7 @@ router.delete('/leave-types/:leaveType', async (req, res) => {
 // Get all holidays
 router.get('/holidays', async (req, res) => {
   try {
-    // Create table if not exists
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS holidays (
-        id SERIAL PRIMARY KEY,
-        holiday_date DATE NOT NULL UNIQUE,
-        description VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+    await ensureHolidaysTable();
 
     const { year } = req.query;
     let query = 'SELECT * FROM holidays';
@@ -936,15 +967,7 @@ router.post('/holidays', async (req, res) => {
   try {
     const { dates, description } = req.body;
 
-    // Create table if not exists
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS holidays (
-        id SERIAL PRIMARY KEY,
-        holiday_date DATE NOT NULL UNIQUE,
-        description VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+    await ensureHolidaysTable();
 
     const added = [];
     for (const date of dates) {
@@ -981,9 +1004,8 @@ router.delete('/holidays/:id', async (req, res) => {
 // Get all leave requests
 router.get('/', async (req, res) => {
   try {
-    // Ensure new cancellation columns exist before selecting
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMP`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancel_reason TEXT`);
+    // columns ของการขอยกเลิกต้องมีก่อน select (รันครั้งเดียวต่อโปรเซส)
+    await ensureCancelColumns();
 
     const result = await pool.query(`
       SELECT 
@@ -1016,15 +1038,30 @@ router.post('/', async (req, res) => {
   const {
     leave_type, start_datetime, end_datetime, total_days, reason,
     has_delegation, delegate_name, delegate_position, delegate_department,
-    delegate_contact, work_details, attachments
+    delegate_contact, work_details, attachments, user_id: targetUserId
   } = req.body;
 
   try {
-    // ใช้ user_id จาก token ที่ยืนยันแล้วเท่านั้น (IDOR) — ไม่รับจาก body
-    const userId = req.user?.id;
+    // ตัวตนมาจาก token ที่ยืนยันแล้วเท่านั้น (กัน IDOR)
+    let userId = req.user?.id;
 
     if (!userId || !/^\d+$/.test(String(userId))) {
       return res.status(401).json({ error: 'Invalid user ID' });
+    }
+
+    // ยื่นใบลาแทนพนักงาน (ลาย้อนหลัง) — อนุญาตเฉพาะผู้อนุมัติชั้น 2 ของพนักงานคนนั้น (หรือ admin/superadmin)
+    // เดิมใช้ id จาก token อย่างเดียวทำให้ใบลาที่ HR ยื่นแทนถูกบันทึกเป็นของ HR เอง
+    let filedByName = null;
+    if (targetUserId && String(targetUserId) !== String(userId)) {
+      if (!/^\d+$/.test(String(targetUserId))) {
+        return res.status(400).json({ error: 'Invalid target user ID' });
+      }
+      const allowed = await canUserApprove(userId, targetUserId, 2);
+      if (!allowed) {
+        return res.status(403).json({ error: 'คุณไม่มีสิทธิ์ยื่นใบลาแทนพนักงานคนนี้' });
+      }
+      filedByName = `${req.user.firstname || ''} ${req.user.lastname || ''}`.trim();
+      userId = Number(targetUserId);
     }
 
     // ดึงข้อมูล user จาก database
@@ -1074,8 +1111,8 @@ router.post('/', async (req, res) => {
       action: 'CREATE',
       tableName: 'leave_requests',
       recordId: leaveData.id,
-      recordName: `${leaveData.employee_name} - ${getLeaveTypeLabel(leave_type)}`,
-      newData: { leave_type, start_datetime, end_datetime, total_days, reason }
+      recordName: `${leaveData.employee_name} - ${getLeaveTypeLabel(leave_type)}${filedByName ? ` (ยื่นแทนโดย ${filedByName})` : ''}`,
+      newData: { leave_type, start_datetime, end_datetime, total_days, reason, filed_by: filedByName }
     });
 
     // Send email notification to level 1 approvers (HR)
@@ -1098,15 +1135,8 @@ router.put('/:id/status', async (req, res) => {
 
   try {
     await ensureUsedDaysNumeric();
-    // Ensure columns exist first
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approval_level INTEGER DEFAULT 0`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1 TEXT`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2 TEXT`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level1_id INTEGER`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS approved_by_level2_id INTEGER`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_by TEXT`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS rejected_level INTEGER`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS reject_reason TEXT`);
+    // Ensure columns exist first (รันครั้งเดียวต่อโปรเซส)
+    await ensureApprovalColumns();
 
     // Get leave request details
     const leaveRequest = await pool.query(`
@@ -1251,14 +1281,13 @@ router.put('/:id/status', async (req, res) => {
 
     // If rejecting previously approved leave
     if (status === 'rejected' && currentStatus === 'approved') {
-      const currentYear = new Date().getFullYear();
       const days = parseFloat(total_days) || 0;
 
       await pool.query(`
         UPDATE user_leave_quotas
         SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
         WHERE user_id = $2 AND leave_type = $3 AND year = $4
-      `, [days, user_id, leave_type, currentYear]);
+      `, [days, user_id, leave_type, new Date().getFullYear()]);
     }
 
     // Get updated data
@@ -1387,7 +1416,7 @@ router.delete('/:id', async (req, res) => {
 
     // ตรวจสอบคำขอลา
     const checkResult = await pool.query(`
-      SELECT l.user_id, l.status, l.leave_type, l.start_datetime, l.end_datetime, l.total_days, l.reason,
+      SELECT l.user_id, l.status, l.leave_type, l.start_datetime, l.end_datetime, l.total_days, l.reason, l.attachments,
         l.has_delegation, l.delegate_name, l.delegate_position, l.delegate_department, l.delegate_contact, l.work_details,
         u.firstname || ' ' || u.lastname as employee_name, u.position as employee_position
       FROM leave_requests l
@@ -1415,6 +1444,7 @@ router.delete('/:id', async (req, res) => {
       'DELETE FROM leave_requests WHERE id = $1 RETURNING *',
       [id]
     );
+    await removeFilesIfUnreferenced(leaveRequest.attachments);
 
     // แจ้ง Level 1 approvers ว่ามีการยกเลิกคำขอ
     try {
@@ -1460,12 +1490,9 @@ router.post('/:id/request-cancel', async (req, res) => {
       return res.status(400).json({ error: 'Cancellation already requested' });
     }
 
-    // เพิ่มคอลัมน์ถ้ายังไม่มี
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_requested_at TIMESTAMP`);
-    await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancel_reason TEXT`);
-    
-    // ขยายขนาด status column
-    await pool.query(`ALTER TABLE leave_requests ALTER COLUMN status TYPE VARCHAR(50)`);
+    // เพิ่มคอลัมน์ + ขยาย status column ถ้ายังไม่มี (รันครั้งเดียวต่อโปรเซส)
+    await ensureCancelColumns();
+    await ensureStatusWide();
 
     // อัปเดตสถานะเป็น cancel พร้อมเหตุผล
     await pool.query(
@@ -1506,7 +1533,7 @@ router.put('/:id/cancel-status', async (req, res) => {
 
     await ensureUsedDaysNumeric();
     const checkResult = await pool.query(
-      'SELECT id, user_id, status, leave_type, total_days, start_datetime, end_datetime, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, total_days, start_datetime, end_datetime, reason, attachments, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -1527,18 +1554,21 @@ router.put('/:id/cancel-status', async (req, res) => {
     }
 
     if (action === 'approve') {
-      // คืนโควต้า
-      const currentYear = new Date().getFullYear();
+      // คืนโควต้า — เฉพาะใบที่เคยอนุมัติครบแล้ว (มี approved_by_level2 = เคยถูกตัดโควตาตอนอนุมัติชั้น 2)
+      // ใบที่ขอยกเลิกตอนยัง pending_level2 ยังไม่เคยตัดโควตา จึงไม่ต้องคืน
       const days = parseFloat(leaveRequest.total_days) || 0;
 
-      await pool.query(`
-        UPDATE user_leave_quotas
-        SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
-        WHERE user_id = $2 AND leave_type = $3 AND year = $4
-      `, [days, leaveRequest.user_id, leaveRequest.leave_type, currentYear]);
+      if (days > 0 && leaveRequest.approved_by_level2) {
+        await pool.query(`
+          UPDATE user_leave_quotas
+          SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
+          WHERE user_id = $2 AND leave_type = $3 AND year = $4
+        `, [days, leaveRequest.user_id, leaveRequest.leave_type, new Date().getFullYear()]);
+      }
 
-      // ลบคำขอลาออกเลย
+      // ลบคำขอลาออกเลย + ไฟล์แนบ
       await pool.query('DELETE FROM leave_requests WHERE id = $1', [id]);
+      await removeFilesIfUnreferenced(leaveRequest.attachments);
 
       res.json({ message: 'Leave cancelled and deleted successfully' });
     } else {
@@ -1569,7 +1599,7 @@ router.delete('/:id/admin-reset', async (req, res) => {
     const approverId = req.user.id;
 
     const leaveResult = await pool.query(
-      'SELECT id, user_id, status, leave_type, start_datetime, end_datetime, reason, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, total_days, start_datetime, end_datetime, reason, attachments, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -1589,18 +1619,25 @@ router.delete('/:id/admin-reset', async (req, res) => {
     const currentYear = new Date().getFullYear();
     const days = parseFloat(leaveRequest.total_days) || 0;
 
-    // หากเคยตัดโควต้าจากการอนุมัติแล้ว ให้คืนโควต้า
-    if (days > 0 && (leaveRequest.status === 'approved' || leaveRequest.status === 'cancel' || leaveRequest.status === 'pending_level2')) {
-      const updateResult = await pool.query(`
+    // คืนโควต้าเฉพาะใบที่เคยถูกตัดโควต้าแล้วจริง = อนุมัติครบ 2 ชั้น (status approved)
+    // หรือขอยกเลิกจากใบที่อนุมัติครบแล้ว (status cancel + มี approved_by_level2)
+    // ใบที่ยัง pending/pending_level2 ยังไม่เคยตัดโควต้า — เดิมคืนให้ด้วยทำให้ used_days ของใบอื่นลดผิด
+    // (และเดิม query ไม่ได้ดึง total_days มา ทำให้ days เป็น 0 ไม่เคยคืนจริง)
+    const wasDeducted = leaveRequest.status === 'approved' ||
+      (leaveRequest.status === 'cancel' && !!leaveRequest.approved_by_level2);
+    let refundedDays = 0;
+    if (days > 0 && wasDeducted) {
+      await pool.query(`
         UPDATE user_leave_quotas
         SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
         WHERE user_id = $2 AND leave_type = $3 AND year = $4
-        RETURNING *
       `, [days, leaveRequest.user_id, leaveRequest.leave_type, currentYear]);
+      refundedDays = days;
     }
 
-    // ลบคำขอออกจากระบบ
+    // ลบคำขอออกจากระบบ + ไฟล์แนบ
     await pool.query('DELETE FROM leave_requests WHERE id = $1', [id]);
+    await removeFilesIfUnreferenced(leaveRequest.attachments);
 
     // Log audit
     await logAudit(req, {
@@ -1611,10 +1648,10 @@ router.delete('/:id/admin-reset', async (req, res) => {
       oldData: {
         ...leaveRequest
       },
-      newData: { deleted: true, quotaRefundedDays: days }
+      newData: { deleted: true, quotaRefundedDays: refundedDays }
     });
 
-    res.json({ message: 'ลบคำขอและคืนโควต้าการลาเรียบร้อยแล้ว' });
+    res.json({ message: refundedDays > 0 ? 'ลบคำขอและคืนโควต้าการลาเรียบร้อยแล้ว' : 'ลบคำขอเรียบร้อยแล้ว (ใบนี้ยังไม่เคยถูกตัดโควต้า จึงไม่มีโควต้าที่ต้องคืน)' });
   } catch (error) {
     console.error('[admin-reset] Error:', error);
     console.error('[admin-reset] Stack:', error.stack);

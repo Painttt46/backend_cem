@@ -75,17 +75,52 @@ const findFile = (filename) => {
   return searchInDir(uploadsDir);
 };
 
+// ลบไฟล์ที่อัปโหลดตามรายชื่อ (ใช้ตอนลบ record ที่แนบไฟล์ — กันไฟล์ค้างบนดิสก์)
+// รับเฉพาะชื่อไฟล์ (string) — ไฟล์จาก ERP ที่เก็บเป็น object/URL จะข้าม
+export const removeUploadedFiles = (files) => {
+  let list = files;
+  if (typeof list === 'string') {
+    try { list = JSON.parse(list); } catch { return 0; }
+  }
+  if (!Array.isArray(list)) return 0;
+  let removed = 0;
+  for (const name of list) {
+    if (typeof name !== 'string') continue;
+    try {
+      const filePath = findFile(name);
+      if (filePath) {
+        fs.unlinkSync(filePath);
+        removed++;
+      }
+    } catch (error) {
+      console.error('Failed to remove uploaded file:', name, error.message);
+    }
+  }
+  return removed;
+};
+
+// ลบไฟล์ตาม path เต็ม (ไฟล์ที่ multer เขียนไว้ครึ่งทางเมื่อการอัปถูกยกเลิก/ล้มเหลว)
+const removePaths = (paths) => {
+  for (const p of paths || []) {
+    try { fs.unlinkSync(p); } catch { /* ignore */ }
+  }
+};
+
 // Configure multer - dynamic destination
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const type = req.query.type || req.body.type || 'general';
     const uploadPath = getUploadPath(type);
+    req._uploadDir = uploadPath;
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-    cb(null, uniqueSuffix + '-' + originalName);
+    const finalName = uniqueSuffix + '-' + originalName;
+    // จำ path ไว้เพื่อลบทิ้งถ้าการอัปโหลดไม่จบ
+    (req._uploadedPaths = req._uploadedPaths || []).push(path.join(req._uploadDir, finalName));
+    cb(null, finalName);
   }
 });
 
@@ -107,8 +142,16 @@ const upload = multer({
 
 // Upload files
 router.post('/upload', (req, res) => {
+  // ผู้ใช้ปิดหน้า/รีเฟรช/เน็ตหลุดกลางทาง → response ไม่เคยส่งถึง client → ลบไฟล์ที่เขียนค้างไว้ครึ่งเดียว
+  // (ถ้าอัปสำเร็จ response ถูกส่งครบก่อนปิดการเชื่อมต่อ จึงไม่ลบ)
+  res.on('close', () => {
+    if (!res.writableFinished) removePaths(req._uploadedPaths);
+  });
+
   upload.array('files', 20)(req, res, async (err) => {
     if (err) {
+      // ล้มเหลว (ไฟล์ต้องห้าม/ใหญ่เกิน/เกินจำนวน) — ไฟล์ก่อนหน้าในชุดเดียวกันที่เขียนไปแล้วต้องไม่ค้าง
+      removePaths(req._uploadedPaths);
       console.error('Multer error:', err);
       let message = 'ไม่สามารถอัพโหลดไฟล์ได้ กรุณาตรวจสอบขนาด/จำนวนไฟล์';
       if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.code === 'LIMIT_FILE_COUNT') {

@@ -1,9 +1,10 @@
 import cron from 'node-cron';
+import { TEAMS_WEBHOOKS } from '../config/teams.js';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
 
 async function sendTeamsNotification(type, data) {
-  const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4bffff1623c14e5ba6d5247b4aa8f145/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TbXoIRcOZXL2QHHESf0jIDJ-JMr4jvh-XRovQya1_hM';
+  const webhookUrl = TEAMS_WEBHOOKS.car;
   
   try {
     const message = createCarBookingMessage(type, data);

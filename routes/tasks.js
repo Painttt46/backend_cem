@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { requireRole } from '../middleware/auth.js';
+import { removeFilesIfUnreferenced } from '../utils/fileCleanup.js';
 
 const router = express.Router();
 
@@ -135,13 +136,16 @@ router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const { id } = req.params;
     
-    const oldResult = await client.query('SELECT task_name, so_number FROM tasks WHERE id = $1', [id]);
-    const oldData = oldResult.rows[0];
-    
-    if (!oldData) {
-      client.release();
+    const oldResult = await client.query('SELECT task_name, so_number, files FROM tasks WHERE id = $1', [id]);
+    const { files: taskFiles, ...oldData } = oldResult.rows[0] || {};
+
+    // client.release() อยู่ใน finally แล้ว — ห้ามเรียกซ้ำตรงนี้ (เดิมทำให้ release สองรอบแล้ว throw)
+    if (!oldResult.rows[0]) {
       return res.status(404).json({ error: 'Task not found' });
     }
+
+    // ไฟล์แนบของงานรายวันที่จะถูกลบไปพร้อมโครงการ (เก็บชื่อไว้ก่อนลบ record)
+    const workFilesResult = await client.query('SELECT files FROM daily_work_records WHERE task_id = $1', [id]);
 
     // ลบทั้งชุดใน transaction เดียว — กันลบครึ่งทางแล้วข้อมูลเสียหาย
     await client.query('BEGIN');
@@ -155,16 +159,20 @@ router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
     
-    if (oldData) {
-      await logAudit(req, {
-        action: 'DELETE',
-        tableName: 'tasks',
-        recordId: parseInt(id),
-        recordName: oldData.task_name,
-        oldData
-      });
+    // ลบไฟล์แนบของโครงการออกจากดิสก์ (ลบหลัง COMMIT สำเร็จแล้วเท่านั้น)
+    await removeFilesIfUnreferenced(taskFiles);
+    for (const row of workFilesResult.rows) {
+      await removeFilesIfUnreferenced(row.files);
     }
-    
+
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'tasks',
+      recordId: parseInt(id),
+      recordName: oldData.task_name,
+      oldData: { ...oldData, files: taskFiles }
+    });
+
     res.json({ message: 'Task deleted successfully' });
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch { /* ignore */ }

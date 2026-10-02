@@ -6,6 +6,7 @@ import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { sendMailWithFallback } from '../services/emailService.js';
 import { requireRole } from '../middleware/auth.js';
+import { notifyNextStep } from '../services/workflowNotificationService.js';
 
 const router = express.Router();
 
@@ -336,7 +337,7 @@ router.put('/:id', async (req, res) => {
     `, [vendor_name, item_description, amount !== undefined ? amountVal : old.amount, po_number, order_date !== undefined ? order_date : old.order_date, delivery_date !== undefined ? delivery_date : old.delivery_date, status, notes, assigned_user_id !== undefined ? assigned_user_id : old.assigned_user_id, assigned_user_name, JSON.stringify(statusHistory), typeof notify_pm === 'boolean' ? notify_pm : null, id]);
 
     // Update parent step status based on items
-    await updateStepStatus(old.step_id);
+    await updateStepStatus(old.step_id, req.user?.id || null);
 
     await logAudit(req, {
       action: 'UPDATE',
@@ -402,7 +403,7 @@ router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
     await pool.query('DELETE FROM procurement_items WHERE id = $1', [id]);
 
     // Update parent step status
-    await updateStepStatus(old.step_id);
+    await updateStepStatus(old.step_id, req.user?.id || null);
 
     await logAudit(req, {
       action: 'DELETE',
@@ -523,32 +524,70 @@ async function notifyProcurementStatusChange({ item, oldStatus, newStatus, chang
 }
 
 // Helper: Update step status based on procurement items
-async function updateStepStatus(stepId) {
+// ใช้ logic เดียวกับ PUT /api/task-steps/:id: บันทึกผู้ปิดขั้นตอน, ซิงก์สถานะโครงการ
+// (ทุกขั้นตอนเสร็จ → โครงการ completed / ขั้นตอนถอยกลับ → โครงการกลับสถานะก่อนหน้า) และแจ้งขั้นตอนถัดไป
+async function updateStepStatus(stepId, userId = null) {
   const itemsResult = await pool.query('SELECT status FROM procurement_items WHERE step_id = $1', [stepId]);
   const items = itemsResult.rows;
 
   if (items.length === 0) return;
 
+  const stepResult = await pool.query(
+    'SELECT id, task_id, step_order, step_name, status FROM task_steps WHERE id = $1',
+    [stepId]
+  );
+  const step = stepResult.rows[0];
+  if (!step) return;
+  const wasCompleted = step.status === 'completed';
+
   const allCompleted = items.every(i => i.status === 'completed');
-  const hasInProgress = items.some(i => i.status !== 'pending' && i.status !== 'completed');
   const hasAnyStarted = items.some(i => i.status !== 'pending');
 
+  // ขั้นตอนที่เคยเสร็จแล้วแต่มีรายการถูกแก้กลับ/เพิ่มใหม่ ต้องถอยกลับเป็น in_progress ด้วย (เดิมค้างเป็น completed)
   let newStatus = null;
   if (allCompleted) {
     newStatus = 'completed';
-  } else if (hasInProgress || hasAnyStarted) {
+  } else if (hasAnyStarted || wasCompleted) {
     newStatus = 'in_progress';
   }
 
-  if (newStatus) {
-    if (newStatus === 'completed') {
-      await pool.query(`
-        UPDATE task_steps SET status = $1, completed_at = NOW(), updated_at = NOW() WHERE id = $2
-      `, [newStatus, stepId]);
-    } else {
-      await pool.query(`
-        UPDATE task_steps SET status = $1, updated_at = NOW() WHERE id = $2
-      `, [newStatus, stepId]);
+  if (!newStatus || newStatus === step.status) return;
+
+  let completedAt = null;
+  if (newStatus === 'completed') {
+    completedAt = new Date();
+    await pool.query(`
+      UPDATE task_steps SET status = $1, completed_at = $2, completed_by = COALESCE($3, completed_by), updated_at = NOW() WHERE id = $4
+    `, [newStatus, completedAt, userId, stepId]);
+  } else if (wasCompleted) {
+    await pool.query(`
+      UPDATE task_steps SET status = $1, completed_at = NULL, completed_by = NULL, updated_at = NOW() WHERE id = $2
+    `, [newStatus, stepId]);
+  } else {
+    await pool.query(`
+      UPDATE task_steps SET status = $1, updated_at = NOW() WHERE id = $2
+    `, [newStatus, stepId]);
+  }
+
+  // ซิงก์สถานะโครงการ (เหมือน taskSteps PUT)
+  const allSteps = await pool.query('SELECT status FROM task_steps WHERE task_id = $1', [step.task_id]);
+  const allStepsCompleted = allSteps.rows.length > 0 && allSteps.rows.every(s => s.status === 'completed');
+  const taskResult = await pool.query('SELECT status, previous_status FROM tasks WHERE id = $1', [step.task_id]);
+  const currentTaskStatus = taskResult.rows[0]?.status;
+
+  if (allStepsCompleted && currentTaskStatus !== 'completed') {
+    await pool.query('UPDATE tasks SET previous_status = status, status = $1 WHERE id = $2', ['completed', step.task_id]);
+  } else if (!allStepsCompleted && currentTaskStatus === 'completed') {
+    const prevStatus = taskResult.rows[0]?.previous_status || 'in_progress';
+    await pool.query('UPDATE tasks SET status = $1 WHERE id = $2', [prevStatus, step.task_id]);
+  }
+
+  // แจ้งขั้นตอนถัดไปเมื่อขั้นตอนนี้เพิ่งเสร็จ
+  if (newStatus === 'completed' && !wasCompleted) {
+    try {
+      await notifyNextStep(step.task_id, step.step_order, step.step_name, completedAt);
+    } catch (error) {
+      console.error('Error notifying next step:', error);
     }
   }
 }

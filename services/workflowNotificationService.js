@@ -1,4 +1,5 @@
 import pool from '../config/database.js';
+import { TEAMS_WEBHOOKS } from '../config/teams.js';
 import cron from 'node-cron';
 import dotenv from 'dotenv';
 import { sendMailWithFallback } from './emailService.js';
@@ -535,7 +536,7 @@ export async function notifyNextStep(taskId, completedStepOrder, completedStepNa
 
 // ส่งสรุป workflow ไป MS Teams
 async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null) {
-  const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/772efa7dba4846248602bec0f4ec9adf/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=u_vIlVoRaHZOEJ-gEE6SXcdJ-HZPpp3KN6-y1WSoGRI';
+  const webhookUrl = TEAMS_WEBHOOKS.workSummary;
   
   try {
     const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });

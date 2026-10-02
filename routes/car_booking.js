@@ -1,4 +1,5 @@
 import express from 'express';
+import { TEAMS_WEBHOOKS } from '../config/teams.js';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
 import { logAudit } from '../utils/auditHelper.js';
@@ -36,7 +37,7 @@ async function canManageBooking(req, id) {
 
 // Teams notification function
 async function sendTeamsNotification(type, data) {
-  const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4bffff1623c14e5ba6d5247b4aa8f145/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TbXoIRcOZXL2QHHESf0jIDJ-JMr4jvh-XRovQya1_hM';
+  const webhookUrl = TEAMS_WEBHOOKS.car;
   
   try {
     const message = createCarBookingMessage(type, data);
@@ -225,108 +226,13 @@ router.get('/latest-fuel', async (req, res) => {
 });
 
 
-// Process pending bookings - update status, cancel conflicts, notify (fire-and-forget)
-async function processBookingStatuses() {
-  try {
-    await setTimezone();
-    const now = new Date();
-
-    const activeResult = await pool.query(`SELECT id, license, selected_date, return_date FROM car_bookings WHERE status = 'active' LIMIT 1`);
-    const activeBooking = activeResult.rows[0] || null;
-
-    const pendingResult = await pool.query(`
-      SELECT c.id, c.selected_date, c.time, c.license, c.location, c.project, c.discription,
-             c.colleagues, c.images, c.user_id, c.status, c.return_name, c.return_location,
-             c.return_time, c.return_date, c.type, c.fuel_level_borrow, c.fuel_level_return,
-             c.easy_pass_borrow, c.easy_pass_return,
-             u.firstname || ' ' || u.lastname as name
-      FROM car_bookings c
-      LEFT JOIN users u ON c.user_id = u.id
-      WHERE c.status = 'pending'
-      ORDER BY c.selected_date, c.time
-    `);
-
-    // คันรถที่มี active อยู่ — จัดสถานะเป็นรายคัน (รองรับหลายคัน ไม่ assume active เดียวทั้ง fleet)
-    const activeLicenses = new Set(activeBooking ? [activeBooking.license] : []);
-
-    for (const record of pendingResult.rows) {
-      const [hour, minute] = record.time.split(':').map(Number);
-      const borrowDateTime = new Date(record.selected_date);
-      borrowDateTime.setHours(hour, minute, 0, 0);
-      if (now < borrowDateTime) continue;
-
-      if (!activeLicenses.has(record.license)) {
-        await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
-        sendTeamsNotification('active', { ...record, status: 'active' }).catch(() => {});
-        activeLicenses.add(record.license);
-
-        const dupes = await pool.query(
-          `SELECT c.id, c.project, c.license, c.selected_date, c.time, c.user_id,
-                  u.firstname || ' ' || u.lastname as name
-           FROM car_bookings c LEFT JOIN users u ON c.user_id = u.id
-           WHERE c.id != $1 AND c.license = $2 AND c.selected_date = $3 AND c.status = 'pending'`,
-          [record.id, record.license, record.selected_date]
-        );
-        if (dupes.rows.length > 0) {
-          await pool.query(
-            `UPDATE car_bookings SET status = 'cancelled', updated_at = NOW() WHERE id != $1 AND license = $2 AND selected_date = $3 AND status = 'pending'`,
-            [record.id, record.license, record.selected_date]
-          );
-          for (const d of dupes.rows) {
-            sendTeamsNotification('auto_cancel_duplicate', { ...d, reason: `มีการใช้รถจริงในวันเดียวกัน (Ticket ID: ${record.id})` }).catch(() => {});
-          }
-        }
-        continue;
-      }
-
-      // คันนี้มี active อยู่แล้ว — ยกเลิก pending ที่ค้างของ "คันเดียวกัน" เท่านั้น
-      const activeForLicense = activeBooking && activeBooking.license === record.license ? activeBooking : null;
-      if (!activeForLicense) continue;
-
-      const activeBorrowDate = new Date(activeForLicense.selected_date);
-      activeBorrowDate.setHours(0, 0, 0, 0);
-      const pendingDate = new Date(record.selected_date);
-      pendingDate.setHours(0, 0, 0, 0);
-
-      if (!activeForLicense.return_date && pendingDate >= activeBorrowDate) {
-        console.log('[processBookingStatuses] Cancelling pending booking:', {
-          pendingId: record.id,
-          pendingStatus: record.status,
-          pendingDate: pendingDate.toISOString(),
-          activeBookingId: activeForLicense.id,
-          activeBorrowDate: activeBorrowDate.toISOString(),
-          reason: 'รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า'
-        });
-
-        // เก็บประวัติ — ยกเลิก (ไม่ลบถาวร) เฉพาะการจอง pending เท่านั้น
-        const cancelResult = await pool.query(
-          `UPDATE car_bookings SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = $2 RETURNING id`, 
-          [record.id, 'pending']
-        );
-        
-        if (cancelResult.rows.length > 0) {
-          console.log('[processBookingStatuses] Successfully cancelled pending booking:', record.id);
-          sendTeamsNotification('overdue_cancel', {
-            ...record,
-            cancellation_reason: `รถยังไม่ถูกคืนจากการใช้งานก่อนหน้า (ใช้งานตั้งแต่ ${activeBorrowDate.toLocaleDateString('th-TH')})`
-          }).catch(() => {});
-        } else {
-          console.warn('[processBookingStatuses] No pending booking cancelled (may already be active or cancelled):', record.id);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('processBookingStatuses error:', error);
-  }
-}
-
 // Get all car booking records (lightweight - just fetch data)
 router.get('/', async (req, res) => {
   try {
     await setTimezone();
 
-    // Fire-and-forget: process status updates in background
-    processBookingStatuses().catch(() => {});
+    // การเปลี่ยนสถานะ (pending→active, ยกเลิกรายการซ้อน, คืนรถอัตโนมัติ) ทำโดย services/carBookingScheduler.js ทุก 5 วินาทีอยู่แล้ว
+    // เดิมหน้ารายการนี้ก็รันซ้ำอีกชุดทุกครั้งที่มีคนเปิดหน้า ทำให้แย่งกันเปลี่ยนสถานะและส่ง Teams ซ้ำ
 
     const result = await pool.query(`
       SELECT

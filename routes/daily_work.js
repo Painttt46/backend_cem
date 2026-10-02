@@ -1,9 +1,30 @@
 import express from 'express';
+import { TEAMS_WEBHOOKS } from '../config/teams.js';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
 import { logAudit } from '../utils/auditHelper.js';
+import { removeFilesIfUnreferenced } from '../utils/fileCleanup.js';
 
 const router = express.Router();
+
+// คำนวณชั่วโมงทำงานจากเวลาเริ่ม/จบ ("HH:MM" หรือ "HH:MM:SS") ให้ตรงกับสูตรที่หน้าลงงานใช้ตอนสร้างรายการ:
+// - ข้ามเที่ยงคืนได้ (เวลาจบน้อยกว่าเวลาเริ่ม = วันถัดไป)
+// - หักพักเที่ยง 12:00–13:00 เมื่อช่วงงานคร่อมเวลานั้น
+const calcTotalHours = (startTime, endTime) => {
+  const toMinutes = (t) => {
+    const [h, m] = String(t || '').split(':').map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+  };
+  const s = toMinutes(startTime);
+  let e = toMinutes(endTime);
+  if (s === null || e === null) return 0;
+  if (e <= s) e += 24 * 60;
+  let minutes = e - s;
+  // พักเที่ยง: หักส่วนที่ทับกับ 12:00–13:00 (นับเฉพาะวันแรก เหมือนฝั่งหน้าเว็บ)
+  const overlap = Math.min(e, 13 * 60) - Math.max(s, 12 * 60);
+  if (s < 13 * 60 && e > 12 * 60 && overlap > 0) minutes -= overlap;
+  return Math.max(0, Math.round((minutes / 60) * 100) / 100);
+};
 
 // เช็คสิทธิ์แก้ไข/ลบ daily work record: เจ้าของ record หรือ role ที่มีสิทธิ์บริหารเท่านั้น
 async function canManageDailyWork(req, id) {
@@ -167,7 +188,7 @@ async function getAccessToken() {
 
 // Teams notification function
 async function sendTeamsNotification(type, data) {
-  const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/cbf939ffce724711ac4af407711304ac/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=ZeDUCEcFZZFUlCRH1P3s5LV7YI_-idjHjNPpMoL2qYA';
+  const webhookUrl = TEAMS_WEBHOOKS.dailyWork;
 
   try {
     const message = createDailyWorkMessage(type, data);
@@ -188,7 +209,7 @@ async function sendTeamsNotification(type, data) {
 
 // Send daily work summary to Teams
 async function sendDailyWorkSummaryToTeams() {
-  const webhookUrl = 'https://defaultc5fc1b2a2ce84471ab9dbe65d8fe09.06.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/772efa7dba4846248602bec0f4ec9adf/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=u_vIlVoRaHZOEJ-gEE6SXcdJ-HZPpp3KN6-y1WSoGRI';
+  const webhookUrl = TEAMS_WEBHOOKS.workSummary;
   
   try {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
@@ -672,8 +693,8 @@ router.get('/', async (req, res) => {
             'status', s.status,
             'end_date', s.end_date,
             'project_statuses', s.project_statuses,
-            'has_work_logged', EXISTS(SELECT 1 FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND d.step_ids ? s.id::text)) AND d.work_date <= CURRENT_DATE),
-            'latest_work_date', (SELECT MAX(work_date) FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND d.step_ids ? s.id::text)) AND d.work_date <= CURRENT_DATE)
+            'has_work_logged', EXISTS(SELECT 1 FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND (d.step_ids @> to_jsonb(s.id) OR d.step_ids @> to_jsonb(s.id::text)))) AND d.work_date <= CURRENT_DATE),
+            'latest_work_date', (SELECT MAX(work_date) FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND (d.step_ids @> to_jsonb(s.id) OR d.step_ids @> to_jsonb(s.id::text)))) AND d.work_date <= CURRENT_DATE)
           ) ORDER BY s.step_order)
           FROM task_steps s
           WHERE s.id = ANY(
@@ -852,29 +873,29 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { task_id, step_id, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
+    const { task_id, step_id, step_ids, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
 
     const { found, allowed } = await canManageDailyWork(req, id);
     if (!found) return res.status(404).json({ error: 'Daily work record not found' });
     if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์แก้ไขรายการนี้' });
 
-    // คำนวณ total_hours จาก start_time และ end_time
-    let total_hours = 0;
-    if (start_time && end_time) {
-      const start = new Date(`1970-01-01T${start_time}`);
-      const end = new Date(`1970-01-01T${end_time}`);
-      total_hours = (end - start) / (1000 * 60 * 60);
-      if (total_hours <= 0) total_hours += 24; // ข้ามเที่ยงคืน
-    }
+    // คำนวณ total_hours ด้วยสูตรเดียวกับตอนสร้างรายการ (หักพักเที่ยง) — เดิมแก้แล้วชั่วโมงเพี้ยนจากตอนสร้าง
+    const total_hours = calcTotalHours(start_time, end_time);
+
+    // step_ids: ถ้าหน้าเว็บส่งมาให้อัปเดตด้วย (เดิมอัปเดตแค่ step_id ทำให้รายการหลายขั้นตอนไม่ตรงกันหลังแก้ไข)
+    // ไม่ส่งมา = คงค่าเดิม
+    const hasStepIds = Array.isArray(step_ids);
+    const finalStepIds = hasStepIds ? step_ids.filter(sid => sid !== null && sid !== undefined && sid !== '') : null;
+    const finalStepId = hasStepIds && finalStepIds.length > 0 ? finalStepIds[0] : step_id;
 
     const result = await pool.query(`
-      UPDATE daily_work_records 
+      UPDATE daily_work_records
       SET task_id = $1, step_id = $2, work_date = $3, start_time = $4, end_time = $5, total_hours = $6,
-          work_status = $7, location = $8, work_description = $9, 
-          files = $10::jsonb, updated_at = CURRENT_TIMESTAMP
+          work_status = $7, location = $8, work_description = $9,
+          files = $10::jsonb, step_ids = COALESCE($12::jsonb, step_ids), updated_at = CURRENT_TIMESTAMP
       WHERE id = $11
       RETURNING *
-    `, [task_id, step_id, work_date, start_time, end_time, total_hours, work_status, location, work_description, JSON.stringify(files || []), id]);
+    `, [task_id, finalStepId, work_date, start_time, end_time, total_hours, work_status, location, work_description, JSON.stringify(files || []), id, hasStepIds ? JSON.stringify(finalStepIds) : null]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Daily work record not found' });
@@ -936,7 +957,7 @@ router.delete('/:id', async (req, res) => {
         const otherWork = await pool.query(
           `SELECT id FROM daily_work_records 
            WHERE id != $1 AND user_id = $2 
-           AND (step_id = $3 OR step_ids @> to_jsonb($3::int))`,
+           AND (step_id = $3 OR step_ids @> to_jsonb($3::int) OR step_ids @> to_jsonb(($3::int)::text))`,
           [id, userId, stepId]
         );
         
@@ -954,7 +975,8 @@ router.delete('/:id', async (req, res) => {
     }
     
     await pool.query('DELETE FROM daily_work_records WHERE id = $1', [id]);
-    
+    if (oldData) await removeFilesIfUnreferenced(oldData.files);
+
     // Log audit
     if (oldData) {
       await logAudit(req, {

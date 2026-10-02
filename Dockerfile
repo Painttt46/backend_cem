@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:22-alpine
 
 # ติดตั้ง tzdata เพื่อให้ TZ=Asia/Bangkok (จาก docker-compose.yml) ทำงานได้จริง
 # Alpine ไม่มี timezone data ติดมาโดย default ทำให้ TZ env ไม่มีผล (date จะเป็น UTC เสมอ)
