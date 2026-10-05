@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { LEAVE_TYPE_LABELS } from '../config/leaveLabels.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -216,13 +217,7 @@ export const testEmailConnection = async () => {
 export const sendLeaveNotificationEmail = async (emails, leaveData, notificationType) => {
   if (!emails || emails.length === 0) return { success: false, error: 'No recipients' };
 
-  const leaveTypeLabels = {
-    'sick': 'ลาป่วย',
-    'personal': 'ลากิจ',
-    'vacation': 'ลาพักร้อน',
-    'maternity': 'ลาคลอด',
-    'other': 'ลาอื่นๆ'
-  };
+  const leaveTypeLabels = LEAVE_TYPE_LABELS;
 
   const formatDate = (date) => {
     const d = new Date(date);

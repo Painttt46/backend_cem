@@ -1,4 +1,5 @@
 import express from 'express';
+import { LEAVE_TYPE_LABELS } from '../config/leaveLabels.js';
 import { DEFAULT_LEAVE_QUOTAS } from '../config/leaveDefaults.js';
 import { TEAMS_WEBHOOKS } from '../config/teams.js';
 import jwt from 'jsonwebtoken';
@@ -378,13 +379,7 @@ async function createLeaveMessage(type, data) {
   const correctDays = calculateLeaveDays(data.start_datetime, data.end_datetime);
 
   // Get leave type label in Thai
-  const leaveTypeLabels = {
-    'sick': 'ลาป่วย',
-    'personal': 'ลากิจ',
-    'vacation': 'ลาพักร้อน',
-    'maternity': 'ลาคลอด',
-    'other': 'ลาอื่นๆ'
-  };
+  const leaveTypeLabels = LEAVE_TYPE_LABELS;
   const leaveTypeLabel = leaveTypeLabels[data.leave_type] || data.leave_type;
 
   // Get quota from database
@@ -480,14 +475,7 @@ async function createLeaveMessage(type, data) {
 }
 
 function getLeaveTypeLabel(type) {
-  const types = {
-    sick: 'ลาป่วย',
-    personal: 'ลากิจ',
-    vacation: 'ลาพักร้อน',
-    maternity: 'ลาคลอด',
-    other: 'ลาอื่นๆ'
-  };
-  return types[type] || type;
+  return LEAVE_TYPE_LABELS[type] || type;
 }
 
 function formatDateTime(datetime) {
@@ -779,13 +767,7 @@ router.get('/leave-types', async (req, res) => {
     `, [currentYear]);
 
     // Map to label format
-    const leaveTypeLabels = {
-      'sick': 'ลาป่วย',
-      'personal': 'ลากิจ',
-      'vacation': 'ลาพักร้อน',
-      'maternity': 'ลาคลอด',
-      'other': 'ลาอื่นๆ'
-    };
+    const leaveTypeLabels = LEAVE_TYPE_LABELS;
 
     const leaveTypeColors = {
       'sick': '#ef4444',
