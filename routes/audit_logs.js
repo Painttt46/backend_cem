@@ -1,11 +1,13 @@
 import express from 'express';
 import pool from '../config/database.js';
+import { requirePermission } from '../middleware/auth.js';
+import { PERM_AUDIT_LOGS } from '../config/permissionKeys.js';
 export { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
 
-// GET: ดึงประวัติทั้งหมด
-router.get('/', async (req, res) => {
+// GET: ดึงประวัติทั้งหมด — ดูได้เฉพาะ admin/superadmin หรือ role ที่ถูกติ๊กสิทธิ์ "ดูประวัติการใช้งานระบบ" ที่หน้าจัดการสิทธิ์
+router.get('/', requirePermission(PERM_AUDIT_LOGS), async (req, res) => {
   try {
     const { table_name, user_id, action, start_date, end_date, limit = 100, offset = 0 } = req.query;
 
@@ -64,7 +66,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET: สรุปสถิติ
-router.get('/stats', async (req, res) => {
+router.get('/stats', requirePermission(PERM_AUDIT_LOGS), async (req, res) => {
   try {
     const { days = 7 } = req.query;
 

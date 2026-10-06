@@ -1079,7 +1079,7 @@ async function sendDueTomorrowEmail(user, steps) {
                   <tr>
                     <td align="center" style="padding:20px;background-color:#fff5f5;border:2px dashed #D73527;">
                       <span style="font-size:32px;font-weight:bold;color:#D73527;">${steps.length}</span>
-                      <span style="font-size:16px;color:#666666;font-weight:bold;margin-left:10px;">รายการที่ต้องทํา</span>
+                      <span style="font-size:16px;color:#666666;font-weight:bold;margin-left:10px;">รายการที่ต้องทำ</span>
                     </td>
                   </tr>
                 </table>

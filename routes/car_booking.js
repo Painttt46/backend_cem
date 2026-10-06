@@ -1,6 +1,6 @@
 import express from 'express';
-import { hasPermissionSafe } from '../utils/permissions.js';
-import { PERM_CAR_MANAGE } from '../config/permissionKeys.js';
+import { requirePermission } from '../utils/permissions.js';
+import { PAGE_CAR_BOOKING } from '../config/permissionKeys.js';
 import { sendCarBookingTeamsNotification as sendTeamsNotification } from '../services/carBookingTeams.js';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
@@ -27,13 +27,11 @@ const setTimezone = async () => {
   await pool.query("SET timezone = 'Asia/Bangkok'");
 };
 
-// เช็คสิทธิ์แก้ไข/ลบ booking: เจ้าของ record หรือ role ที่มีสิทธิ์บริหารเท่านั้น
-async function canManageBooking(req, id) {
+// สิทธิ์จองรถ = สิทธิ์ "จองรถ" (/car_booking) ที่ตั้งในหน้าจัดการสิทธิ์ ใช้ร่วมกันทั้งจอง/แจ้งคืน/ยกเลิก/เพิ่มรูป — ใครเข้าหน้านี้ได้ก็ทำกับการจองของทุกคนได้
+// (ไม่มีสิทธิ์แยกสำหรับการจัดการการจองของผู้อื่น) — เส้นทางที่แก้ข้อมูลทุกเส้นผ่าน requirePermission(PAGE_CAR_BOOKING) ด้านล่าง
+async function findBooking(id) {
   const result = await pool.query('SELECT user_id FROM car_bookings WHERE id = $1', [id]);
-  if (!result.rows.length) return { found: false, allowed: false };
-  const isPrivileged = await hasPermissionSafe(req.user, PERM_CAR_MANAGE);
-  const isOwner = String(result.rows[0].user_id) === String(req.user?.id);
-  return { found: true, allowed: isPrivileged || isOwner };
+  return result.rows.length > 0;
 }
 
 // Get latest fuel level and easy pass from last returned booking
@@ -104,7 +102,7 @@ router.get('/:id/images', async (req, res) => {
 });
 
 // Create car booking record
-router.post('/', async (req, res) => {
+router.post('/', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
   const {
     type, location, task_id, description,
     selected_date, time, license, colleagues, images, user_id, fuel_level_borrow, easy_pass_borrow,
@@ -254,14 +252,12 @@ router.post('/', async (req, res) => {
 });
 
 // Update car booking record
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
   const { id } = req.params;
   const { images, return_name, return_location, return_description, return_time, return_date, fuel_level_return, easy_pass_return } = req.body;
 
   try {
-    const { found, allowed } = await canManageBooking(req, id);
-    if (!found) return res.status(404).json({ error: 'Record not found' });
-    if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์แก้ไขรายการนี้' });
+    if (!(await findBooking(id))) return res.status(404).json({ error: 'Record not found' });
 
     await setTimezone();
     let query, params;
@@ -337,7 +333,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // Append images to a booking (merge — ไม่ทับรูปเดิม, รองรับ legacy object shape {borrow, return})
-router.post('/:id/images', async (req, res) => {
+router.post('/:id/images', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
   const { id } = req.params;
   const { images } = req.body || {};
 
@@ -346,15 +342,9 @@ router.post('/:id/images', async (req, res) => {
       return res.status(400).json({ error: 'ไม่มีรูปที่ต้องการเพิ่ม' });
     }
 
-    const current = await pool.query('SELECT images, user_id FROM car_bookings WHERE id = $1', [id]);
+    const current = await pool.query('SELECT images FROM car_bookings WHERE id = $1', [id]);
     if (current.rows.length === 0) {
       return res.status(404).json({ error: 'Record not found' });
-    }
-
-    // สิทธิ์: เจ้าของ booking หรือ admin/superadmin หรือ role ที่ถูกกำหนดสิทธิ์ "จัดการการจองรถของผู้อื่น"
-    const isPrivileged = await hasPermissionSafe(req.user, PERM_CAR_MANAGE);
-    if (String(current.rows[0].user_id) !== String(req.user?.id) && !isPrivileged) {
-      return res.status(403).json({ error: 'คุณไม่มีสิทธิ์เพิ่มรูปในรายการนี้' });
     }
 
     // normalize legacy shapes → flat array ของ object {src}
@@ -379,13 +369,11 @@ router.post('/:id/images', async (req, res) => {
 });
 
 // Delete car booking record
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
   const { id } = req.params;
 
   try {
-    const { found, allowed } = await canManageBooking(req, id);
-    if (!found) return res.status(404).json({ error: 'Record not found' });
-    if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์ลบรายการนี้' });
+    if (!(await findBooking(id))) return res.status(404).json({ error: 'Record not found' });
 
     await setTimezone();
     // Get data with user info before deleting for Teams notification

@@ -12,6 +12,7 @@ export const PAGE_LEAVE_APPROVAL_SETTINGS = '/management/settings/leave-approval
 export const PAGE_ROLE_WORK_HOURS = '/management/settings/role-work-hours';
 export const PAGE_ROLE_PERMISSIONS = '/management/settings/role-permissions';
 export const PERM_LEAVE_APPROVE = '/leave_work/approve';
+export const PAGE_CAR_BOOKING = '/car_booking';
 
 // ---- คีย์ความสามารถ (ไม่ใช่หน้า) ----
 export const PERM_LEAVE_HOLIDAYS = '/management/leave#holidays';     // เพิ่ม/ลบวันหยุดนักขัตฤกษ์
@@ -20,8 +21,8 @@ export const PERM_PROJECTS_SYNC_ERP = '/projects#sync-erp';          // ซิ�
 export const PERM_PROJECTS_DELETE = '/projects#delete';              // ลบโครงการ / ขั้นตอนงาน
 export const PERM_PROCUREMENT_DELETE = '/procurement#delete';        // ลบรายการจัดซื้อ / ไฟล์ผู้ขาย
 export const PERM_DAILY_MANAGE_ALL = '/daily_work#manage-all';       // แก้ไข/ลบงานรายวันของผู้อื่น
-export const PERM_CAR_MANAGE = '/car_booking#manage';                // จัดการการจองรถของผู้อื่น
 export const PERM_SALES_MANAGE_ALL = '/sales-activity#manage-all';   // ดู/จัดการกิจกรรมเข้าพบลูกค้าของทุกคน
+export const PERM_AUDIT_LOGS = '/management#audit-logs';             // ดูประวัติการใช้งานระบบ (audit log) ของทุกคนในหน้าระบบจัดการ
 
 export const LEAVE_MANAGE_PERMISSIONS = [
   { path: PERM_LEAVE_HOLIDAYS, name: 'จัดการวันหยุดนักขัตฤกษ์ (ในหน้าจัดการการลา)', icon: 'pi pi-calendar-plus' },
@@ -32,6 +33,5 @@ export const LEAVE_MANAGE_PERMISSIONS = [
 // หลังจากนั้นผู้ดูแลปรับได้อิสระที่หน้า "จัดการสิทธิ์" (ON CONFLICT DO NOTHING → ไม่เขียนทับค่าที่ตั้งเอง)
 export const LEGACY_HR_PERMISSIONS = [
   { path: PERM_DAILY_MANAGE_ALL, name: 'แก้ไข/ลบงานรายวันของผู้อื่น', icon: 'pi pi-calendar' },
-  { path: PERM_CAR_MANAGE, name: 'จัดการการจองรถของผู้อื่น', icon: 'pi pi-car' },
   { path: PERM_SALES_MANAGE_ALL, name: 'ดู/จัดการกิจกรรมเข้าพบลูกค้าของทุกคน', icon: 'pi pi-briefcase' }
 ];
