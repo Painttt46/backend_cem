@@ -40,7 +40,8 @@ import https from 'https'
 import fs from 'fs'
 import path from 'path'
 import pool from '../config/database.js'
-import { requireRole } from '../middleware/auth.js'
+import { requirePermission } from '../middleware/auth.js'
+import { PERM_PROJECTS_SYNC_ERP } from '../config/permissionKeys.js'
 
 const router = express.Router()
 
@@ -72,7 +73,7 @@ const erpGet = (path) =>
  * 
  * Preview การเปลี่ยนแปลงก่อน sync จริง (dry run)
  */
-router.get('/preview', async (req, res) => {
+router.get('/preview', requirePermission(PERM_PROJECTS_SYNC_ERP), async (req, res) => {
   try {
     const result = await performSync(true) // dry_run = true
     res.json(result)
@@ -267,7 +268,7 @@ async function performSync(dryRun = false) {
  *
  * Response: { success, total, created, updated, failed }
  */
-router.post('/projects', requireRole('admin', 'superadmin'), async (req, res) => {
+router.post('/projects', requirePermission(PERM_PROJECTS_SYNC_ERP), async (req, res) => {
   try {
     const result = await performSync(false)
     res.json(result)

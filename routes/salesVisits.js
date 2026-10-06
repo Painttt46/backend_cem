@@ -1,4 +1,6 @@
 import express from 'express';
+import { hasPermissionSafe } from '../utils/permissions.js';
+import { PERM_SALES_MANAGE_ALL } from '../config/permissionKeys.js';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
 
@@ -109,15 +111,14 @@ router.put('/customers/:id', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const { status, customer_id, from_date, to_date, created_by } = req.query;
-    const role = req.user?.role;
     const userId = req.user?.id;
 
     let where = [];
     let params = [];
     let pi = 1;
 
-    // Non-admin sees only their own visits
-    if (!['superadmin', 'admin', 'hr'].includes(role)) {
+    // เห็นเฉพาะรายการของตัวเอง ยกเว้น admin/superadmin หรือ role ที่ถูกกำหนดสิทธิ์ "ดู/จัดการกิจกรรมเข้าพบลูกค้าของทุกคน"
+    if (!(await hasPermissionSafe(req.user, PERM_SALES_MANAGE_ALL))) {
       where.push(`sv.created_by = $${pi++}`);
       params.push(userId);
     } else if (created_by) {
@@ -178,7 +179,7 @@ router.get('/:id', async (req, res) => {
 async function canManageVisit(req, id) {
   const result = await pool.query('SELECT created_by FROM sales_visits WHERE id = $1', [id]);
   if (!result.rows.length) return { found: false, allowed: false };
-  const isPrivileged = ['superadmin', 'admin', 'hr'].includes(req.user?.role);
+  const isPrivileged = await hasPermissionSafe(req.user, PERM_SALES_MANAGE_ALL);
   const isOwner = String(result.rows[0].created_by) === String(req.user?.id);
   return { found: true, allowed: isPrivileged || isOwner };
 }

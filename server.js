@@ -26,6 +26,7 @@ import salesVisitsRoutes from './routes/salesVisits.js';
 import { startCarBookingScheduler } from './services/carBookingScheduler.js';
 import { startWorkflowScheduler } from './services/workflowNotificationService.js';
 import { sendPendingLeaveReminders } from './services/leaveReminderService.js';
+import { ensureLegacyPermissions } from './utils/permissions.js';
 
 dotenv.config();
 
@@ -40,6 +41,7 @@ process.on('uncaughtException', (err) => {
 });
 
 const app = express();
+ensureLegacyPermissions().catch((e) => console.error('[permissions] seed deferred:', e.message));
 const PORT = process.env.PORT || 3001;
 
 
@@ -139,8 +141,14 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json({ limit: '200mb' }));
-app.use(express.urlencoded({ extended: true, limit: '200mb' }));
+// ขนาดตัว JSON: route ทั่วไปรับไม่เกิน 10MB (ข้อมูลปกติเป็นหลัก KB) — เดิม 200MB ทุก route ทำให้ยิงก้อนใหญ่ใส่ route ไหนก็กิน RAM ได้
+// route ที่ต้องส่งก้อนใหญ่จริงประกาศแยกไว้ "ก่อน" parser กลาง (parser ตัวแรกที่อ่าน body ได้จะเป็นตัวที่มีผล) และต้องผ่าน verifyToken ก่อน
+//  - car-booking: ส่งรูปเป็น base64 ใน JSON (หลายรูป)
+//  - procurement/import/confirm: ส่งแถวที่แปลงจากไฟล์ Excel ทั้งไฟล์ (ไฟล์ไม่เกิน 20MB)
+app.use('/api/car-booking', verifyToken, express.json({ limit: '200mb' }));
+app.use('/api/procurement/import/confirm', verifyToken, express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Static files - serve uploads folder (ต้องยืนยันตัวตน — รองรับ ?token= สำหรับ <a>/<img> links)
 app.use('/uploads', verifyToken, express.static('uploads'));
@@ -207,10 +215,12 @@ app.use((error, req, res, next) => {
   // payload เกินขนาด (413) ต้องบอกผู้ใช้ตรง ๆ ไม่ใช่ 500 กลบหมด
   const isTooLarge = error.type === 'entity.too.large' || error.statusCode === 413 || error.status === 413;
   const status = isTooLarge ? 413 : (error.status || error.statusCode || 500);
+  // body-parser แนบ limit (ไบต์) มาใน error — แต่ละ route มีเพดานไม่เท่ากัน จึงบอกตัวเลขจริงแทนค่าคงที่
+  const limitMb = error.limit ? Math.max(1, Math.round(error.limit / 1024 / 1024)) : null;
   res.status(status).json({
     success: false,
     error: isTooLarge
-      ? 'ข้อมูล/ไฟล์ที่ส่งมาใหญ่เกิน 200MB กรุณาลดจำนวนหรือขนาดไฟล์'
+      ? `ข้อมูล/ไฟล์ที่ส่งมาใหญ่เกินกำหนด${limitMb ? ` (สูงสุด ${limitMb}MB)` : ''} กรุณาลดจำนวนหรือขนาดไฟล์`
       : error.message,
     stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
   });

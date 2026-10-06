@@ -7,7 +7,9 @@ import pool from '../config/database.js';
 import fetch from 'node-fetch';
 import { sendLeaveNotificationEmail } from '../services/emailService.js';
 import { logAudit } from '../utils/auditHelper.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, requirePermission } from '../middleware/auth.js';
+import { hasPermissionSafe } from '../utils/permissions.js';
+import { PERM_LEAVE_HOLIDAYS, PERM_LEAVE_TYPES, LEAVE_MANAGE_PERMISSIONS, PAGE_LEAVE_MANAGEMENT, PERM_LEAVE_APPROVE } from '../config/permissionKeys.js';
 import { removeFilesIfUnreferenced } from '../utils/fileCleanup.js';
 import { runOnce } from '../utils/runOnce.js';
 
@@ -59,10 +61,28 @@ const ensureApprovalColumns = runOnce(async () => {
   await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS reject_reason TEXT`);
 });
 
+// สิทธิ์ "จัดการวันหยุด / จัดการประเภทการลา" เป็นสิทธิ์รายฟีเจอร์ที่ตั้งได้ในหน้า "จัดการสิทธิ์"
+// seed ให้ครั้งแรก: role ที่เข้าหน้า "จัดการการลา" (/management/leave) ได้อยู่แล้วจะได้สิทธิ์ทั้งสองข้อด้วย (คงการใช้งานเดิมไว้ ไม่ล็อกใครออก)
+// ON CONFLICT DO NOTHING → ถ้าผู้ดูแลปิดสิทธิ์ไว้ ค่าที่ตั้งเองจะไม่ถูกเขียนทับตอนรีสตาร์ท
+const ensureLeaveManagePermissions = runOnce(async () => {
+  for (const perm of LEAVE_MANAGE_PERMISSIONS) {
+    await pool.query(
+      `INSERT INTO role_permissions (role, page_path, page_name, page_icon, has_access)
+       SELECT role, $1, $2, $3, true FROM role_permissions
+       WHERE page_path = '/management/leave' AND has_access = true
+       ON CONFLICT (role, page_path) DO NOTHING`,
+      [perm.path, perm.name, perm.icon]
+    );
+  }
+});
+
+const requireHolidayPermission = requirePermission(PERM_LEAVE_HOLIDAYS, { ensure: ensureLeaveManagePermissions });
+const requireLeaveTypePermission = requirePermission(PERM_LEAVE_TYPES, { ensure: ensureLeaveManagePermissions });
+
 // เตรียม schema ตั้งแต่สตาร์ท (คำขอแรกจึงไม่ต้องรอ) — ล้มเหลวได้ เพราะแต่ละ handler จะเรียก ensure ซ้ำเมื่อใช้งานจริง
 Promise.all([
   ensureUsedDaysNumeric(), ensureQuotaDisplayColumns(), ensureHolidaysTable(),
-  ensureCancelColumns(), ensureStatusWide(), ensureApprovalColumns()
+  ensureCancelColumns(), ensureStatusWide(), ensureApprovalColumns(), ensureLeaveManagePermissions()
 ]).catch((error) => console.error('[leave] schema setup deferred:', error.message));
 
 // Get approvers by level and send email notification
@@ -249,6 +269,62 @@ function calculateLeaveDays(startDateTime, endDateTime) {
   // ต่างวัน → นับจำนวนวัน
   const diffDays = Math.floor((endDay - startDay) / (1000 * 60 * 60 * 24)) + 1;
   return diffDays;
+}
+
+// ---------- ตรวจวันที่/จำนวนวันลาที่ client ส่งมา (เดิมเชื่อค่า total_days ทั้งหมด → ส่งเลขน้อย ๆ เพื่อไม่ให้โควตาถูกตัดได้) ----------
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_LEAVE_SPAN_DAYS = 1000; // กันลูปนับวันยาวเกินจริง
+
+// แยกค่าจากสตริง YYYY-MM-DDTHH:mm[:ss] (เวลาท้องถิ่นที่ฟอร์มส่งมา) โดยไม่ผ่าน Date ท้องถิ่น → ไม่ขึ้นกับ timezone ของ server
+function parseLocalDateTime(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(value ?? ''));
+  if (!m) return null;
+  const [y, mo, d, h, mi, s] = m.slice(1).map(v => (v === undefined ? 0 : Number(v)));
+  const dayMs = Date.UTC(y, mo - 1, d);
+  if (new Date(dayMs).getUTCDate() !== d) return null; // วันที่ที่ไม่มีจริง เช่น 31 ก.พ.
+  return { dayMs, ts: dayMs + ((h * 60 + mi) * 60 + s) * 1000 };
+}
+
+const msToYmd = (ms) => new Date(ms).toISOString().slice(0, 10);
+// คืนข้อความ error ภาษาไทย หรือ null ถ้าผ่าน
+// ช่วงที่ยอมรับอ้างอิงสูตรเดียวกับหน้าฟอร์ม (ข้ามเสาร์-อาทิตย์/วันหยุดนักขัตฤกษ์ ชั่วโมงตามเวลาทำงาน):
+//   - "วันกลาง" (ไม่รวมวันแรก/วันสุดท้าย) ที่เป็นวันทำการจะนับเต็ม 1 วันเสมอ → เป็นขอบล่างที่แน่นอน
+//   - วันแรกและวันสุดท้ายนับได้อย่างละไม่เกิน 1 วัน → ขอบบน = วันกลาง + 2 (วันเดียวกัน: ไม่เกิน 1)
+async function validateLeaveTiming(startRaw, endRaw, totalDaysRaw) {
+  const start = parseLocalDateTime(startRaw);
+  const end = parseLocalDateTime(endRaw);
+  if (!start || !end) return 'รูปแบบวันที่/เวลาลาไม่ถูกต้อง';
+  if (end.ts < start.ts) return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มลา';
+
+  const days = (totalDaysRaw === '' || totalDaysRaw === null || totalDaysRaw === undefined) ? NaN : Number(totalDaysRaw);
+  if (!Number.isFinite(days) || days < 0) return 'จำนวนวันลาไม่ถูกต้อง';
+
+  const spanDays = (end.dayMs - start.dayMs) / DAY_MS;
+  if (spanDays > MAX_LEAVE_SPAN_DAYS) return 'ช่วงวันลายาวเกินไป';
+
+  let min = 0;
+  let max = 1;
+  if (spanDays > 0) {
+    await ensureHolidaysTable();
+    const holidayResult = await pool.query(
+      `SELECT to_char(holiday_date, 'YYYY-MM-DD') AS d FROM holidays WHERE holiday_date > $1::date AND holiday_date < $2::date`,
+      [msToYmd(start.dayMs), msToYmd(end.dayMs)]
+    );
+    const holidays = new Set(holidayResult.rows.map(r => r.d));
+    let middleWorkingDays = 0;
+    for (let t = start.dayMs + DAY_MS; t < end.dayMs; t += DAY_MS) {
+      const dow = new Date(t).getUTCDay();
+      if (dow !== 0 && dow !== 6 && !holidays.has(msToYmd(t))) middleWorkingDays++;
+    }
+    min = middleWorkingDays;
+    max = middleWorkingDays + 2;
+  }
+
+  const EPS = 0.01;
+  if (days < min - EPS || days > max + EPS) {
+    return `จำนวนวันลา (${days}) ไม่สอดคล้องกับช่วงวันที่เลือก (ควรอยู่ระหว่าง ${min}–${max} วัน) กรุณารีเฟรชหน้าแล้วลองใหม่`;
+  }
+  return null;
 }
 
 // Reset leave quotas for new year (January 1st)
@@ -490,7 +566,7 @@ function formatDateTime(datetime) {
 }
 
 // Check database status
-router.get('/database-status', async (req, res) => {
+router.get('/database-status', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const currentYear = new Date().getFullYear();
 
@@ -541,7 +617,7 @@ router.get('/database-status', async (req, res) => {
 });
 
 // Database setup endpoint
-router.get('/setup-database', async (req, res) => {
+router.get('/setup-database', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
 
     // Check if table exists
@@ -639,7 +715,7 @@ router.get('/setup-database', async (req, res) => {
 });
 
 // Manual reset quotas for new year (admin endpoint)
-router.post('/reset-quotas', requireRole('admin', 'superadmin', 'hr'), async (req, res) => {
+router.post('/reset-quotas', requirePermission(PAGE_LEAVE_MANAGEMENT), async (req, res) => {
   try {
     await resetLeaveQuotasForNewYear();
     res.json({
@@ -653,7 +729,7 @@ router.post('/reset-quotas', requireRole('admin', 'superadmin', 'hr'), async (re
 });
 
 // Initialize quota for all users (admin endpoint)
-router.post('/init-quotas', requireRole('admin', 'superadmin', 'hr'), async (req, res) => {
+router.post('/init-quotas', requirePermission(PAGE_LEAVE_MANAGEMENT), async (req, res) => {
   try {
     const usersResult = await pool.query('SELECT id FROM users WHERE is_active = true');
 
@@ -669,7 +745,7 @@ router.post('/init-quotas', requireRole('admin', 'superadmin', 'hr'), async (req
 });
 
 // Update user quota
-router.put('/quota/:userId/:leaveType', requireRole('admin', 'superadmin', 'hr'), async (req, res) => {
+router.put('/quota/:userId/:leaveType', requirePermission(PAGE_LEAVE_MANAGEMENT), async (req, res) => {
   try {
     const { userId, leaveType } = req.params;
     const { quota, remaining, addQuota } = req.body;
@@ -798,7 +874,7 @@ router.get('/leave-types', async (req, res) => {
 });
 
 // Create new leave type
-router.post('/leave-types', async (req, res) => {
+router.post('/leave-types', requireLeaveTypePermission, async (req, res) => {
   try {
     const { name, default_quota, advance_days } = req.body;
 
@@ -848,7 +924,7 @@ router.post('/leave-types', async (req, res) => {
 });
 
 // Update leave type settings
-router.put('/leave-types/:leaveType', async (req, res) => {
+router.put('/leave-types/:leaveType', requireLeaveTypePermission, async (req, res) => {
   try {
     const leaveType = decodeURIComponent(req.params.leaveType);
     const { display_name, color, default_quota, advance_days, addQuota } = req.body;
@@ -889,7 +965,7 @@ router.put('/leave-types/:leaveType', async (req, res) => {
 });
 
 // Delete leave type
-router.delete('/leave-types/:leaveType', async (req, res) => {
+router.delete('/leave-types/:leaveType', requireLeaveTypePermission, async (req, res) => {
   try {
     const leaveType = decodeURIComponent(req.params.leaveType);
     const currentYear = new Date().getFullYear();
@@ -945,7 +1021,7 @@ router.get('/holidays', async (req, res) => {
 });
 
 // Add holidays
-router.post('/holidays', async (req, res) => {
+router.post('/holidays', requireHolidayPermission, async (req, res) => {
   try {
     const { dates, description } = req.body;
 
@@ -972,7 +1048,7 @@ router.post('/holidays', async (req, res) => {
 });
 
 // Delete holiday
-router.delete('/holidays/:id', async (req, res) => {
+router.delete('/holidays/:id', requireHolidayPermission, async (req, res) => {
   try {
     const { id } = req.params;
     await pool.query('DELETE FROM holidays WHERE id = $1', [id]);
@@ -1029,6 +1105,12 @@ router.post('/', async (req, res) => {
 
     if (!userId || !/^\d+$/.test(String(userId))) {
       return res.status(401).json({ error: 'Invalid user ID' });
+    }
+
+    // วันที่ต้องไม่ผิดลำดับ และ total_days ต้องสอดคล้องกับช่วงวันที่ (กัน client ส่งเลขน้อยเพื่อเลี่ยงการตัดโควตา)
+    const timingError = await validateLeaveTiming(start_datetime, end_datetime, total_days);
+    if (timingError) {
+      return res.status(400).json({ error: timingError });
     }
 
     // ยื่นใบลาแทนพนักงาน (ลาย้อนหลัง) — อนุญาตเฉพาะผู้อนุมัติชั้น 2 ของพนักงานคนนั้น (หรือ admin/superadmin)
@@ -1226,11 +1308,13 @@ router.put('/:id/status', async (req, res) => {
       return res.status(409).json({ error: 'คำขอนี้ถูกดำเนินการไปแล้ว (อนุมัติ/ปฏิเสธไปก่อนหน้า)' });
     }
 
-    // If fully approved, update quota — ตัดตาม "ปีของวันที่เริ่มลา" ไม่ใช่ปีที่อนุมัติ
+    // If fully approved, update quota
     if (newStatus === 'approved' && currentStatus !== 'approved' && result.rows.length > 0) {
-      const quotaYear = leaveRequest.start_datetime
-        ? new Date(leaveRequest.start_datetime).getFullYear()
-        : new Date().getFullYear();
+      // ตัดโควตา "ปีปัจจุบัน" (ปีที่อนุมัติ) — ให้ตรงกับการเช็คโควตาก่อนอนุมัติ (calculateRemainingLeave), การแสดงผล
+      // และการคืนโควตาตอนยกเลิก/ลบ ซึ่งใช้ปีปัจจุบันทั้งหมด
+      // (เดิมโค้ดตรงนี้อ้าง leaveRequest.start_datetime แต่ leaveRequest คือผล query ไม่ใช่แถว → เป็น undefined เสมอ
+      //  จึงได้ปีปัจจุบันอยู่แล้ว; ถ้าจะเปลี่ยนเป็น "ปีของวันที่เริ่มลา" ต้องแก้ทุกจุดนั้นพร้อมกัน รวมถึงการรีเซ็ตโควตา 1 ม.ค.)
+      const quotaYear = new Date().getFullYear();
       const days = parseFloat(total_days) || 0;
 
 
@@ -1510,12 +1594,12 @@ router.put('/:id/cancel-status', async (req, res) => {
 
   try {
     const approverId = req.user.id;
-    const role = (req.user.role || '').toLowerCase();
-    const isPrivileged = ['admin', 'hr', 'superadmin'].includes(role);
+    // ผู้จัดการใบลาทุกใบ: admin/superadmin หรือ role ที่ถูกกำหนดสิทธิ์ "อนุมัติลางาน" ในหน้าจัดการสิทธิ์
+    const isPrivileged = await hasPermissionSafe(req.user, PERM_LEAVE_APPROVE);
 
     await ensureUsedDaysNumeric();
     const checkResult = await pool.query(
-      'SELECT id, user_id, status, leave_type, total_days, start_datetime, end_datetime, reason, attachments, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, total_days, start_datetime, end_datetime, reason, attachments, approved_by, approved_by_level1, approved_by_level2, approved_by_level2_id, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -1525,9 +1609,16 @@ router.put('/:id/cancel-status', async (req, res) => {
 
     const leaveRequest = checkResult.rows[0];
 
-    // สิทธิ์จริง: ต้องเป็น level2 approver ของใบนี้ หรือ admin/hr/superadmin
-    const isLevel2OfThisLeave = String(leaveRequest.approved_by_level2 || '') === String(approverId);
-    if (!isLevel2OfThisLeave && !isPrivileged) {
+    // สิทธิ์จริง: admin/hr/superadmin, ผู้ที่อนุมัติชั้น 2 ของใบนี้ไว้, หรือผู้อนุมัติชั้น 2 ที่ตั้งค่าไว้สำหรับพนักงานคนนี้
+    // (เดิมเอา approved_by_level2 ซึ่งเก็บ "ชื่อ" ไปเทียบกับ id ผู้ใช้ → ไม่มีทางตรง ผู้อนุมัติชั้น 2 ทั่วไปจึงถูกปฏิเสธเสมอ
+    //  และใบที่ขอยกเลิกตอนยัง pending_level2 ก็ยังไม่มีชื่อผู้อนุมัติชั้น 2 เลย)
+    let canHandleCancel = isPrivileged || (
+      leaveRequest.approved_by_level2_id != null && String(leaveRequest.approved_by_level2_id) === String(approverId)
+    );
+    if (!canHandleCancel) {
+      canHandleCancel = await canUserApprove(approverId, leaveRequest.user_id, 2);
+    }
+    if (!canHandleCancel) {
       return res.status(403).json({ error: 'คุณไม่มีสิทธิ์อนุมัติการยกเลิกใบลานี้' });
     }
 

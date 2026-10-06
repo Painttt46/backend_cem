@@ -1,4 +1,6 @@
 import express from 'express';
+import { hasPermissionSafe } from '../utils/permissions.js';
+import { PERM_CAR_MANAGE } from '../config/permissionKeys.js';
 import { sendCarBookingTeamsNotification as sendTeamsNotification } from '../services/carBookingTeams.js';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
@@ -29,7 +31,7 @@ const setTimezone = async () => {
 async function canManageBooking(req, id) {
   const result = await pool.query('SELECT user_id FROM car_bookings WHERE id = $1', [id]);
   if (!result.rows.length) return { found: false, allowed: false };
-  const isPrivileged = ['superadmin', 'admin', 'hr'].includes(req.user?.role);
+  const isPrivileged = await hasPermissionSafe(req.user, PERM_CAR_MANAGE);
   const isOwner = String(result.rows[0].user_id) === String(req.user?.id);
   return { found: true, allowed: isPrivileged || isOwner };
 }
@@ -349,9 +351,8 @@ router.post('/:id/images', async (req, res) => {
       return res.status(404).json({ error: 'Record not found' });
     }
 
-    // สิทธิ์: เจ้าของ booking หรือ admin/hr/superadmin
-    const role = (req.user?.role || '').toLowerCase();
-    const isPrivileged = ['admin', 'hr', 'superadmin'].includes(role);
+    // สิทธิ์: เจ้าของ booking หรือ admin/superadmin หรือ role ที่ถูกกำหนดสิทธิ์ "จัดการการจองรถของผู้อื่น"
+    const isPrivileged = await hasPermissionSafe(req.user, PERM_CAR_MANAGE);
     if (String(current.rows[0].user_id) !== String(req.user?.id) && !isPrivileged) {
       return res.status(403).json({ error: 'คุณไม่มีสิทธิ์เพิ่มรูปในรายการนี้' });
     }

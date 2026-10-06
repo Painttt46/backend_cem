@@ -1,7 +1,8 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
-import { requireRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/auth.js';
+import { PERM_PROJECTS_DELETE } from '../config/permissionKeys.js';
 import { removeFilesIfUnreferenced } from '../utils/fileCleanup.js';
 
 const router = express.Router();
@@ -131,7 +132,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // Delete task
-router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/:id', requirePermission(PERM_PROJECTS_DELETE), async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;

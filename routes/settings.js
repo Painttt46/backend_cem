@@ -2,7 +2,8 @@ import express from 'express';
 import { runOnce } from '../utils/runOnce.js';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
-import { verifyToken, requireRole } from '../middleware/auth.js';
+import { verifyToken, requirePermission } from '../middleware/auth.js';
+import { PAGE_TASKS, PAGE_LEAVE_APPROVAL_SETTINGS, PAGE_ROLE_WORK_HOURS } from '../config/permissionKeys.js';
 import { sendPendingLeaveReminders } from '../services/leaveReminderService.js';
 
 const router = express.Router();
@@ -33,7 +34,7 @@ router.get('/categories', async (req, res) => {
 });
 
 // POST new category
-router.post('/categories', requireRole('admin', 'superadmin'), async (req, res) => {
+router.post('/categories', requirePermission(PAGE_TASKS), async (req, res) => {
   const { label, value, icon, color } = req.body;
   try {
     await ensureCategoryColor();
@@ -55,7 +56,7 @@ router.post('/categories', requireRole('admin', 'superadmin'), async (req, res) 
 });
 
 // DELETE category
-router.delete('/categories/:value', requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/categories/:value', requirePermission(PAGE_TASKS), async (req, res) => {
   try {
     await pool.query('DELETE FROM task_categories WHERE value = $1', [req.params.value]);
     await logAudit(req, { action: 'DELETE', tableName: 'settings', recordName: `หมวดหมู่งาน: ${req.params.value}` });
@@ -68,7 +69,7 @@ router.delete('/categories/:value', requireRole('admin', 'superadmin'), async (r
 
 // PUT update single category
 // :value ต้องไม่ใช่คำว่า reorder — ไม่งั้นจะบัง route /categories/reorder ด้านล่าง
-router.put('/categories/:value((?!reorder$)[^/]+)', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/categories/:value((?!reorder$)[^/]+)', requirePermission(PAGE_TASKS), async (req, res) => {
   const { label, color } = req.body;
   try {
     await pool.query(
@@ -83,7 +84,7 @@ router.put('/categories/:value((?!reorder$)[^/]+)', requireRole('admin', 'supera
 });
 
 // PUT update category order
-router.put('/categories/reorder', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/categories/reorder', requirePermission(PAGE_TASKS), async (req, res) => {
   const { categories } = req.body;
   try {
     for (let i = 0; i < categories.length; i++) {
@@ -100,7 +101,7 @@ router.put('/categories/reorder', requireRole('admin', 'superadmin'), async (req
 });
 
 // PUT update category labels (migration)
-router.put('/categories/update-labels', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/categories/update-labels', requirePermission(PAGE_TASKS), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM task_categories');
 
@@ -126,7 +127,7 @@ router.put('/categories/update-labels', requireRole('admin', 'superadmin'), asyn
 });
 
 // PUT update category colors (migration)
-router.put('/categories/update-colors', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/categories/update-colors', requirePermission(PAGE_TASKS), async (req, res) => {
   try {
     await ensureCategoryColor();
 
@@ -166,7 +167,7 @@ router.get('/statuses', async (req, res) => {
 });
 
 // POST new status
-router.post('/statuses', requireRole('admin', 'superadmin'), async (req, res) => {
+router.post('/statuses', requirePermission(PAGE_TASKS), async (req, res) => {
   const { label, value, icon, color } = req.body;
   try {
     await ensureStatusColor();
@@ -187,7 +188,7 @@ router.post('/statuses', requireRole('admin', 'superadmin'), async (req, res) =>
 });
 
 // DELETE status
-router.delete('/statuses/:value', requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/statuses/:value', requirePermission(PAGE_TASKS), async (req, res) => {
   try {
     await pool.query('DELETE FROM work_statuses WHERE value = $1', [req.params.value]);
     await logAudit(req, { action: 'DELETE', tableName: 'settings', recordName: `สถานะงาน: ${req.params.value}` });
@@ -199,7 +200,7 @@ router.delete('/statuses/:value', requireRole('admin', 'superadmin'), async (req
 });
 
 // PUT update single status
-router.put('/statuses/:value((?!reorder$)[^/]+)', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/statuses/:value((?!reorder$)[^/]+)', requirePermission(PAGE_TASKS), async (req, res) => {
   const { label, color } = req.body;
   try {
     await pool.query(
@@ -214,7 +215,7 @@ router.put('/statuses/:value((?!reorder$)[^/]+)', requireRole('admin', 'superadm
 });
 
 // PUT update status order
-router.put('/statuses/reorder', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/statuses/reorder', requirePermission(PAGE_TASKS), async (req, res) => {
   const { statuses } = req.body;
   try {
     for (let i = 0; i < statuses.length; i++) {
@@ -231,7 +232,7 @@ router.put('/statuses/reorder', requireRole('admin', 'superadmin'), async (req, 
 });
 
 // PUT update status colors (migration)
-router.put('/statuses/update-colors', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/statuses/update-colors', requirePermission(PAGE_TASKS), async (req, res) => {
   try {
     await ensureStatusColor();
 
@@ -308,7 +309,7 @@ router.get('/leave-approval', async (req, res) => {
 });
 
 // POST add approver
-router.post('/leave-approval', requireRole('admin', 'superadmin'), async (req, res) => {
+router.post('/leave-approval', requirePermission(PAGE_LEAVE_APPROVAL_SETTINGS), async (req, res) => {
   const { approval_level, user_id, receive_email, can_approve } = req.body;
 
   try {
@@ -330,7 +331,7 @@ router.post('/leave-approval', requireRole('admin', 'superadmin'), async (req, r
 });
 
 // DELETE remove approver
-router.delete('/leave-approval/:level/:userId', requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/leave-approval/:level/:userId', requirePermission(PAGE_LEAVE_APPROVAL_SETTINGS), async (req, res) => {
   const { level, userId } = req.params;
 
   try {
@@ -346,7 +347,7 @@ router.delete('/leave-approval/:level/:userId', requireRole('admin', 'superadmin
 });
 
 // PUT update approver settings
-router.put('/leave-approval/:level/:userId', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/leave-approval/:level/:userId', requirePermission(PAGE_LEAVE_APPROVAL_SETTINGS), async (req, res) => {
   const { level, userId } = req.params;
   const { receive_email, can_approve, department_ids, position_ids } = req.body;
 
@@ -420,7 +421,7 @@ router.get('/role-work-hours/:role', async (req, res) => {
 });
 
 // POST/PUT upsert role work hours
-router.post('/role-work-hours', requireRole('admin', 'superadmin'), async (req, res) => {
+router.post('/role-work-hours', requirePermission(PAGE_ROLE_WORK_HOURS), async (req, res) => {
   const { role, start_time, end_time, lunch_start, lunch_end } = req.body;
 
   try {
@@ -442,7 +443,7 @@ router.post('/role-work-hours', requireRole('admin', 'superadmin'), async (req, 
 });
 
 // DELETE role work hours
-router.delete('/role-work-hours/:role', requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/role-work-hours/:role', requirePermission(PAGE_ROLE_WORK_HOURS), async (req, res) => {
   try {
     await pool.query('DELETE FROM role_work_hours WHERE role = $1', [req.params.role]);
     res.json({ success: true });
@@ -487,7 +488,7 @@ router.get('/user-work-hours', async (req, res) => {
 });
 
 // POST/PUT upsert user work hours
-router.post('/user-work-hours', requireRole('admin', 'superadmin'), async (req, res) => {
+router.post('/user-work-hours', requirePermission(PAGE_ROLE_WORK_HOURS), async (req, res) => {
   const { user_id, start_time, end_time, lunch_start, lunch_end } = req.body;
   if (!user_id || !start_time || !end_time) {
     return res.status(400).json({ error: 'user_id, start_time, end_time are required' });
@@ -509,7 +510,7 @@ router.post('/user-work-hours', requireRole('admin', 'superadmin'), async (req, 
 });
 
 // DELETE user work hours
-router.delete('/user-work-hours/:userId', requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/user-work-hours/:userId', requirePermission(PAGE_ROLE_WORK_HOURS), async (req, res) => {
   try {
     await pool.query('DELETE FROM user_work_hours WHERE user_id = $1', [req.params.userId]);
     res.json({ success: true });
@@ -580,7 +581,7 @@ router.get('/workflow-templates', async (req, res) => {
   }
 });
 
-router.post('/workflow-templates', verifyToken, requireRole('admin', 'superadmin'), async (req, res) => {
+router.post('/workflow-templates', verifyToken, requirePermission(PAGE_TASKS), async (req, res) => {
   const { name, description, steps } = req.body;
   try {
     await ensureTemplateTable();
@@ -595,7 +596,7 @@ router.post('/workflow-templates', verifyToken, requireRole('admin', 'superadmin
   }
 });
 
-router.delete('/workflow-templates/:id', verifyToken, requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/workflow-templates/:id', verifyToken, requirePermission(PAGE_TASKS), async (req, res) => {
   try {
     await pool.query('DELETE FROM workflow_templates WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -606,7 +607,7 @@ router.delete('/workflow-templates/:id', verifyToken, requireRole('admin', 'supe
 });
 
 // Manual trigger for pending leave reminders (admin only)
-router.post('/leave-approval/send-reminders', verifyToken, requireRole('admin', 'superadmin'), async (req, res) => {
+router.post('/leave-approval/send-reminders', verifyToken, requirePermission(PAGE_LEAVE_APPROVAL_SETTINGS), async (req, res) => {
   try {
     const result = await sendPendingLeaveReminders();
     res.json(result);

@@ -5,7 +5,8 @@ import fs from 'fs';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { sendMailWithFallback } from '../services/emailService.js';
-import { requireRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/auth.js';
+import { PERM_PROCUREMENT_DELETE } from '../config/permissionKeys.js';
 import { notifyNextStep } from '../services/workflowNotificationService.js';
 
 const router = express.Router();
@@ -190,7 +191,7 @@ router.post('/vendor-files', vendorFileUpload.single('file'), async (req, res) =
 });
 
 // Delete vendor file
-router.delete('/vendor-files/:id', requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/vendor-files/:id', requirePermission(PERM_PROCUREMENT_DELETE), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM procurement_vendor_files WHERE id = $1', [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
@@ -390,7 +391,7 @@ router.put('/:id/notify', async (req, res) => {
 });
 
 // Delete procurement item
-router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/:id', requirePermission(PERM_PROCUREMENT_DELETE), async (req, res) => {
   try {
     const { id } = req.params;
     

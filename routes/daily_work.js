@@ -1,4 +1,6 @@
 import express from 'express';
+import { hasPermissionSafe } from '../utils/permissions.js';
+import { PERM_DAILY_MANAGE_ALL } from '../config/permissionKeys.js';
 import { TEAMS_WEBHOOKS } from '../config/teams.js';
 import pool from '../config/database.js';
 import fetch from 'node-fetch';
@@ -30,7 +32,7 @@ const calcTotalHours = (startTime, endTime) => {
 async function canManageDailyWork(req, id) {
   const result = await pool.query('SELECT user_id FROM daily_work_records WHERE id = $1', [id]);
   if (!result.rows.length) return { found: false, allowed: false };
-  const isPrivileged = ['superadmin', 'admin', 'hr'].includes(req.user?.role);
+  const isPrivileged = await hasPermissionSafe(req.user, PERM_DAILY_MANAGE_ALL);
   const isOwner = String(result.rows[0].user_id) === String(req.user?.id);
   return { found: true, allowed: isPrivileged || isOwner };
 }

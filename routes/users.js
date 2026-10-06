@@ -2,7 +2,8 @@ import express from 'express';
 import { DEFAULT_LEAVE_QUOTAS } from '../config/leaveDefaults.js';
 import pool from '../config/database.js';
 import bcrypt from 'bcrypt';
-import { verifyToken, requireRole } from '../middleware/auth.js';
+import { verifyToken, requirePermission, isFullAccessRole } from '../middleware/auth.js';
+import { PAGE_USERS } from '../config/permissionKeys.js';
 import { logAudit } from '../utils/auditHelper.js';
 
 const router = express.Router();
@@ -35,8 +36,11 @@ router.get('/', verifyToken, async (req, res) => {
   }
 });
 
+// บัญชีผู้ดูแล (admin/superadmin) แก้ไขได้เฉพาะผู้ดูแลด้วยกัน — กัน role ที่ได้สิทธิ์ "จัดการผู้ใช้งาน" ยกระดับตัวเอง/คนอื่นเป็นผู้ดูแล
+const isElevatedRole = (role) => isFullAccessRole(role);
+
 // Create new user
-router.post('/', requireRole('admin', 'superadmin'), async (req, res) => {
+router.post('/', requirePermission(PAGE_USERS), async (req, res) => {
   try {
     const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, nickname} = req.body;
 
@@ -47,6 +51,10 @@ router.post('/', requireRole('admin', 'superadmin'), async (req, res) => {
     // กัน privilege escalation: มีแค่ superadmin เท่านั้นที่สร้าง user เป็น superadmin ได้
     if (role === 'superadmin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'เฉพาะ superadmin เท่านั้นที่สร้างบัญชี superadmin ได้' });
+    }
+
+    if (isElevatedRole(role) && !isFullAccessRole(req.user.role)) {
+      return res.status(403).json({ error: 'เฉพาะ admin/superadmin เท่านั้นที่สร้างบัญชีผู้ดูแลได้' });
     }
 
     // Hash password before saving
@@ -92,7 +100,7 @@ router.post('/', requireRole('admin', 'superadmin'), async (req, res) => {
 });
 
 // Update user
-router.put('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/:id', requirePermission(PAGE_USERS), async (req, res) => {
   try {
     const { id } = req.params;
     const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname } = req.body;
@@ -108,6 +116,12 @@ router.put('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
     }
     if (role === 'superadmin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'เฉพาะ superadmin เท่านั้นที่มอบสิทธิ์ superadmin ได้' });
+    }
+    if (!isFullAccessRole(req.user.role) && (isElevatedRole(oldData?.role) || isElevatedRole(role)) && String(req.user.id) !== String(id)) {
+      return res.status(403).json({ error: 'เฉพาะ admin/superadmin เท่านั้นที่แก้ไขบัญชีผู้ดูแลหรือมอบสิทธิ์ผู้ดูแลได้' });
+    }
+    if (!isFullAccessRole(req.user.role) && isElevatedRole(role)) {
+      return res.status(403).json({ error: 'เฉพาะ admin/superadmin เท่านั้นที่มอบสิทธิ์ผู้ดูแลได้' });
     }
 
     // ไม่ส่ง is_active มา = คงค่าเดิม (เดิมกลายเป็น true ทำให้แก้ข้อมูลแล้วบัญชีที่ปิดไว้ถูกเปิดกลับมา)
@@ -193,7 +207,7 @@ router.put('/:id/password', async (req, res) => {
 });
 
 // Update user leave quota
-router.put('/:id/leave-quota', requireRole('admin', 'superadmin'), async (req, res) => {
+router.put('/:id/leave-quota', requirePermission(PAGE_USERS), async (req, res) => {
   try {
     const { id } = req.params;
     const { sick_leave_quota, personal_leave_quota, vacation_leave_quota } = req.body;
@@ -213,14 +227,39 @@ router.put('/:id/leave-quota', requireRole('admin', 'superadmin'), async (req, r
 });
 
 // Delete user
-router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
+router.delete('/:id', requirePermission(PAGE_USERS), async (req, res) => {
   try {
     const { id } = req.params;
-    
+
+    if (!/^\d+$/.test(String(id))) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    // กันลบบัญชีตัวเอง (ไม่งั้นระบบเหลือไม่มีผู้ดูแลได้ง่าย ๆ จากการกดผิด)
+    if (String(req.user.id) === String(id)) {
+      return res.status(403).json({ error: 'ไม่สามารถลบบัญชีของตัวเองได้' });
+    }
+
     // Get user data before delete for audit
-    const oldResult = await pool.query('SELECT username, firstname, lastname FROM users WHERE id = $1', [id]);
+    const oldResult = await pool.query('SELECT username, firstname, lastname, role FROM users WHERE id = $1', [id]);
     const oldData = oldResult.rows[0];
-    
+
+    if (isElevatedRole(oldData?.role) && !isFullAccessRole(req.user.role)) {
+      return res.status(403).json({ error: 'เฉพาะ admin/superadmin เท่านั้นที่ลบบัญชีผู้ดูแลได้' });
+    }
+
+    // superadmin ลบได้เฉพาะโดย superadmin ด้วยกัน และต้องเหลืออย่างน้อย 1 คน
+    // (เดิมตรวจแค่ role ของผู้เรียก → admin ลบ superadmin ได้)
+    if (oldData?.role === 'superadmin') {
+      if (req.user.role !== 'superadmin') {
+        return res.status(403).json({ error: 'เฉพาะ superadmin เท่านั้นที่ลบบัญชี superadmin ได้' });
+      }
+      const countResult = await pool.query("SELECT COUNT(*)::int AS n FROM users WHERE role = 'superadmin'");
+      if (countResult.rows[0].n <= 1) {
+        return res.status(400).json({ error: 'ไม่สามารถลบ superadmin คนสุดท้ายได้' });
+      }
+    }
+
     const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
     
     if (result.rows.length === 0) {

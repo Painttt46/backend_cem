@@ -49,7 +49,10 @@ export const verifyToken = async (req, res, next) => {
         username: user.username,
         role: user.role,
         firstname: user.firstname,
-        lastname: user.lastname
+        lastname: user.lastname,
+        // ใช้ตอน refresh (routes/auth.js) ให้ token ใหม่ฝัง tv ตรงกับ DB — เดิมไม่มีค่านี้ → ได้ tv=0 เสมอ
+        // แล้วผู้ใช้ที่เคยเปลี่ยนรหัสผ่าน (token_version > 0) จะถูกเด้งออกทันทีหลัง refresh
+        token_version: user.token_version || 0
       };
       next();
     } catch (jwtError) {
@@ -64,6 +67,9 @@ export const verifyToken = async (req, res, next) => {
   }
 };
 
+// ระบบสิทธิ์กลาง (admin/superadmin ผ่านทุกอย่าง, role อื่นตามที่ตั้งในหน้า "จัดการสิทธิ์") — ดู utils/permissions.js
+export { requirePermission, userHasPermission, isFullAccessRole } from '../utils/permissions.js';
+
 // Middleware สำหรับตรวจสอบ role
 export const requireRole = (...allowedRoles) => {
   return (req, res, next) => {
@@ -71,7 +77,7 @@ export const requireRole = (...allowedRoles) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
-    if (!allowedRoles.includes(req.user.role)) {
+    if (!allowedRoles.includes(String(req.user.role ?? '').trim().toLowerCase())) {
       return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
     }
     
