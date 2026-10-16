@@ -27,6 +27,41 @@ const setTimezone = async () => {
   await pool.query("SET timezone = 'Asia/Bangkok'");
 };
 
+// รถของบริษัทมีคันเดียว — ค่าเดียวกับที่หน้าเว็บส่งมา (เดิม fallback เป็น 'FXAG-2032' ซึ่งไม่ตรงกับข้อมูลจริง)
+const DEFAULT_LICENSE = 'ชฮ-3706';
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+// ความยาวสูงสุดตามคอลัมน์ในตาราง car_bookings (varchar) — เกินแล้ว DB error เป็น 500 ที่ผู้ใช้ไม่รู้สาเหตุ
+const MAX_TEXT = { location: 200, discription: 200, return_location: 255 };
+
+// เวลา "ตอนนี้" ตามเวลาไทยในรูป 'YYYY-MM-DD HH:MM' — ไม่ขึ้นกับ TZ ของ process หรือ connection ใน pool
+function bangkokNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date()).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
+// วันที่จาก DB (Date ของ node-pg หรือสตริง) → 'dd/mm/yyyy' แบบไทย
+function thDate(d) {
+  if (!d) return '-';
+  const s = d instanceof Date
+    ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    : String(d).slice(0, 10);
+  return new Date(`${s}T12:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' });
+}
+
+// แจ้ง Teams แบบไม่ให้ผู้ใช้รอ — เดิม await ใน request ถ้า Teams ตอบช้า/ค้าง ปุ่มจะหมุนนานจนผู้ใช้กดซ้ำ
+// ส่งตามลำดับที่ให้มา (เช่น "จองใหม่" ก่อน "กำลังใช้งาน")
+function notifyTeams(...cards) {
+  (async () => {
+    for (const [type, data] of cards) await sendTeamsNotification(type, data);
+  })().catch(() => {});
+}
+
+const STATUS_TEXT = { pending: 'รอใช้งาน', active: 'กำลังใช้งาน', returned: 'คืนแล้ว', cancelled: 'ยกเลิกแล้ว' };
+
 // สิทธิ์จองรถ = สิทธิ์ "จองรถ" (/car_booking) ที่ตั้งในหน้าจัดการสิทธิ์ ใช้ร่วมกันทั้งจอง/แจ้งคืน/ยกเลิก/เพิ่มรูป — ใครเข้าหน้านี้ได้ก็ทำกับการจองของทุกคนได้
 // (ไม่มีสิทธิ์แยกสำหรับการจัดการการจองของผู้อื่น) — เส้นทางที่แก้ข้อมูลทุกเส้นผ่าน requirePermission(PAGE_CAR_BOOKING) ด้านล่าง
 async function findBooking(id) {
@@ -44,9 +79,10 @@ router.get('/latest-fuel', async (req, res) => {
       ORDER BY updated_at DESC 
       LIMIT 1
     `);
+    // ใช้ ?? ไม่ใช่ || — น้ำมัน 0% / EasyPass ฿0 เป็นค่าจริง (เดิม 0 กลายเป็น 50/500)
     res.json({
-      fuel_level: result.rows[0]?.fuel_level_return || 50,
-      easy_pass_balance: result.rows[0]?.easy_pass_return || 500,
+      fuel_level: result.rows[0]?.fuel_level_return ?? 50,
+      easy_pass_balance: result.rows[0]?.easy_pass_return ?? 500,
       return_location: result.rows[0]?.return_location || null
     });
   } catch (error) {
@@ -90,7 +126,7 @@ router.get('/', async (req, res) => {
 
 
 // Get images for a specific booking
-router.get('/:id/images', async (req, res) => {
+router.get('/:id/images', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query('SELECT images FROM car_bookings WHERE id = $1', [id]);
@@ -105,75 +141,96 @@ router.get('/:id/images', async (req, res) => {
 router.post('/', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
   const {
     type, location, task_id, description,
-    selected_date, time, license, colleagues, images, user_id, fuel_level_borrow, easy_pass_borrow,
-    expected_return_date, expected_return_time
+    selected_date, colleagues, images, user_id, fuel_level_borrow, easy_pass_borrow,
+    expected_return_date
   } = req.body;
-  
+  const license = req.body.license || DEFAULT_LICENSE;
+  const time = req.body.time || '09:00';
+  const expected_return_time = req.body.expected_return_time || null;
+
+  if (!DATE_RE.test(String(selected_date || '')) || (expected_return_date && !DATE_RE.test(String(expected_return_date)))) {
+    return res.status(400).json({ error: 'วันที่ไม่ถูกต้อง' });
+  }
+  if (!TIME_RE.test(time) || (expected_return_time && !TIME_RE.test(expected_return_time))) {
+    return res.status(400).json({ error: 'เวลาไม่ถูกต้อง (รูปแบบ HH:MM)' });
+  }
+  if (String(location || '').length > MAX_TEXT.location) {
+    return res.status(400).json({ error: `สถานที่ยาวเกิน ${MAX_TEXT.location} ตัวอักษร` });
+  }
+  if (String(description || '').length > MAX_TEXT.discription) {
+    return res.status(400).json({ error: `ข้อมูลเพิ่มเติมยาวเกิน ${MAX_TEXT.discription} ตัวอักษร` });
+  }
+
+  // ช่วงเวลาที่ขอใช้รถ (เวลาไทย 'YYYY-MM-DD HH:MM') — ไม่ระบุเวลาคืน = ถึงสิ้นวัน
+  const startAt = `${selected_date} ${time}`;
+  const endAt = `${expected_return_date || selected_date} ${expected_return_time || '23:59'}`;
+  if (expected_return_time && endAt <= startAt) {
+    return res.status(400).json({ error: 'เวลาคืนรถต้องเป็นเวลาหลังจากเวลารับรถ' });
+  }
+
   try {
     await setTimezone();
-    
+
     // Get project info from task
     let project = '';
     if (task_id) {
       const taskResult = await pool.query('SELECT task_name FROM tasks WHERE id = $1', [task_id]);
       if (taskResult.rows.length > 0) {
-        project = taskResult.rows[0].task_name;
+        project = String(taskResult.rows[0].task_name || '').slice(0, 200);
       }
     }
-    
-    // Check for conflicts with existing bookings (both active and pending)
-    const newBookingDate = new Date(selected_date);
-    newBookingDate.setHours(0, 0, 0, 0);
-    
-    // Check active bookings
-    const activeCheck = await pool.query(`
-      SELECT id, selected_date, return_date, status 
-      FROM car_bookings 
-      WHERE status = 'active' AND license = $1
-    `, [license || 'FXAG-2032']);
-    
-    if (activeCheck.rows.length > 0) {
-      const activeBooking = activeCheck.rows[0];
-      const activeBorrowDate = new Date(activeBooking.selected_date);
-      activeBorrowDate.setHours(0, 0, 0, 0);
-      
-      // Block if trying to book on the same day as active booking
-      if (newBookingDate.getTime() === activeBorrowDate.getTime()) {
-        return res.status(409).json({ 
-          error: 'รถคันนี้กำลังถูกใช้งานอยู่ในวันที่เลือก',
-          details: `รถถูกใช้งานตั้งแต่ ${activeBorrowDate.toLocaleDateString('th-TH')} และยังไม่ได้คืน`,
-          conflictBookingId: activeBooking.id
-        });
-      }
-    }
-    
-    // Check pending bookings for the same date
+
+    // Check pending bookings for the same date (1 คัน จองล่วงหน้าได้วันละ 1 รายการ — มี unique index กำกับ)
     const pendingCheck = await pool.query(`
       SELECT id, selected_date, status, project
-      FROM car_bookings 
+      FROM car_bookings
       WHERE status = 'pending' AND license = $1 AND selected_date = $2
-    `, [license || 'FXAG-2032', selected_date]);
-    
+    `, [license, selected_date]);
+
     if (pendingCheck.rows.length > 0) {
       const pendingBooking = pendingCheck.rows[0];
-      return res.status(409).json({ 
+      return res.status(409).json({
         error: 'มีการจองรถในวันนี้แล้ว',
-        details: `มีการจองล่วงหน้าสำหรับวันที่ ${newBookingDate.toLocaleDateString('th-TH')} (โครงการ: ${pendingBooking.project || 'ไม่ระบุ'})`,
+        details: `มีการจองล่วงหน้าสำหรับวันที่ ${thDate(selected_date)} (โครงการ: ${pendingBooking.project || 'ไม่ระบุ'})`,
         conflictBookingId: pendingBooking.id
       });
     }
-    
-    // เวลาคืนที่ตั้งไว้ต้องหลังเวลารับ (ถ้ากรอกมา)
-    if (expected_return_time) {
-      const expDate = new Date(expected_return_date || selected_date);
-      const [eh, em] = String(expected_return_time).split(':').map(Number);
-      expDate.setHours(eh, em, 0, 0);
-      const pickupDate = new Date(selected_date);
-      const [ph, pm] = String(time || '09:00').split(':').map(Number);
-      pickupDate.setHours(ph, pm, 0, 0);
-      if (expDate <= pickupDate) {
-        return res.status(400).json({ error: 'เวลาคืนรถต้องเป็นเวลาหลังจากเวลารับรถ' });
-      }
+
+    // ช่วงเวลาทับกับการจอง/การใช้งานอื่นของรถคันเดียวกัน — เดิมเทียบแค่ "วันเริ่ม" ของรายการ active
+    // ทำให้จองข้ามวันซ้อนกันได้ แล้วโดน scheduler ยกเลิกทีหลัง หรือได้รายการ active พร้อมกัน 2 รายการ
+    // active ที่ยังไม่คืน ถือว่าใช้อยู่อย่างน้อยจนถึง "ตอนนี้" (เลยเวลาคืนแล้ว scheduler จะปิดให้ภายในไม่กี่วินาที)
+    const hhmm = (col) => `CASE WHEN ${col} ~ '^[0-9]{1,2}:[0-9]{2}$' THEN ${col}::time ELSE NULL END`;
+    const overlap = await pool.query(`
+      SELECT id, status, project, selected_date, time, expected_return_date, expected_return_time
+      FROM car_bookings
+      WHERE license = $1 AND status IN ('pending', 'active')
+        AND selected_date + COALESCE(${hhmm('time')}, '00:00'::time) < $3::timestamp
+        AND $2::timestamp < CASE
+          WHEN status = 'active' THEN GREATEST(
+            COALESCE(expected_return_date, selected_date) + COALESCE(${hhmm('expected_return_time')}, '23:59'::time),
+            $4::timestamp)
+          ELSE COALESCE(expected_return_date, selected_date) + COALESCE(${hhmm('expected_return_time')}, '23:59'::time)
+        END
+      ORDER BY (status = 'active') DESC, selected_date
+      LIMIT 1
+    `, [license, startAt, endAt, bangkokNow()]);
+
+    if (overlap.rows.length > 0) {
+      const c = overlap.rows[0];
+      const until = c.expected_return_time
+        ? `${thDate(c.expected_return_date || c.selected_date)} ${c.expected_return_time}`
+        : `${thDate(c.selected_date)} (ไม่ระบุเวลาคืน)`;
+      return res.status(409).json(c.status === 'active'
+        ? {
+          error: 'รถคันนี้กำลังถูกใช้งานอยู่ในช่วงเวลาที่เลือก',
+          details: `Ticket #${c.id} ใช้รถตั้งแต่ ${thDate(c.selected_date)} ${c.time} กำหนดคืน ${until}`,
+          conflictBookingId: c.id
+        }
+        : {
+          error: 'ช่วงเวลาที่เลือกทับกับการจองอื่น',
+          details: `ทับกับ Ticket #${c.id} (${thDate(c.selected_date)} ${c.time} ถึง ${until}, โครงการ: ${c.project || 'ไม่ระบุ'})`,
+          conflictBookingId: c.id
+        });
     }
 
     const result = await pool.query(`
@@ -184,29 +241,29 @@ router.post('/', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *
     `, [
-      type,
+      type || 'borrow',
       location || '',
       project || '',
       task_id || null,
       description || '',
       selected_date,
-      time || '09:00',
-      license || 'FXAG-2032',
+      time,
+      license,
       JSON.stringify(colleagues || []),
       JSON.stringify(images || []),
       // ใช้ user_id จาก token เท่านั้น กันสร้างรายการในนามผู้อื่น (IDOR)
       req.user?.id || user_id || null,
       'pending',
-      fuel_level_borrow || null,
-      easy_pass_borrow || null,
+      fuel_level_borrow ?? null,
+      easy_pass_borrow ?? null,
       expected_return_time ? (expected_return_date || selected_date) : null,
-      expected_return_time || null
+      expected_return_time
     ]);
-    
+
     // Get created data with user info for Teams notification
     const createdResult = await pool.query(`
-      SELECT 
-        c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
+      SELECT
+        c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license,
         c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
         c.return_time, c.return_date, c.status, c.user_id,
         u.firstname || ' ' || u.lastname as name
@@ -214,27 +271,20 @@ router.post('/', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
       LEFT JOIN users u ON c.user_id = u.id
       WHERE c.id = $1
     `, [result.rows[0].id]);
-    
+
     const bookingData = createdResult.rows[0];
-    
-    // Send booking notification first
-    await sendTeamsNotification('booking', bookingData);
-    
-    // Check if booking time has passed - if so, activate immediately
-    const now = new Date();
-    const borrowDate = new Date(selected_date);
-    const [hour, minute] = (time || '09:00').split(':').map(Number);
-    borrowDate.setHours(hour, minute, 0, 0);
-    
-    if (now >= borrowDate) {
-      // Update status to active
-      await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', bookingData.id]);
-      bookingData.status = 'active';
-      
-      // Send active notification after booking notification
-      await sendTeamsNotification('active', bookingData);
+    const cards = [['booking', { ...bookingData }]];
+
+    // ถึงเวลารับรถแล้ว (แจ้งใช้รถตอนนี้) → เปลี่ยนเป็นกำลังใช้งานทันที
+    if (startAt <= bangkokNow()) {
+      const act = await pool.query(`UPDATE car_bookings SET status = 'active' WHERE id = $1 AND status = 'pending'`, [bookingData.id]);
+      if (act.rowCount > 0) {
+        bookingData.status = 'active';
+        cards.push(['active', bookingData]);
+      }
     }
-    
+    notifyTeams(...cards);
+
     // Log audit
     await logAudit(req, {
       action: 'CREATE',
@@ -243,9 +293,16 @@ router.post('/', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
       recordName: `${bookingData.name} - ${selected_date}`,
       newData: { project, location, selected_date, time, license }
     });
-    
+
     res.status(201).json(bookingData);
   } catch (error) {
+    // สองคนกดจองวันเดียวกันพร้อมกัน → unique index (pending ต่อคันต่อวัน) กันไว้ — ตอบเป็น "มีคนจองแล้ว" ไม่ใช่ 500
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'มีการจองรถในวันนี้แล้ว', details: 'มีผู้อื่นเพิ่งจองวันเดียวกันก่อนหน้าไม่กี่วินาที กรุณารีเฟรชหน้าแล้วเลือกวันอื่น' });
+    }
+    if (error.code === '22001') {
+      return res.status(400).json({ error: 'ข้อความบางช่องยาวเกินกำหนด' });
+    }
     console.error('Database error:', error);
     res.status(500).json({ error: 'ไม่สามารถสร้างรายการจองรถได้' });
   }
@@ -256,30 +313,50 @@ router.put('/:id', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
   const { id } = req.params;
   const { images, return_name, return_location, return_description, return_time, return_date, fuel_level_return, easy_pass_return } = req.body;
 
+  const isReturn = Boolean(return_name || return_location || return_time || return_date);
+
   try {
-    if (!(await findBooking(id))) return res.status(404).json({ error: 'Record not found' });
+    const current = await pool.query('SELECT status, auto_returned, images FROM car_bookings WHERE id = $1', [id]);
+    if (current.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+
+    if (isReturn) {
+      // แจ้งคืนได้เฉพาะรายการที่กำลังใช้งาน หรือที่ระบบเพิ่งปิดให้อัตโนมัติ (ผู้ใช้ส่งข้อมูลคืนจริงทับได้: น้ำมัน/EasyPass/รูป)
+      // เดิมไม่ตรวจสถานะ: แจ้งคืนซ้ำได้ (ข้อมูล/รูปคืนครั้งแรกถูกทับ, แจ้ง Teams ซ้ำ) และ "คืน" รายการที่ยังไม่ถึงเวลาได้
+      const { status, auto_returned } = current.rows[0];
+      if (!(status === 'active' || (status === 'returned' && auto_returned))) {
+        return res.status(409).json(status === 'pending'
+          ? { error: 'รายการนี้ยังไม่ถึงเวลาใช้รถ', details: 'ถ้าไม่ใช้รถแล้ว ให้ใช้ "ยกเลิกการจอง" แทน' }
+          : { error: `แจ้งคืนไม่ได้ — รายการนี้${STATUS_TEXT[status] || status}`, details: 'กรุณารีเฟรชหน้าเพื่อดูสถานะล่าสุด' });
+      }
+      if (String(return_location || '').length > MAX_TEXT.return_location) {
+        return res.status(400).json({ error: `สถานที่คืนรถยาวเกิน ${MAX_TEXT.return_location} ตัวอักษร` });
+      }
+      if (String(return_description || '').length > MAX_TEXT.discription) {
+        return res.status(400).json({ error: `ข้อมูลเพิ่มเติมยาวเกิน ${MAX_TEXT.discription} ตัวอักษร` });
+      }
+    }
 
     await setTimezone();
     let query, params;
-    
-    if (return_name || return_location || return_time || return_date) {
-      // Get existing images first
-      const existing = await pool.query('SELECT images FROM car_bookings WHERE id = $1', [id]);
-      const existingImages = existing.rows[0]?.images || [];
-      
+
+    if (isReturn) {
+      const existingImages = current.rows[0].images || [];
+            
       // Merge: existing = borrow images, new = return images
       const mergedImages = {
         borrow: Array.isArray(existingImages) ? existingImages : (existingImages.borrow || []),
         return: images || []
       };
       
+      // discription: ช่องว่าง = คงข้อมูลตอนจองไว้ (เดิมเขียนทับด้วยค่าว่าง ทำให้วัตถุประสงค์การจองหาย)
+      // เงื่อนไขสถานะซ้ำใน WHERE กันแจ้งคืนพร้อมกัน 2 ครั้ง (ครั้งที่สองได้ 0 แถว → 409)
       query = `
-        UPDATE car_bookings 
-        SET return_name = $1, return_location = $2, discription = $3, return_time = $4, return_date = $5, images = $6, fuel_level_return = $7, easy_pass_return = $8, status = 'returned', updated_at = NOW() 
-        WHERE id = $9 
+        UPDATE car_bookings
+        SET return_name = $1, return_location = $2, discription = COALESCE(NULLIF($3, ''), discription), return_time = $4, return_date = $5, images = $6, fuel_level_return = $7, easy_pass_return = $8, status = 'returned', auto_returned = false, updated_at = NOW()
+        WHERE id = $9 AND (status = 'active' OR (status = 'returned' AND auto_returned = true))
         RETURNING *
       `;
-      params = [return_name, return_location, return_description, return_time, return_date, JSON.stringify(mergedImages), fuel_level_return || null, easy_pass_return || null, id];
+      params = [return_name, return_location, return_description ?? '', return_time, return_date, JSON.stringify(mergedImages), fuel_level_return ?? null, easy_pass_return ?? null, id];
     } else {
       // Update images only
       query = `
@@ -292,9 +369,11 @@ router.put('/:id', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
     }
     
     const result = await pool.query(query, params);
-    
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Record not found' });
+      return isReturn
+        ? res.status(409).json({ error: 'รายการนี้เพิ่งถูกแจ้งคืนไปแล้ว', details: 'กรุณารีเฟรชหน้าเพื่อดูสถานะล่าสุด' })
+        : res.status(404).json({ error: 'Record not found' });
     }
     
     // Get updated data with user info for Teams notification
@@ -312,9 +391,7 @@ router.put('/:id', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
     const updatedData = updatedResult.rows[0];
     
     // Send return notification if this is a return update
-    if (return_name || return_location || return_time || return_date) {
-      await sendTeamsNotification('return', updatedData);
-    }
+    if (isReturn) notifyTeams(['return', updatedData]);
     
     // Log audit
     await logAudit(req, {
@@ -327,6 +404,9 @@ router.put('/:id', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
     
     res.json(updatedData);
   } catch (error) {
+    if (error.code === '22001') {
+      return res.status(400).json({ error: 'ข้อความบางช่องยาวเกินกำหนด' });
+    }
     console.error('Database update error:', error);
     res.status(500).json({ error: 'ไม่สามารถแก้ไขรายการจองรถได้' });
   }
@@ -371,6 +451,7 @@ router.post('/:id/images', requirePermission(PAGE_CAR_BOOKING), async (req, res)
 // Delete car booking record
 router.delete('/:id', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
   const { id } = req.params;
+  const reason = String(req.body?.reason || '').trim().slice(0, 500);
 
   try {
     if (!(await findBooking(id))) return res.status(404).json({ error: 'Record not found' });
@@ -393,13 +474,27 @@ router.delete('/:id', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
     }
     
     const oldData = beforeDelete.rows[0];
-    
+
+    // ยกเลิกได้เฉพาะการจองที่ยังไม่ถึงเวลา — เดิมลบได้ทุกสถานะ ประวัติการใช้รถ (กำลังใช้/คืนแล้ว) จึงหายได้
+    if (oldData.status !== 'pending') {
+      return res.status(409).json(oldData.status === 'active'
+        ? { error: 'รถกำลังใช้งานอยู่ ยกเลิกไม่ได้', details: 'ถ้าใช้รถเสร็จแล้ว ให้ใช้ "แจ้งคืนรถ" แทน' }
+        : { error: `ยกเลิกไม่ได้ — รายการนี้${STATUS_TEXT[oldData.status] || oldData.status}`, details: 'กรุณารีเฟรชหน้าเพื่อดูสถานะล่าสุด' });
+    }
+
     const result = await pool.query(`
-      DELETE FROM car_bookings WHERE id = $1 RETURNING *
+      DELETE FROM car_bookings WHERE id = $1 AND status = 'pending' RETURNING id
     `, [id]);
-    
-    // Send cancel notification
-    await sendTeamsNotification('cancel', oldData);
+    if (result.rows.length === 0) {
+      return res.status(409).json({ error: 'สถานะการจองเพิ่งเปลี่ยน (อาจถึงเวลาใช้รถพอดี)', details: 'กรุณารีเฟรชหน้าเพื่อดูสถานะล่าสุด' });
+    }
+
+    // Send cancel notification (ผู้ยกเลิกอาจไม่ใช่ผู้จอง — ทุกคนที่มีสิทธิ์หน้านี้ยกเลิกให้คนอื่นได้)
+    notifyTeams(['cancel', {
+      ...oldData,
+      cancelled_by: `${req.user?.firstname || ''} ${req.user?.lastname || ''}`.trim() || null,
+      cancellation_reason: reason || null
+    }]);
     
     // Log audit
     await logAudit(req, {
@@ -407,7 +502,7 @@ router.delete('/:id', requirePermission(PAGE_CAR_BOOKING), async (req, res) => {
       tableName: 'car_bookings',
       recordId: parseInt(id),
       recordName: `${oldData.name} - ${oldData.selected_date}`,
-      oldData: { project: oldData.project, location: oldData.location, selected_date: oldData.selected_date }
+      oldData: { project: oldData.project, location: oldData.location, selected_date: oldData.selected_date, reason: reason || undefined }
     });
     
     // Return the data with user info for Teams notification

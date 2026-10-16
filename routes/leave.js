@@ -23,6 +23,20 @@ const ensureUsedDaysNumeric = runOnce(async () => {
   await pool.query(`ALTER TABLE user_leave_quotas ALTER COLUMN annual_quota TYPE NUMERIC(10,4) USING COALESCE(annual_quota, 0)::numeric`);
 });
 
+// total_days เดิมเป็น NUMERIC(3,1) (ทศนิยม 1 ตำแหน่ง) แต่ฟอร์มคำนวณเป็นชั่วโมงจริง เช่น ลาบ่าย 5 ชม. = 0.625 วัน
+// → DB ปัดเหลือ 0.6 (4.8 ชม.) แล้วตัดโควตาตามค่าที่ปัดนั้น — ขยายเป็น 4 ตำแหน่งให้ตรงกับ used_days ของโควตา
+// (เช็ค scale ก่อน จะได้ไม่ rewrite ตารางทุกครั้งที่สตาร์ท; ข้อมูลเดิมไม่เปลี่ยน)
+const ensureTotalDaysPrecision = runOnce(async () => {
+  const col = await pool.query(`
+    SELECT numeric_scale FROM information_schema.columns
+    WHERE table_name = 'leave_requests' AND column_name = 'total_days'
+  `);
+  const scale = col.rows[0]?.numeric_scale;
+  if (scale !== null && scale !== undefined && Number(scale) < 4) {
+    await pool.query(`ALTER TABLE leave_requests ALTER COLUMN total_days TYPE NUMERIC(10,4)`);
+  }
+});
+
 const ensureQuotaDisplayColumns = runOnce(async () => {
   await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS color VARCHAR(20)`);
   await pool.query(`ALTER TABLE user_leave_quotas ADD COLUMN IF NOT EXISTS advance_days INTEGER DEFAULT 0`);
@@ -81,7 +95,7 @@ const requireLeaveTypePermission = requirePermission(PERM_LEAVE_TYPES, { ensure:
 
 // เตรียม schema ตั้งแต่สตาร์ท (คำขอแรกจึงไม่ต้องรอ) — ล้มเหลวได้ เพราะแต่ละ handler จะเรียก ensure ซ้ำเมื่อใช้งานจริง
 Promise.all([
-  ensureUsedDaysNumeric(), ensureQuotaDisplayColumns(), ensureHolidaysTable(),
+  ensureUsedDaysNumeric(), ensureTotalDaysPrecision(), ensureQuotaDisplayColumns(), ensureHolidaysTable(),
   ensureCancelColumns(), ensureStatusWide(), ensureApprovalColumns(), ensureLeaveManagePermissions()
 ]).catch((error) => console.error('[leave] schema setup deferred:', error.message));
 
@@ -250,25 +264,16 @@ async function sendTeamsNotification(type, data) {
   }
 }
 
-function calculateLeaveDays(startDateTime, endDateTime) {
-  const start = new Date(startDateTime);
-  const end = new Date(endDateTime);
-  const HOURS_PER_DAY = 8;
-
-  // Same day → คำนวณตามชั่วโมงจริง
-  const startDay = new Date(start); startDay.setHours(0, 0, 0, 0);
-  const endDay   = new Date(end);   endDay.setHours(0, 0, 0, 0);
-
-  if (startDay.getTime() === endDay.getTime()) {
-    const diffHours = (end - start) / (1000 * 60 * 60);
-    const days = diffHours / HOURS_PER_DAY;
-    // ปัดเป็น 0.5 หรือ 1.0
-    return days <= 0.5 ? 0.5 : 1;
-  }
-
-  // ต่างวัน → นับจำนวนวัน
-  const diffDays = Math.floor((endDay - startDay) / (1000 * 60 * 60 * 24)) + 1;
-  return diffDays;
+// จำนวนลาสำหรับแสดงผล เช่น "0.625 วัน (5 ชม.)" — ใช้ total_days ที่ตัดโควตาจริง
+// (เดิมการ์ดอนุมัติคำนวณใหม่เอง: วันเดียวปัดเป็น 0.5/1 และหลายวันนับเสาร์-อาทิตย์/วันหยุดรวมไปด้วย ตัวเลขจึงไม่ตรงกับที่ตัดโควตา)
+// ชั่วโมง = วัน × 8 (เวลาทำงานทุก role ที่ตั้งไว้ตอนนี้ = 8 ชม./วัน — เหมือนอีเมลแจ้งเตือน)
+function formatLeaveAmount(totalDays) {
+  const days = Number(totalDays) || 0;
+  const totalMinutes = Math.round(days * 8 * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  const hoursText = m ? `${h} ชม. ${m} นาที` : `${h} ชม.`;
+  return `${parseFloat(days.toFixed(4))} วัน (${hoursText})`;
 }
 
 // ---------- ตรวจวันที่/จำนวนวันลาที่ client ส่งมา (เดิมเชื่อค่า total_days ทั้งหมด → ส่งเลขน้อย ๆ เพื่อไม่ให้โควตาถูกตัดได้) ----------
@@ -298,6 +303,8 @@ async function validateLeaveTiming(startRaw, endRaw, totalDaysRaw) {
 
   const days = (totalDaysRaw === '' || totalDaysRaw === null || totalDaysRaw === undefined) ? NaN : Number(totalDaysRaw);
   if (!Number.isFinite(days) || days < 0) return 'จำนวนวันลาไม่ถูกต้อง';
+  // 0 วัน = ช่วงที่เลือกไม่มีเวลาทำงานเลย (เวลาเริ่ม = เวลาสิ้นสุด, เลือกวันหยุด/นอกเวลางาน) — เดิมบันทึกและอนุมัติได้
+  if (days <= 0) return 'ช่วงเวลาที่เลือกไม่มีเวลาทำงาน (จำนวนวันลาเป็น 0) กรุณาตรวจสอบวันและเวลาเริ่ม-สิ้นสุด';
 
   const spanDays = (end.dayMs - start.dayMs) / DAY_MS;
   if (spanDays > MAX_LEAVE_SPAN_DAYS) return 'ช่วงวันลายาวเกินไป';
@@ -434,16 +441,20 @@ async function calculateRemainingLeave(userId, leaveType) {
     usedDays = parseFloat(usedResult.rows[0].used_days) || 0;
   }
 
-  const remainingDays = quota - usedDays;
+  // ค่า numeric จาก DB เป็นสตริง — แปลงก่อน และปัด 4 ตำแหน่งกันเศษทศนิยมลอยตัว (เช่น 9.299999999999999)
+  const r4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
+  const quotaNum = r4(quota);
+  const usedNum = r4(usedDays);
+  const remainingDays = r4(quotaNum - usedNum);
   const hoursPerDay = 8;
 
   return {
-    quota,
-    usedDays,
+    quota: quotaNum,
+    usedDays: usedNum,
     remainingDays: Math.max(0, remainingDays),
-    quotaHours: quota * hoursPerDay,
-    usedHours: usedDays * hoursPerDay,
-    remainingHours: Math.max(0, remainingDays) * hoursPerDay
+    quotaHours: r4(quotaNum * hoursPerDay),
+    usedHours: r4(usedNum * hoursPerDay),
+    remainingHours: r4(Math.max(0, remainingDays) * hoursPerDay)
   };
 }
 
@@ -451,8 +462,7 @@ async function createLeaveMessage(type, data) {
   const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
   let title, color, tableData;
 
-  // Calculate correct leave days
-  const correctDays = calculateLeaveDays(data.start_datetime, data.end_datetime);
+  const leaveAmount = formatLeaveAmount(data.total_days);
 
   // Get leave type label in Thai
   const leaveTypeLabels = LEAVE_TYPE_LABELS;
@@ -472,7 +482,7 @@ async function createLeaveMessage(type, data) {
         ['ประเภทการลา', getLeaveTypeLabel(data.leave_type)],
         ['วันเริ่มลา', formatDateTime(data.start_datetime)],
         ['วันสิ้นสุด', formatDateTime(data.end_datetime)],
-        ['จำนวนวัน', correctDays + ' วัน'],
+        ['จำนวนวัน', leaveAmount],
         ['สถานะ', 'รออนุมัติ']
       ];
       break;
@@ -486,7 +496,7 @@ async function createLeaveMessage(type, data) {
         ['ประเภทการลา', getLeaveTypeLabel(data.leave_type)],
         ['วันเริ่มลา', formatDateTime(data.start_datetime)],
         ['วันสิ้นสุด', formatDateTime(data.end_datetime)],
-        ['จำนวนวัน', correctDays + ' วัน'],
+        ['จำนวนวัน', leaveAmount],
         ['ผู้อนุมัติขั้นที่ 1 (HR)', data.approved_by_level1 || '-'],
         ['ผู้อนุมัติขั้นที่ 2 (ผู้บริหาร)', data.approved_by_level2 || '-'],
         ['สถานะ', 'อนุมัติ']
@@ -502,7 +512,7 @@ async function createLeaveMessage(type, data) {
         ['ประเภทการลา', getLeaveTypeLabel(data.leave_type)],
         ['วันเริ่มลา', formatDateTime(data.start_datetime)],
         ['วันสิ้นสุด', formatDateTime(data.end_datetime)],
-        ['จำนวนวัน', data.total_days + ' วัน'],
+        ['จำนวนวัน', leaveAmount],
         ['ผู้ปฏิเสธ', data.approved_by || 'ไม่ระบุ'],
         ['สถานะ', 'ปฏิเสธ']
       ];
@@ -1126,6 +1136,28 @@ router.post('/', async (req, res) => {
       }
       filedByName = `${req.user.firstname || ''} ${req.user.lastname || ''}`.trim();
       userId = Number(targetUserId);
+    }
+
+    // ใบลาทับช่วงเวลากับใบลาเดิมของคนเดียวกัน (ที่ยังไม่ถูกปฏิเสธ/ยกเลิก) → ไม่รับ
+    // เดิมยื่นซ้ำได้ (กดส่งซ้ำ / HR ยื่นย้อนหลังทับใบที่มีอยู่) แล้วอนุมัติทั้งคู่ = ตัดโควตาซ้ำ
+    await ensureTotalDaysPrecision();
+    const overlapResult = await pool.query(`
+      SELECT id, status,
+        to_char(start_datetime, 'DD/MM/') || (EXTRACT(YEAR FROM start_datetime)::int + 543) || to_char(start_datetime, ' HH24:MI') AS s,
+        to_char(end_datetime, 'DD/MM/') || (EXTRACT(YEAR FROM end_datetime)::int + 543) || to_char(end_datetime, ' HH24:MI') AS e
+      FROM leave_requests
+      WHERE user_id = $1 AND status IN ('pending', 'pending_level2', 'approved', 'cancel')
+        AND start_datetime < $3::timestamp AND $2::timestamp < end_datetime
+      ORDER BY start_datetime
+      LIMIT 1
+    `, [userId, start_datetime, end_datetime]);
+    if (overlapResult.rows.length > 0) {
+      const o = overlapResult.rows[0];
+      const statusText = { pending: 'รออนุมัติ', pending_level2: 'รออนุมัติขั้นที่ 2', approved: 'อนุมัติแล้ว', cancel: 'รออนุมัติยกเลิก' }[o.status] || o.status;
+      return res.status(409).json({
+        error: `ช่วงเวลานี้ทับกับใบลาที่มีอยู่แล้ว (#${o.id} ${o.s} – ${o.e}, ${statusText})`,
+        conflictLeaveId: o.id
+      });
     }
 
     // ดึงข้อมูล user จาก database

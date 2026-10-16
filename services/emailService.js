@@ -241,9 +241,10 @@ export const sendLeaveNotificationEmail = async (emails, leaveData, notification
     return `${h} ชั่วโมง ${m} นาที`;
   };
 
+  // ตัดศูนย์ท้าย: 0.625 → "0.625", 1.0000 → "1" (เดิม toFixed(2) ทำให้ 0.625 กลายเป็น 0.63)
   const formatDays = (days) => {
-    if (!days || days <= 0) return '0.00';
-    return parseFloat(days).toFixed(2);
+    if (!days || days <= 0) return '0';
+    return String(parseFloat(Number(days).toFixed(4)));
   };
 
   const statusLabels = {
@@ -486,7 +487,7 @@ export const sendPendingLeaveReminder = async (approver, pendingLeaves) => {
                         ${leave.employee_name}
                       </div>
                       <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#555555;margin-top:4px;">
-                        ${leave.leave_type_label} &nbsp;•&nbsp; ${leave.total_days} วัน
+                        ${leave.leave_type_label} &nbsp;•&nbsp; ${parseFloat(Number(leave.total_days || 0).toFixed(4))} วัน
                       </div>
                     </td>
                     <td align="right" valign="top">

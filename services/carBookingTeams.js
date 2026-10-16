@@ -70,13 +70,16 @@ function createCarBookingMessage(type, data) {
     case 'cancel':
       title = '❌ ยกเลิกการจอง';
       color = 'Warning';
+      // ผู้ยกเลิกอาจไม่ใช่ผู้จอง (ทุกคนที่มีสิทธิ์หน้าจองรถยกเลิกให้คนอื่นได้) — แสดงแยกกัน
       tableData = [
         ['Ticket ID', data.id.toString()],
-        ['ผู้ยกเลิก', data.name || 'ไม่ระบุ'],
+        ['ผู้จอง', data.name || 'ไม่ระบุ'],
+        ['ผู้ยกเลิก', data.cancelled_by || data.name || 'ไม่ระบุ'],
         ['โครงการ', data.project || 'ไม่ระบุ'],
         ['ทะเบียนรถ', data.license || 'ไม่ระบุ'],
         ['วันที่จอง', data.selected_date ? new Date(data.selected_date).toLocaleDateString('th-TH') : 'ไม่ระบุ'],
-        ['เวลาจอง', data.time || 'ไม่ระบุ']
+        ['เวลาจอง', data.time || 'ไม่ระบุ'],
+        ['เหตุผล', data.cancellation_reason || 'ไม่ระบุ']
       ];
       break;
     case 'overdue_cancel':
@@ -176,7 +179,8 @@ export async function sendCarBookingTeamsNotification(type, data) {
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message)
+      body: JSON.stringify(message),
+      signal: AbortSignal.timeout(15000) // Teams ค้าง/เน็ตออกนอกไม่ได้ → ไม่รอไม่จบ
     });
 
     if (!response.ok) {

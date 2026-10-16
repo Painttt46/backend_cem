@@ -111,7 +111,9 @@ async function checkAndUpdateBookingStatus() {
           borrowDateTime.setHours(hour, minute, 0, 0);
           
           if (now >= borrowDateTime && !activeBooking) {
-            await pool.query('UPDATE car_bookings SET status = $1 WHERE id = $2', ['active', record.id]);
+            // AND status = 'pending' — ถ้ารายการถูกยกเลิก/เปลี่ยนสถานะไปแล้วระหว่างรอบนี้ ไม่ปลุกกลับมาเป็น active
+            const act = await pool.query(`UPDATE car_bookings SET status = 'active' WHERE id = $1 AND status = 'pending'`, [record.id]);
+            if (!act.rowCount) continue;
             await sendTeamsNotification('active', record);
             
             // Delete duplicate bookings for same date
