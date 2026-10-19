@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import { postToTeams } from '../utils/teamsWebhook.js';
 import { TEAMS_WEBHOOKS } from '../config/teams.js';
 
 // การ์ดแจ้งเตือน Teams ของระบบจองรถ — รวมจาก routes/car_booking.js และ services/carBookingScheduler.js
@@ -176,17 +176,8 @@ export async function sendCarBookingTeamsNotification(type, data) {
 
   try {
     const message = createCarBookingMessage(type, data);
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message),
-      signal: AbortSignal.timeout(15000) // Teams ค้าง/เน็ตออกนอกไม่ได้ → ไม่รอไม่จบ
-    });
-
-    if (!response.ok) {
-      console.error('Teams notification failed:', response.status);
-    }
+    await postToTeams(webhookUrl, message, { label: 'Car booking' });
   } catch (error) {
-    console.error('Teams notification error:', error);
+    console.error('Teams notification error:', error.message);
   }
 }

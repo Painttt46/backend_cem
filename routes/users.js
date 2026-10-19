@@ -1,5 +1,5 @@
 import express from 'express';
-import { DEFAULT_LEAVE_QUOTAS } from '../config/leaveDefaults.js';
+import { initUserLeaveQuotas } from '../utils/leaveQuota.js';
 import pool from '../config/database.js';
 import bcrypt from 'bcrypt';
 import { verifyToken, requirePermission, isFullAccessRole } from '../middleware/auth.js';
@@ -67,17 +67,9 @@ router.post('/', requirePermission(PAGE_USERS), async (req, res) => {
     
     const newUser = result.rows[0];
     
-    // Initialize leave quotas for new user
-    const currentYear = new Date().getFullYear();
-    const defaultQuotas = DEFAULT_LEAVE_QUOTAS;
-
-    for (const quota of defaultQuotas) {
-      await pool.query(`
-        INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, year)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (user_id, leave_type, year) DO NOTHING
-      `, [newUser.id, quota.leave_type, quota.annual_quota, currentYear]);
-    }
+    // โควตาการลาของพนักงานใหม่ = ตามประเภทการลาที่ HR ตั้งไว้จริง (เดิมใช้รหัส sick/personal/vacation
+    // ซึ่งไม่ตรงกับประเภทชื่อไทยในระบบ → dropdown ประเภทการลาซ้ำ และลาพักร้อน 0 วัน)
+    await initUserLeaveQuotas(newUser.id);
     
     // Log audit
     await logAudit(req, {

@@ -64,10 +64,17 @@ const isGmailAuthError = (err) => {
   );
 };
 
+// Gmail login ไม่ผ่าน (App Password ถูกเพิกถอน/หมดอายุ) → ข้าม Gmail ไปใช้ Mailjet 6 ชม. แล้วค่อยลองใหม่
+// เดิมลอง Gmail ทุกฉบับแล้วล้มทุกครั้ง: ส่งช้าลงและ log เต็มไปด้วย warning เดิมซ้ำ ๆ
+let gmailAuthFailedAt = null;
+const GMAIL_AUTH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const isGmailAuthBlocked = () => gmailAuthFailedAt !== null && Date.now() - gmailAuthFailedAt < GMAIL_AUTH_COOLDOWN_MS;
+
 // sendMailWithFallback: tries Gmail first, falls back to Mailjet on daily limit
 // or authentication errors (e.g. revoked/expired App Password)
+// ตั้ง EMAIL_PRIMARY=mailjet เพื่อส่งผ่าน Mailjet อย่างเดียว (ไม่ลอง Gmail เลย)
 export const sendMailWithFallback = async (mailOptions) => {
-  if (isGmailLimited()) {
+  if (process.env.EMAIL_PRIMARY === 'mailjet' || isGmailLimited() || isGmailAuthBlocked()) {
     return mailjetTransporter.sendMail({ ...mailOptions, from: process.env.MAILJET_FROM || mailOptions.from });
   }
 
@@ -80,7 +87,8 @@ export const sendMailWithFallback = async (mailOptions) => {
       return mailjetTransporter.sendMail({ ...mailOptions, from: process.env.MAILJET_FROM || mailOptions.from });
     }
     if (isGmailAuthError(err)) {
-      console.warn('[Email] Gmail authentication failed (App Password may be revoked/expired) — falling back to Mailjet for this email. Please check EMAIL_PASS.', err.message);
+      gmailAuthFailedAt = Date.now();
+      console.warn(`[Email] Gmail login ไม่ผ่าน (App Password อาจถูกเพิกถอน/หมดอายุ — ตรวจ EMAIL_PASS) → ส่งผ่าน Mailjet แทน และข้าม Gmail ${GMAIL_AUTH_COOLDOWN_MS / 3600000} ชม.: ${(err.response || err.message || '').split('\n')[0]}`);
       return mailjetTransporter.sendMail({ ...mailOptions, from: process.env.MAILJET_FROM || mailOptions.from });
     }
     throw err;

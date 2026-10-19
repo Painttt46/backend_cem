@@ -1,4 +1,5 @@
 import express from 'express';
+import { postToTeams } from '../utils/teamsWebhook.js';
 import { hasPermissionSafe } from '../utils/permissions.js';
 import { PERM_DAILY_MANAGE_ALL } from '../config/permissionKeys.js';
 import { TEAMS_WEBHOOKS } from '../config/teams.js';
@@ -194,16 +195,7 @@ async function sendTeamsNotification(type, data) {
 
   try {
     const message = createDailyWorkMessage(type, data);
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message)
-    });
-
-    if (!response.ok) {
-      console.error('Teams notification failed:', response.status);
-    } else {
-    }
+    await postToTeams(webhookUrl, message, { label: 'Daily work' });
   } catch (error) {
     console.error('Teams notification error:', error);
   }
@@ -385,16 +377,7 @@ async function sendDailyWorkSummaryToTeams() {
       msteams: { width: "Full" }
     };
 
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message)
-    });
-
-    if (!response.ok) {
-      console.error('Daily work summary Teams notification failed:', response.status);
-    } else {
-    }
+    await postToTeams(webhookUrl, message, { label: 'Daily work summary' });
   } catch (error) {
     console.error('Daily work summary Teams error:', error);
   }

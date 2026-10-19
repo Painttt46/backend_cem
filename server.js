@@ -74,8 +74,9 @@ cron.schedule('0 10 * * 1-5', async () => {
   }
 }, { timezone: 'Asia/Bangkok' });
 
-// Cleanup audit logs เก่ากว่า AUDIT_LOG_RETENTION_DAYS วัน (ค่าเริ่มต้น 30 = เหมือนเดิม) - ทุกวันเวลา 02:00 น.
-const AUDIT_RETENTION_DAYS = Math.max(1, parseInt(process.env.AUDIT_LOG_RETENTION_DAYS, 10) || 30);
+// Cleanup audit logs เก่ากว่า AUDIT_LOG_RETENTION_DAYS วัน (ค่าเริ่มต้น 365) - ทุกวันเวลา 02:00 น.
+// เดิม 30 วัน: หลักฐาน/ข้อมูลกู้คืนของใบลาที่ถูกลบหายภายในเดือนเดียว (เช่น เหตุการณ์ 16 ต.ค. 2569)
+const AUDIT_RETENTION_DAYS = Math.max(1, parseInt(process.env.AUDIT_LOG_RETENTION_DAYS, 10) || 365);
 cron.schedule('0 2 * * *', async () => {
   console.log('[Scheduler] Cleaning up old audit logs...');
   try {

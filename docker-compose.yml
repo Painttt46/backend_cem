@@ -54,8 +54,8 @@ services:
       - TZ=Asia/Bangkok
       - EMAIL_HOST=smtp.gmail.com
       - EMAIL_PORT=587
-      - EMAIL_USER=gents.agents@gmail.com
-      - EMAIL_PASS=yftd yhwr jmuj ovsf
+      - EMAIL_USER=vpaint345@gmail.com
+      - EMAIL_PASS=xfvphzqfqmuxaszb
       - EMAIL_FROM=Gent-CEM System <gents.agents@gmail.com>
       - MAILJET_API_KEY=c7351c272a6349e609b05fce00dc9402
       - MAILJET_SECRET_KEY=821531480059b1ace389689866338e5b

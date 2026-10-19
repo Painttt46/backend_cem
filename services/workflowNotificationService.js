@@ -1,4 +1,5 @@
 import pool from '../config/database.js';
+import { postToTeams } from '../utils/teamsWebhook.js';
 import { TEAMS_WEBHOOKS } from '../config/teams.js';
 import cron from 'node-cron';
 import dotenv from 'dotenv';
@@ -682,18 +683,9 @@ async function sendWorkflowSummaryToTeams(highlightStepId = null, action = null)
     };
 
     
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message)
-    });
-
-    if (!response.ok) {
-      console.error('Teams workflow summary failed:', response.status);
-    } else {
-    }
+    await postToTeams(webhookUrl, message, { label: 'Workflow summary' });
   } catch (error) {
-    console.error('Teams workflow summary error:', error);
+    console.error('Teams workflow summary error:', error.message);
   }
 }
 
