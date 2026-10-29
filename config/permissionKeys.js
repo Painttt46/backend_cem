@@ -13,6 +13,7 @@ export const PAGE_ROLE_WORK_HOURS = '/management/settings/role-work-hours';
 export const PAGE_ROLE_PERMISSIONS = '/management/settings/role-permissions';
 export const PERM_LEAVE_APPROVE = '/leave_work/approve';
 export const PAGE_CAR_BOOKING = '/car_booking';
+export const PAGE_SALES_ACTIVITY = '/sales-activity';
 
 // ---- คีย์ความสามารถ (ไม่ใช่หน้า) ----
 export const PERM_LEAVE_HOLIDAYS = '/management/leave#holidays';     // เพิ่ม/ลบวันหยุดนักขัตฤกษ์

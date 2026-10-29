@@ -38,129 +38,38 @@ async function canManageDailyWork(req, id) {
   return { found: true, allowed: isPrivileged || isOwner };
 }
 
-// Calendar event creation function using Microsoft Graph API
-async function sendCalendarEvent(data) {
+// ===== Microsoft Graph: สร้างนัดใน Outlook Calendar (+ Teams meeting) =====
+// เดิม: ทุกขั้นตอนที่พลาด (ไม่ได้ตั้งค่า Azure, ขอ token ไม่ได้, Graph ตอบ error) แค่ console.error แล้ว return เงียบ ๆ
+// route จึง log "[CALENDAR] Created successfully" เสมอ และผู้ใช้ไม่เคยรู้ว่าไม่ได้นัด → ตอนนี้คืนผลจริง + เหตุผลภาษาไทย
+const GRAPH_BASE = () => process.env.GRAPH_BASE_URL || 'https://graph.microsoft.com/v1.0';
+const AZURE_AUTHORITY = () => process.env.AZURE_AUTHORITY_HOST || 'https://login.microsoftonline.com';
+const GRAPH_TIMEOUT_MS = 20000;
+let graphTokenCache = { token: null, expiresAt: 0 };
 
-  try {
-    const startDateTime = `${data.work_date}T${data.start_time}+07:00`;
-    const endDateTime = `${data.work_date}T${data.end_time}+07:00`;
-
-
-    // Get user's email from database
-    const userResult = await pool.query('SELECT email FROM users WHERE id = $1', [data.user_id]);
-    const userEmail = userResult.rows.length > 0 ? userResult.rows[0].email : null;
-
-
-    if (!userEmail) {
-      console.error('User email not found, cannot create calendar event');
-      return;
-    }
-
-    // Check if Azure credentials are configured
-    const clientId = process.env.AZURE_CLIENT_ID;
-    const clientSecret = process.env.AZURE_CLIENT_SECRET;
-    const tenantId = process.env.AZURE_TENANT_ID;
-
-
-    if (!clientId || !clientSecret || !tenantId) {
-      console.error('Azure AD credentials not configured');
-      return;
-    }
-
-    // Get access token with application permissions
-    const accessToken = await getAccessToken();
-
-    if (!accessToken) {
-      console.error('Failed to get access token');
-      return;
-    }
-
-    // Prepare attendees — creator เป็น attendee แรกเสมอ
-    const attendees = [];
-
-    if (userEmail) {
-      attendees.push({
-        emailAddress: { address: userEmail, name: data.user_name },
-        type: "required"
-      });
-    }
-
-    if (data.attendees && data.attendees.length > 0) {
-      data.attendees.forEach(attendee => {
-        const email = typeof attendee === 'string' ? attendee : attendee.email;
-        const name = typeof attendee === 'string' ? attendee : (attendee.name || attendee.email);
-        if (email && email !== userEmail) {
-          attendees.push({
-            emailAddress: { address: email, name: name },
-            type: "required"
-          });
-        }
-      });
-    }
-
-    const calendarEvent = {
-      subject: data.task_name,
-      body: {
-        contentType: "HTML",
-        content: (() => {
-          const nl = s => (s || '').replace(/\n/g, '<br>');
-          let html = `<p><strong>👤 ผู้ปฏิบัติงาน:</strong> ${data.user_name}</p>`;
-          html += `<p><strong>📍 สถานที่:</strong> ${data.location || 'ไม่ระบุ'}</p>`;
-          html += `<p><strong>📝 รายละเอียด:</strong><br>${nl(data.work_description)}</p>`;
-          if (data.event_details) {
-            html += `<hr><p><strong>📋 Steps:</strong><br>${nl(data.event_details)}</p>`;
-          }
-          return html;
-        })()
-      },
-      start: {
-        dateTime: startDateTime,
-        timeZone: "Asia/Bangkok"
-      },
-      end: {
-        dateTime: endDateTime,
-        timeZone: "Asia/Bangkok"
-      },
-      location: {
-        displayName: data.location || ''
-      },
-      attendees: attendees,
-      isOnlineMeeting: data.create_teams_meeting === true,
-      onlineMeetingProvider: data.create_teams_meeting === true ? "teamsForBusiness" : undefined
-    };
-
-
-    // Use Microsoft Graph API endpoint for specific user
-    const graphApiUrl = `https://graph.microsoft.com/v1.0/users/${userEmail}/events`;
-
-    const response = await fetch(graphApiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
-      },
-      body: JSON.stringify(calendarEvent)
-    });
-
-    const responseText = await response.text();
-
-    if (!response.ok) {
-      console.error('Graph API calendar event creation failed:', response.status, responseText);
-    } else {
-    }
-  } catch (error) {
-    console.error('Graph API calendar event error:', error);
-  }
+// ข้อความ error ของ Azure AD / Graph → เหตุผลที่ผู้ดูแลแก้ต่อได้
+function explainGraphError(status, body) {
+  const text = typeof body === 'string' ? body : JSON.stringify(body || {});
+  if (/AADSTS7000222/.test(text)) return 'Client secret ของแอป Azure หมดอายุแล้ว — ต้องสร้าง secret ใหม่ใน Azure Portal แล้วใส่ AZURE_CLIENT_SECRET';
+  if (/AADSTS7000215/.test(text)) return 'AZURE_CLIENT_SECRET ไม่ถูกต้อง (ต้องใช้ค่า "Value" ของ secret ไม่ใช่ Secret ID)';
+  if (/AADSTS700016/.test(text)) return 'ไม่พบแอปตาม AZURE_CLIENT_ID ใน tenant นี้';
+  if (/AADSTS90002|AADSTS900023/.test(text)) return 'AZURE_TENANT_ID ไม่ถูกต้อง';
+  if (/ErrorItemNotFound|MailboxNotEnabledForRESTAPI|ResourceNotFound|UserNotFound/i.test(text)) return 'ไม่พบกล่องจดหมาย Microsoft 365 ของอีเมลผู้ใช้นี้ (อีเมลในระบบต้องเป็นบัญชี Microsoft 365 ของบริษัท)';
+  if (status === 403 || /ErrorAccessDenied|Authorization_RequestDenied/i.test(text)) return 'แอป Azure ไม่มีสิทธิ์ Calendars.ReadWrite (Application) หรือยังไม่ได้ Grant admin consent / ถูกจำกัดด้วย Application Access Policy';
+  if (status === 401) return 'token ไม่ถูกต้อง/หมดอายุ';
+  if (status === 400) return `ข้อมูลนัดไม่ถูกต้อง (${(text.match(/"message":"([^"]+)"/) || [])[1] || 'Bad Request'})`;
+  return `Microsoft Graph ตอบ HTTP ${status}`;
 }
 
-// Function to get access token for Microsoft Graph API
+// Function to get access token for Microsoft Graph API (client credentials) — cache ไว้จนใกล้หมดอายุ
 async function getAccessToken() {
+  if (graphTokenCache.token && Date.now() < graphTokenCache.expiresAt) return { token: graphTokenCache.token };
+
   const clientId = process.env.AZURE_CLIENT_ID;
   const clientSecret = process.env.AZURE_CLIENT_SECRET;
   const tenantId = process.env.AZURE_TENANT_ID;
-
-
-  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+  const missing = [['AZURE_CLIENT_ID', clientId], ['AZURE_CLIENT_SECRET', clientSecret], ['AZURE_TENANT_ID', tenantId]]
+    .filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) return { error: `ยังไม่ได้ตั้งค่า ${missing.join(', ')} ใน environment ของ backend` };
 
   const params = new URLSearchParams();
   params.append('client_id', clientId);
@@ -169,23 +78,93 @@ async function getAccessToken() {
   params.append('grant_type', 'client_credentials');
 
   try {
-    const response = await fetch(tokenUrl, {
+    const response = await fetch(`${AZURE_AUTHORITY()}/${tenantId}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params
+      body: params,
+      signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.access_token) {
+      console.error('[CALENDAR] ขอ token จาก Azure ไม่สำเร็จ:', response.status, data.error, (data.error_description || '').split('\n')[0]);
+      return { error: explainGraphError(response.status, data) };
+    }
+    graphTokenCache = { token: data.access_token, expiresAt: Date.now() + Math.max(0, (Number(data.expires_in) || 3600) - 300) * 1000 };
+    return { token: data.access_token };
+  } catch (error) {
+    console.error('[CALENDAR] เชื่อมต่อ Azure ไม่ได้:', error.cause?.code || error.name, error.message);
+    return { error: `เชื่อมต่อ login.microsoftonline.com ไม่ได้ (${error.cause?.code || error.name}) — ตรวจอินเทอร์เน็ตขาออกของ server` };
+  }
+}
+
+// สร้างนัด — คืน { ok: true, eventId, joinUrl } หรือ { ok: false, error }
+async function sendCalendarEvent(data) {
+  try {
+    const hhmm = (t) => String(t || '').slice(0, 5);
+    const startDateTime = `${data.work_date}T${hhmm(data.start_time)}:00`;
+    const endDateTime = `${data.work_date}T${hhmm(data.end_time)}:00`;
+
+    // Get user's email from database
+    const userResult = await pool.query('SELECT email FROM users WHERE id = $1', [data.user_id]);
+    const userEmail = userResult.rows.length > 0 ? userResult.rows[0].email : null;
+    if (!userEmail) return { ok: false, error: 'ผู้ใช้ไม่มีอีเมลในระบบ — ต้องใส่อีเมล Microsoft 365 ในข้อมูลผู้ใช้ก่อน' };
+
+    const { token: accessToken, error: tokenError } = await getAccessToken();
+    if (!accessToken) return { ok: false, error: tokenError };
+
+    // Prepare attendees — creator เป็น attendee แรกเสมอ
+    const attendees = [{ emailAddress: { address: userEmail, name: data.user_name }, type: 'required' }];
+    (data.attendees || []).forEach(attendee => {
+      const email = typeof attendee === 'string' ? attendee : attendee?.email;
+      const name = typeof attendee === 'string' ? attendee : (attendee?.name || attendee?.email);
+      if (email && email.toLowerCase() !== userEmail.toLowerCase()) {
+        attendees.push({ emailAddress: { address: email, name }, type: 'required' });
+      }
     });
 
-    const data = await response.json();
+    const nl = s => (s || '').replace(/\n/g, '<br>');
+    let html = `<p><strong>👤 ผู้ปฏิบัติงาน:</strong> ${data.user_name}</p>`;
+    html += `<p><strong>📍 สถานที่:</strong> ${data.location || 'ไม่ระบุ'}</p>`;
+    html += `<p><strong>📝 รายละเอียด:</strong><br>${nl(data.work_description)}</p>`;
+    if (data.event_details) html += `<hr><p><strong>📋 Steps:</strong><br>${nl(data.event_details)}</p>`;
 
-    if (!response.ok) {
-      console.error('Failed to get access token:', data);
-      return null;
+    // dateTime ต้องไม่มี offset เมื่อระบุ timeZone แยก (ตามรูปแบบ dateTimeTimeZone ของ Graph)
+    const calendarEvent = {
+      subject: data.task_name,
+      body: { contentType: 'HTML', content: html },
+      start: { dateTime: startDateTime, timeZone: 'SE Asia Standard Time' },
+      end: { dateTime: endDateTime, timeZone: 'SE Asia Standard Time' },
+      location: { displayName: data.location || '' },
+      attendees
+    };
+    if (data.create_teams_meeting === true) {
+      calendarEvent.isOnlineMeeting = true;
+      calendarEvent.onlineMeetingProvider = 'teamsForBusiness';
     }
 
-    return data.access_token;
+    const response = await fetch(`${GRAPH_BASE()}/users/${encodeURIComponent(userEmail)}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+      body: JSON.stringify(calendarEvent),
+      signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS)
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      if (response.status === 401) graphTokenCache = { token: null, expiresAt: 0 };
+      console.error('[CALENDAR] Graph สร้างนัดไม่สำเร็จ:', response.status, responseText.slice(0, 500));
+      return { ok: false, error: explainGraphError(response.status, responseText) };
+    }
+    let created = {};
+    try { created = JSON.parse(responseText); } catch { /* ignore */ }
+    const joinUrl = created.onlineMeeting?.joinUrl || null;
+    if (data.create_teams_meeting === true && !joinUrl) {
+      // สร้างนัดได้ แต่ Teams ไม่ได้แนบลิงก์ประชุม (เช่น บัญชีไม่มี license Teams) — แจ้งให้รู้
+      return { ok: true, eventId: created.id, joinUrl: null, warning: 'สร้างนัดแล้ว แต่ไม่ได้ลิงก์ Teams Meeting (บัญชีอาจไม่มี license Teams)' };
+    }
+    return { ok: true, eventId: created.id, joinUrl };
   } catch (error) {
-    console.error('Error getting access token:', error);
-    return null;
+    console.error('[CALENDAR] Graph error:', error.cause?.code || error.name, error.message);
+    return { ok: false, error: `เชื่อมต่อ Microsoft Graph ไม่ได้ (${error.cause?.code || error.name})` };
   }
 }
 
@@ -796,36 +775,38 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Create calendar event if requested
-    if (create_calendar_event && event_title && (meeting_start_time || start_time) && (meeting_end_time || end_time)) {
+    // Create calendar event if requested (ติ๊ก Teams Meeting อย่างเดียวก็ถือว่าต้องการนัด — Teams Meeting ต้องอยู่ในนัดเสมอ)
+    let calendarResult = null;
+    const wantsCalendar = (create_calendar_event || create_teams_meeting === true) && event_title;
+    if (wantsCalendar && (meeting_start_time || start_time) && (meeting_end_time || end_time)) {
       const eventStartTime = meeting_start_time || start_time;
       const eventEndTime = meeting_end_time || end_time;
-      console.log('[CALENDAR] Attempting:', { event_title, user_id, eventStartTime, eventEndTime });
+      console.log('[CALENDAR] Attempting:', { event_title, user_id: ownerId, work_date, eventStartTime, eventEndTime, teams: create_teams_meeting === true });
 
-      try {
-        const userResult = await pool.query('SELECT firstname, lastname FROM users WHERE id = $1', [user_id]);
-        const userName = userResult.rows.length > 0 ?
-          `${userResult.rows[0].firstname} ${userResult.rows[0].lastname}` : 'ไม่ระบุ';
+      const userResult = await pool.query('SELECT firstname, lastname FROM users WHERE id = $1', [ownerId]);
+      const userName = userResult.rows.length > 0 ?
+        `${userResult.rows[0].firstname} ${userResult.rows[0].lastname}` : 'ไม่ระบุ';
 
-        await sendCalendarEvent({
-          task_name: event_title,
-          work_date,
-          start_time: eventStartTime,
-          end_time: eventEndTime,
-          location,
-          work_description,
-          user_name: userName,
-          user_id,
-          attendees: attendees || [],
-          create_teams_meeting,
-          event_details
-        });
-        console.log('[CALENDAR] Created successfully');
-      } catch (calendarError) {
-        console.error('[CALENDAR] Failed:', calendarError.message, calendarError.stack);
+      calendarResult = await sendCalendarEvent({
+        task_name: event_title,
+        work_date,
+        start_time: eventStartTime,
+        end_time: eventEndTime,
+        location,
+        work_description,
+        user_name: userName,
+        user_id: ownerId,
+        attendees: attendees || [],
+        create_teams_meeting,
+        event_details
+      });
+      if (calendarResult.ok) {
+        console.log('[CALENDAR] Created:', { event_title, work_date, teams: !!calendarResult.joinUrl, warning: calendarResult.warning || undefined });
+      } else {
+        console.error('[CALENDAR] Failed:', { event_title, work_date, reason: calendarResult.error });
       }
-    } else {
-      console.log('[CALENDAR] Skipped:', { create_calendar_event, event_title, meeting_start_time, start_time });
+    } else if (create_calendar_event || create_teams_meeting === true) {
+      calendarResult = { ok: false, error: 'ไม่มีหัวข้อหรือเวลาของนัด จึงไม่ได้สร้างนัด' };
     }
 
     // Send Teams notification only if work_date is today
@@ -847,7 +828,10 @@ router.post('/', async (req, res) => {
       newData: { task_name, work_date, start_time, end_time, total_hours, location }
     });
 
-    res.status(201).json(result.rows[0]);
+    // calendar_event: ผลการสร้างนัด (หน้าเว็บแจ้งผู้ใช้เมื่อสร้างไม่สำเร็จ — งานยังบันทึกแล้ว)
+    res.status(201).json(calendarResult
+      ? { ...result.rows[0], calendar_event: { created: calendarResult.ok, error: calendarResult.error || null, warning: calendarResult.warning || null, teams_join_url: calendarResult.joinUrl || null } }
+      : result.rows[0]);
   } catch (error) {
     console.error('Database error:', error);
     res.status(500).json({ error: 'ไม่สามารถบันทึกงานประจำวันได้' });
