@@ -1,6 +1,6 @@
 import express from 'express';
 import { hasPermissionSafe, requirePermission } from '../utils/permissions.js';
-import { PERM_SALES_MANAGE_ALL, PAGE_SALES_ACTIVITY } from '../config/permissionKeys.js';
+import { PERM_SALES_MANAGE_ALL, PERM_SALES_VIEW_ALL, PAGE_SALES_ACTIVITY } from '../config/permissionKeys.js';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { checkEntryDate, getEntryWindow } from '../utils/entryWindow.js';
@@ -204,6 +204,10 @@ router.put('/customers/:id', async (req, res) => {
 const VISIBLE_TO_USER_SQL = (param) =>
   `(sv.created_by = ${param} OR sv.internal_attendees @> jsonb_build_array(jsonb_build_object('id', ${param}::int)))`;
 
+// ดูกิจกรรมของทุกคน: admin/superadmin หรือ role ที่ติ๊ก "ดูของทุกคน" หรือ "แก้ไข/ลบของทุกคน" ในหน้าจัดการสิทธิ์
+// (การแก้ไข/ลบยังเช็คแยกใน canManageVisit — ดูของทุกคนได้ แต่แก้ได้เฉพาะของตัวเอง)
+const canViewAllVisits = (user) => hasPermissionSafe(user, [PERM_SALES_VIEW_ALL, PERM_SALES_MANAGE_ALL]);
+
 // GET all visits (with filters)
 router.get('/', async (req, res) => {
   try {
@@ -214,8 +218,8 @@ router.get('/', async (req, res) => {
     let params = [];
     let pi = 1;
 
-    // เห็นรายการของตัวเอง + รายการที่ตัวเองอยู่ในทีมที่ไปเข้าพบ ยกเว้น admin/superadmin หรือ role ที่ถูกกำหนดสิทธิ์ "ดู/จัดการกิจกรรมเข้าพบลูกค้าของทุกคน"
-    if (!(await hasPermissionSafe(req.user, PERM_SALES_MANAGE_ALL))) {
+    // เห็นรายการของตัวเอง + รายการที่ตัวเองอยู่ในทีมที่ไปเข้าพบ ยกเว้นคนที่มีสิทธิ์ดูของทุกคน
+    if (!(await canViewAllVisits(req.user))) {
       where.push(VISIBLE_TO_USER_SQL(`$${pi++}`));
       params.push(userId);
     } else if (created_by) {
@@ -279,7 +283,7 @@ router.get('/:id', async (req, res) => {
     const visit = result.rows[0];
     const isOwner = String(visit.created_by) === String(req.user?.id);
     const isAttendee = (visit.internal_attendees || []).some(a => a && String(a.id) === String(req.user?.id));
-    if (!isOwner && !isAttendee && !(await hasPermissionSafe(req.user, PERM_SALES_MANAGE_ALL))) {
+    if (!isOwner && !isAttendee && !(await canViewAllVisits(req.user))) {
       return res.status(403).json({ error: 'คุณไม่มีสิทธิ์ดูรายการนี้' });
     }
     res.json(visit);

@@ -22,7 +22,8 @@ export const PERM_PROJECTS_SYNC_ERP = '/projects#sync-erp';          // ซิ�
 export const PERM_PROJECTS_DELETE = '/projects#delete';              // ลบโครงการ / ขั้นตอนงาน
 export const PERM_PROCUREMENT_DELETE = '/procurement#delete';        // ลบรายการจัดซื้อ / ไฟล์ผู้ขาย
 export const PERM_DAILY_MANAGE_ALL = '/daily_work#manage-all';       // แก้ไข/ลบงานรายวันของผู้อื่น
-export const PERM_SALES_MANAGE_ALL = '/sales-activity#manage-all';   // ดู/จัดการกิจกรรมเข้าพบลูกค้าของทุกคน
+export const PERM_SALES_VIEW_ALL = '/sales-activity#view-all';       // ดูกิจกรรมเข้าพบลูกค้าของทุกคน (ดูอย่างเดียว — แก้/ลบได้เฉพาะของตัวเอง)
+export const PERM_SALES_MANAGE_ALL = '/sales-activity#manage-all';   // แก้ไข/ลบกิจกรรมเข้าพบลูกค้าของทุกคน (รวมสิทธิ์ดูของทุกคน)
 export const PERM_AUDIT_LOGS = '/management#audit-logs';             // ดูประวัติการใช้งานระบบ (audit log) ของทุกคนในหน้าระบบจัดการ
 
 export const LEAVE_MANAGE_PERMISSIONS = [
@@ -32,7 +33,7 @@ export const LEAVE_MANAGE_PERMISSIONS = [
 
 // ความสามารถที่เดิมผูกกับ role "hr" ตายตัวในโค้ด (แก้ไข/ลบข้อมูลของผู้อื่น) — seed ให้ role hr ครั้งแรกเพื่อไม่ให้ใช้งานเดิมหาย
 // หลังจากนั้นผู้ดูแลปรับได้อิสระที่หน้า "จัดการสิทธิ์" (ON CONFLICT DO NOTHING → ไม่เขียนทับค่าที่ตั้งเอง)
+// (เอาสิทธิ์กิจกรรมเข้าพบลูกค้าออกแล้ว — HR ไม่ต้องเห็นเมนู Sale และไม่ควรถูก seed กลับมาเอง)
 export const LEGACY_HR_PERMISSIONS = [
-  { path: PERM_DAILY_MANAGE_ALL, name: 'แก้ไข/ลบงานรายวันของผู้อื่น', icon: 'pi pi-calendar' },
-  { path: PERM_SALES_MANAGE_ALL, name: 'ดู/จัดการกิจกรรมเข้าพบลูกค้าของทุกคน', icon: 'pi pi-briefcase' }
+  { path: PERM_DAILY_MANAGE_ALL, name: 'แก้ไข/ลบงานรายวันของผู้อื่น', icon: 'pi pi-calendar' }
 ];
