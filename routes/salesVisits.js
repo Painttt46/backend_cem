@@ -3,6 +3,7 @@ import { hasPermissionSafe, requirePermission } from '../utils/permissions.js';
 import { PERM_SALES_MANAGE_ALL, PAGE_SALES_ACTIVITY } from '../config/permissionKeys.js';
 import pool from '../config/database.js';
 import { logAudit } from '../utils/auditHelper.js';
+import { checkEntryDate, getEntryWindow } from '../utils/entryWindow.js';
 
 const router = express.Router();
 
@@ -249,6 +250,16 @@ router.get('/', async (req, res) => {
   }
 });
 
+// สถานะการลงกิจกรรมตอนนี้ (กติกา 10:00 / ห้ามย้อนหลัง) — ต้องอยู่ก่อน GET /:id
+router.get('/entry-window', async (req, res) => {
+  try {
+    res.json(await getEntryWindow('sales_visit', req.user));
+  } catch (e) {
+    console.error('Error checking sales visit entry window:', e);
+    res.status(500).json({ error: 'ไม่สามารถตรวจสอบเวลาลงกิจกรรมได้' });
+  }
+});
+
 // GET single visit — เดิมไม่ตรวจว่าเป็นของใคร (เปิดเลข id ของคนอื่นดูรายละเอียด/สรุปการประชุมได้)
 router.get('/:id', async (req, res) => {
   try {
@@ -280,7 +291,7 @@ router.get('/:id', async (req, res) => {
 
 // เช็คสิทธิ์แก้ไข/ลบ visit: เจ้าของ record หรือ role ที่มีสิทธิ์บริหารเท่านั้น (ทีมที่ร่วมไปดูได้อย่างเดียว)
 async function canManageVisit(req, id) {
-  const result = await pool.query('SELECT * FROM sales_visits WHERE id = $1', [id]);
+  const result = await pool.query(`SELECT *, TO_CHAR(visit_date, 'YYYY-MM-DD') AS visit_day FROM sales_visits WHERE id = $1`, [id]);
   if (!result.rows.length) return { found: false, allowed: false };
   const isPrivileged = await hasPermissionSafe(req.user, PERM_SALES_MANAGE_ALL);
   const isOwner = String(result.rows[0].created_by) === String(req.user?.id);
@@ -298,6 +309,10 @@ router.post('/', async (req, res) => {
 
     const invalid = validateVisit(req.body);
     if (invalid) return res.status(400).json({ error: invalid });
+
+    // ห้ามลงย้อนหลัง + รายการแรกของวันต้องลงก่อน 10:00 (ดู utils/entryWindow.js)
+    const dateError = await checkEntryDate('sales_visit', req.user, visit_date);
+    if (dateError) return res.status(400).json({ error: dateError, code: 'ENTRY_WINDOW' });
 
     const result = await pool.query(`
       INSERT INTO sales_visits (
@@ -345,6 +360,10 @@ router.put('/:id', async (req, res) => {
     const { found, allowed, visit: before } = await canManageVisit(req, req.params.id);
     if (!found) return res.status(404).json({ error: 'Not found' });
     if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์แก้ไขรายการนี้' });
+
+    // อัปเดตผล/สรุปของนัดที่ผ่านไปแล้วได้ แต่ถ้าเปลี่ยนวันที่ ต้องผ่านกติกาเดียวกับการลงใหม่ (เลื่อนนัดไปวันข้างหน้าได้)
+    const dateError = await checkEntryDate('sales_visit', req.user, visit_date, { oldDate: before.visit_day, ownerId: before.created_by });
+    if (dateError) return res.status(400).json({ error: dateError, code: 'ENTRY_WINDOW' });
 
     const result = await pool.query(`
       UPDATE sales_visits SET

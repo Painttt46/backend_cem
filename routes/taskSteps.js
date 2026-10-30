@@ -9,6 +9,11 @@ const router = express.Router();
 
 // Ensure step_type column exists
 pool.query(`ALTER TABLE task_steps ADD COLUMN IF NOT EXISTS step_type VARCHAR(50) DEFAULT 'general'`).catch(() => {});
+// เวลาที่ "สถานะโครงการ" ของ step ถูกตั้ง/แก้ล่าสุด — ใช้หาสถานะปัจจุบันของโครงการ
+// (เดิมใช้ updated_at ซึ่งถูกเปลี่ยนทุก step ทุกครั้งที่กดบันทึกหน้าแก้ไขโครงการ สถานะที่แก้จึงไม่ขึ้น)
+pool.query(`ALTER TABLE task_steps ADD COLUMN IF NOT EXISTS project_status_updated_at TIMESTAMP`).catch(() => {});
+
+const sameStatuses = (a, b) => JSON.stringify([...(a || [])].map(String).sort()) === JSON.stringify([...(b || [])].map(String).sort());
 
 // Get procurement steps (for procurement page)
 router.get('/procurement', async (req, res) => {
@@ -85,8 +90,8 @@ router.post('/', async (req, res) => {
     const created_by = req.user?.id || null;
     
     const result = await pool.query(`
-      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, project_statuses, created_by, step_type)
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10, $11)
+      INSERT INTO task_steps (task_id, step_name, step_order, start_date, end_date, assigned_users, status, description, project_statuses, created_by, step_type, project_status_updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10, $11, CASE WHEN jsonb_array_length($9::jsonb) > 0 THEN CURRENT_TIMESTAMP END)
       RETURNING *
     `, [task_id, step_name, step_order, start_date, end_date, JSON.stringify(assigned_users || []), status || null, description, JSON.stringify(project_statuses || []), created_by, step_type || 'general']);
     
@@ -152,6 +157,9 @@ router.put('/:id', async (req, res) => {
     const finalDescription = description !== undefined ? description : existing.description;
     const finalProjectStatuses = project_statuses !== undefined ? project_statuses : existing.project_statuses;
     const finalStepType = step_type !== undefined ? step_type : existing.step_type;
+    const projectStatusChanged = project_statuses !== undefined && !sameStatuses(project_statuses, existing.project_statuses);
+    // ผู้ใช้เลือก "สถานะปัจจุบันของโครงการ" เป็น step นี้ในหน้าแก้ไขโครงการ → นับเป็นการตั้งสถานะ ณ ตอนนี้
+    const markCurrent = req.body.mark_current_status === true && Array.isArray(finalProjectStatuses) && finalProjectStatuses.length > 0;
     
     // บันทึก completed_by และ completed_at เมื่อเปลี่ยนเป็น completed
     const completed_by = (wasNotCompleted && finalStatus === 'completed') ? (req.user?.id || null) : existing.completed_by;
@@ -163,10 +171,11 @@ router.put('/:id', async (req, res) => {
           assigned_users = $5::jsonb, status = $6, description = $7, project_statuses = $8::jsonb, 
           completed_by = $9, completed_at = $10, updated_at = CURRENT_TIMESTAMP,
           late_reason = CASE WHEN $11::text IS NOT NULL THEN $11::text ELSE late_reason END,
-          step_type = $13
+          step_type = $13,
+          project_status_updated_at = CASE WHEN $14::boolean THEN CURRENT_TIMESTAMP ELSE project_status_updated_at END
       WHERE id = $12
       RETURNING *
-    `, [finalStepName, finalStepOrder, finalStartDate, finalEndDate, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, finalDescription, JSON.stringify(finalProjectStatuses || []), completed_by, completed_at, late_reason || null, id, finalStepType]);
+    `, [finalStepName, finalStepOrder, finalStartDate, finalEndDate, JSON.stringify(assigned_users || existing.assigned_users || []), finalStatus, finalDescription, JSON.stringify(finalProjectStatuses || []), completed_by, completed_at, late_reason || null, id, finalStepType, projectStatusChanged || markCurrent]);
     
     // เช็คว่า steps ทั้งหมดเสร็จหรือยัง
     const allSteps = await pool.query('SELECT status FROM task_steps WHERE task_id = $1', [existing.task_id]);

@@ -7,6 +7,7 @@ import pool from '../config/database.js';
 import fetch from 'node-fetch';
 import { logAudit } from '../utils/auditHelper.js';
 import { removeFilesIfUnreferenced } from '../utils/fileCleanup.js';
+import { checkEntryDate, getEntryWindow } from '../utils/entryWindow.js';
 
 const router = express.Router();
 
@@ -31,11 +32,11 @@ const calcTotalHours = (startTime, endTime) => {
 
 // เช็คสิทธิ์แก้ไข/ลบ daily work record: เจ้าของ record หรือ role ที่มีสิทธิ์บริหารเท่านั้น
 async function canManageDailyWork(req, id) {
-  const result = await pool.query('SELECT user_id FROM daily_work_records WHERE id = $1', [id]);
+  const result = await pool.query(`SELECT user_id, TO_CHAR(work_date, 'YYYY-MM-DD') AS work_date FROM daily_work_records WHERE id = $1`, [id]);
   if (!result.rows.length) return { found: false, allowed: false };
   const isPrivileged = await hasPermissionSafe(req.user, PERM_DAILY_MANAGE_ALL);
   const isOwner = String(result.rows[0].user_id) === String(req.user?.id);
-  return { found: true, allowed: isPrivileged || isOwner };
+  return { found: true, allowed: isPrivileged || isOwner, record: result.rows[0] };
 }
 
 // ===== Microsoft Graph: สร้างนัดใน Outlook Calendar (+ Teams meeting) =====
@@ -703,6 +704,16 @@ router.get('/', async (req, res) => {
   }
 });
 
+// สถานะการลงงานตอนนี้ (กติกา 10:00 / ห้ามย้อนหลัง) — หน้าลงงานใช้จำกัดวันที่และแจ้งเมื่อถูกปิดลงงาน
+router.get('/entry-window', async (req, res) => {
+  try {
+    res.json(await getEntryWindow('daily_work', req.user));
+  } catch (error) {
+    console.error('Error checking daily work entry window:', error);
+    res.status(500).json({ error: 'ไม่สามารถตรวจสอบเวลาลงงานได้' });
+  }
+});
+
 // Create daily work record
 router.post('/', async (req, res) => {
   const {
@@ -723,6 +734,10 @@ router.post('/', async (req, res) => {
 
 
   try {
+    // ห้ามลงงานย้อนหลัง + รายการแรกของวันต้องลงก่อน 10:00 (ดู utils/entryWindow.js)
+    const dateError = await checkEntryDate('daily_work', req.user, work_date, { ownerId });
+    if (dateError) return res.status(400).json({ error: dateError, code: 'ENTRY_WINDOW' });
+
     // ดึง task_name จาก tasks table
     let task_name = null;
     let so_number = null;
@@ -844,9 +859,13 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { task_id, step_id, step_ids, work_date, start_time, end_time, work_status, location, work_description, files } = req.body;
 
-    const { found, allowed } = await canManageDailyWork(req, id);
+    const { found, allowed, record } = await canManageDailyWork(req, id);
     if (!found) return res.status(404).json({ error: 'Daily work record not found' });
     if (!allowed) return res.status(403).json({ error: 'คุณไม่มีสิทธิ์แก้ไขรายการนี้' });
+
+    // แก้รายละเอียดได้เสมอ แต่ถ้าเปลี่ยนวันที่ ต้องผ่านกติกาเดียวกับการลงงานใหม่ (ห้ามย้ายไปวันที่ผ่านมาแล้ว)
+    const dateError = await checkEntryDate('daily_work', req.user, work_date, { oldDate: record.work_date, ownerId: record.user_id });
+    if (dateError) return res.status(400).json({ error: dateError, code: 'ENTRY_WINDOW' });
 
     // คำนวณ total_hours ด้วยสูตรเดียวกับตอนสร้างรายการ (หักพักเที่ยง) — เดิมแก้แล้วชั่วโมงเพี้ยนจากตอนสร้าง
     const total_hours = calcTotalHours(start_time, end_time);
