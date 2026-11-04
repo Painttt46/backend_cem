@@ -51,7 +51,7 @@ let graphTokenCache = { token: null, expiresAt: 0 };
 function explainGraphError(status, body) {
   const text = typeof body === 'string' ? body : JSON.stringify(body || {});
   if (/AADSTS7000222/.test(text)) return 'Client secret ของแอป Azure หมดอายุแล้ว — ต้องสร้าง secret ใหม่ใน Azure Portal แล้วใส่ AZURE_CLIENT_SECRET';
-  if (/AADSTS7000215/.test(text)) return 'AZURE_CLIENT_SECRET ไม่ถูกต้อง (ต้องใช้ค่า "Value" ของ secret ไม่ใช่ Secret ID)';
+  if (/AADSTS7000215/.test(text)) return 'AZURE_CLIENT_SECRET ไม่ตรงกับ secret ที่ใช้งานได้ของแอปนี้ (secret ถูกลบ/สร้างใหม่แล้ว, คัดลอกมาไม่ครบ, เป็นของแอปอื่น หรือใช้ Secret ID แทนค่า Value)';
   if (/AADSTS700016/.test(text)) return 'ไม่พบแอปตาม AZURE_CLIENT_ID ใน tenant นี้';
   if (/AADSTS90002|AADSTS900023/.test(text)) return 'AZURE_TENANT_ID ไม่ถูกต้อง';
   if (/ErrorItemNotFound|MailboxNotEnabledForRESTAPI|ResourceNotFound|UserNotFound/i.test(text)) return 'ไม่พบกล่องจดหมาย Microsoft 365 ของอีเมลผู้ใช้นี้ (อีเมลในระบบต้องเป็นบัญชี Microsoft 365 ของบริษัท)';
@@ -1006,7 +1006,7 @@ router.get('/summary', async (req, res) => {
         dwr.id, dwr.task_id, dwr.user_id,
         TO_CHAR(dwr.work_date, 'YYYY-MM-DD') as work_date,
         dwr.start_time, dwr.end_time, dwr.total_hours,
-        dwr.work_status, dwr.location,
+        dwr.work_status, dwr.location, dwr.created_at,
         COALESCE(u.firstname || ' ' || u.lastname, 'ไม่ระบุ') as employee_name,
         COALESCE(u.department, 'ไม่ระบุ') as employee_department,
         t.task_name,

@@ -26,7 +26,7 @@ router.get('/roles', verifyToken, async (req, res) => {
 router.get('/', verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, username, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname FROM users ORDER BY firstname, lastname'
+      'SELECT id, username, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname, created_at FROM users ORDER BY firstname, lastname'
     );
     
     res.json(result.rows);
