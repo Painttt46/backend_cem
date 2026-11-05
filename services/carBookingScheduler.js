@@ -16,7 +16,7 @@ async function checkAndUpdateBookingStatus() {
       const result = await pool.query(`
         SELECT
           c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license,
-          c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
+          c.return_name, c.return_location, c.colleagues, c.created_at, c.updated_at,
           c.return_time, c.return_date, c.status, c.user_id,
           c.expected_return_date, c.expected_return_time, c.auto_returned,
           u.firstname || ' ' || u.lastname as name
@@ -119,7 +119,7 @@ async function checkAndUpdateBookingStatus() {
             // Delete duplicate bookings for same date
             const duplicates = await pool.query(`
               SELECT c.id, c.type, c.location, c.project, c.discription, c.selected_date, c.time, c.license, 
-                     c.return_name, c.return_location, c.colleagues, c.images, c.created_at, c.updated_at,
+                     c.return_name, c.return_location, c.colleagues, c.created_at, c.updated_at,
                      c.return_time, c.return_date, c.status, c.user_id,
                      u.firstname || ' ' || u.lastname as name
               FROM car_bookings c

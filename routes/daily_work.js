@@ -8,6 +8,7 @@ import fetch from 'node-fetch';
 import { logAudit } from '../utils/auditHelper.js';
 import { removeFilesIfUnreferenced } from '../utils/fileCleanup.js';
 import { checkEntryDate, getEntryWindow } from '../utils/entryWindow.js';
+import { STEP_WORK_CTE } from '../utils/stepWork.js';
 
 const router = express.Router();
 
@@ -627,7 +628,8 @@ router.get('/', async (req, res) => {
     const { date, task_id } = req.query;
 
     let query = `
-      SELECT 
+      WITH ${STEP_WORK_CTE}
+      SELECT
         dwr.id, dwr.task_id, dwr.step_id, dwr.step_ids,
         TO_CHAR(dwr.work_date, 'YYYY-MM-DD') as work_date,
         dwr.start_time, dwr.end_time, dwr.total_hours,
@@ -658,10 +660,11 @@ router.get('/', async (req, res) => {
             'status', s.status,
             'end_date', s.end_date,
             'project_statuses', s.project_statuses,
-            'has_work_logged', EXISTS(SELECT 1 FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND (d.step_ids @> to_jsonb(s.id) OR d.step_ids @> to_jsonb(s.id::text)))) AND d.work_date <= CURRENT_DATE),
-            'latest_work_date', (SELECT MAX(work_date) FROM daily_work_records d WHERE (d.step_id = s.id OR (d.step_ids IS NOT NULL AND (d.step_ids @> to_jsonb(s.id) OR d.step_ids @> to_jsonb(s.id::text)))) AND d.work_date <= CURRENT_DATE)
+            'has_work_logged', sw.latest_work_date IS NOT NULL,
+            'latest_work_date', sw.latest_work_date
           ) ORDER BY s.step_order)
           FROM task_steps s
+          LEFT JOIN step_work sw ON sw.step_id = s.id
           WHERE s.id = ANY(
             CASE 
               WHEN dwr.step_ids IS NOT NULL AND jsonb_array_length(dwr.step_ids) > 0 

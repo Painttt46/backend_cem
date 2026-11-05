@@ -16,7 +16,7 @@ const pool = new Pool({
   max: 20,                      // Maximum number of clients
   min: 5,                       // Minimum number of clients
   idleTimeoutMillis: 30000,     // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 2000, // Return error after 2 seconds if connection not available
+  connectionTimeoutMillis: 5000, // Return error after 5 seconds if connection not available
   maxUses: 15000,                // Close connection after 7500 uses
 });
 

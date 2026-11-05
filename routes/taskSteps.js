@@ -4,6 +4,7 @@ import { logAudit } from '../utils/auditHelper.js';
 import { notifyNextStep, notifyNewAssignees, sendWorkflowSummaryToTeams } from '../services/workflowNotificationService.js';
 import { requirePermission } from '../middleware/auth.js';
 import { PERM_PROJECTS_DELETE } from '../config/permissionKeys.js';
+import { STEP_WORK_CTE } from '../utils/stepWork.js';
 
 const router = express.Router();
 
@@ -78,21 +79,18 @@ const auditStatusSelection = async (req, stepId, stepName, cascade) => {
 router.get('/procurement', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT ts.*, 
+      WITH ${STEP_WORK_CTE}
+      SELECT ts.*,
         t.task_name, t.so_number, t.category, t.project_manager, t.sale_owner, t.customer_info,
-        EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as has_work_logged,
-        w.latest_work_date, w.latest_work_logged_at,
+        sw.step_id IS NOT NULL as has_work_logged,
+        sw.latest_work_date, sw.latest_work_logged_at,
         uc.firstname || ' ' || uc.lastname as created_by_name,
         ucp.firstname || ' ' || ucp.lastname as completed_by_name
       FROM task_steps ts
       JOIN tasks t ON ts.task_id = t.id
       LEFT JOIN users uc ON ts.created_by = uc.id
       LEFT JOIN users ucp ON ts.completed_by = ucp.id
-      LEFT JOIN LATERAL (
-        SELECT MAX(dwr.work_date) AS latest_work_date, MAX(dwr.created_at) AS latest_work_logged_at
-        FROM daily_work_records dwr
-        WHERE (dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) AND dwr.work_date <= CURRENT_DATE
-      ) w ON true
+      LEFT JOIN step_work sw ON sw.step_id = ts.id
       WHERE ts.step_type = 'procurement'
       ORDER BY ts.created_at DESC
     `);
@@ -107,19 +105,16 @@ router.get('/procurement', async (req, res) => {
 router.get('/all', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT ts.*, 
-        EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as has_work_logged,
-        w.latest_work_date, w.latest_work_logged_at,
+      WITH ${STEP_WORK_CTE}
+      SELECT ts.*,
+        sw.step_id IS NOT NULL as has_work_logged,
+        sw.latest_work_date, sw.latest_work_logged_at,
         uc.firstname || ' ' || uc.lastname as created_by_name,
         ucp.firstname || ' ' || ucp.lastname as completed_by_name
       FROM task_steps ts
       LEFT JOIN users uc ON ts.created_by = uc.id
       LEFT JOIN users ucp ON ts.completed_by = ucp.id
-      LEFT JOIN LATERAL (
-        SELECT MAX(dwr.work_date) AS latest_work_date, MAX(dwr.created_at) AS latest_work_logged_at
-        FROM daily_work_records dwr
-        WHERE (dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) AND dwr.work_date <= CURRENT_DATE
-      ) w ON true
+      LEFT JOIN step_work sw ON sw.step_id = ts.id
       ORDER BY ts.task_id, ts.step_order ASC
     `);
     res.json(result.rows);
@@ -134,19 +129,16 @@ router.get('/task/:taskId', async (req, res) => {
   try {
     const { taskId } = req.params;
     const result = await pool.query(`
-      SELECT ts.*, 
-        EXISTS(SELECT 1 FROM daily_work_records dwr WHERE dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) as has_work_logged,
-        w.latest_work_date, w.latest_work_logged_at,
+      WITH ${STEP_WORK_CTE}
+      SELECT ts.*,
+        sw.step_id IS NOT NULL as has_work_logged,
+        sw.latest_work_date, sw.latest_work_logged_at,
         uc.firstname || ' ' || uc.lastname as created_by_name,
         ucp.firstname || ' ' || ucp.lastname as completed_by_name
       FROM task_steps ts
       LEFT JOIN users uc ON ts.created_by = uc.id
       LEFT JOIN users ucp ON ts.completed_by = ucp.id
-      LEFT JOIN LATERAL (
-        SELECT MAX(dwr.work_date) AS latest_work_date, MAX(dwr.created_at) AS latest_work_logged_at
-        FROM daily_work_records dwr
-        WHERE (dwr.step_id = ts.id OR dwr.step_ids @> to_jsonb(ts.id)) AND dwr.work_date <= CURRENT_DATE
-      ) w ON true
+      LEFT JOIN step_work sw ON sw.step_id = ts.id
       WHERE ts.task_id = $1 
       ORDER BY ts.step_order ASC
     `, [taskId]);

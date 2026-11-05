@@ -107,7 +107,8 @@ router.get('/', async (req, res) => {
         c.return_time, c.return_date, c.status, c.user_id, c.fuel_level_borrow, c.fuel_level_return,
         c.easy_pass_borrow, c.easy_pass_return,
         c.expected_return_date, c.expected_return_time, c.auto_returned,
-        CASE WHEN c.images IS NOT NULL AND c.images != '[]'::jsonb AND c.images != 'null'::jsonb THEN true ELSE false END as has_images,
+        -- ดูจากขนาดที่เก็บ ไม่ต้องอ่านรูป (เดิมเทียบค่า jsonb = อ่านรูปทุกแถวทุกครั้ง) — ค่าว่าง [] = 5 ไบต์, null = 9 ไบต์
+        COALESCE(pg_column_size(c.images), 0) > 9 as has_images,
         u.firstname || ' ' || u.lastname as name, u.nickname,
         t.so_number, t.customer_info
       FROM car_bookings c
