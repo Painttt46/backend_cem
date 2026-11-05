@@ -4,7 +4,7 @@ import { TEAMS_WEBHOOKS } from '../config/teams.js';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import { postToTeams } from '../utils/teamsWebhook.js';
-import { initUserLeaveQuotas, ensureLeaveQuotasForYear, getDefaultQuotaForType } from '../utils/leaveQuota.js';
+import { initUserLeaveQuotas, ensureLeaveQuotasForYear, ensureFutureQuotaRow, getLeaveDeductionsByYear } from '../utils/leaveQuota.js';
 import { sendLeaveNotificationEmail } from '../services/emailService.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { requireRole, requirePermission } from '../middleware/auth.js';
@@ -59,6 +59,11 @@ const ensureCancelColumns = runOnce(async () => {
   await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancel_reason TEXT`);
 });
 
+// โควตาที่ตัดจริงของใบลาแยกตามปี เช่น {"2026":1,"2027":2} — ใช้คืนโควตาให้ตรงปีตอนยกเลิก
+const ensureQuotaDeductionColumn = runOnce(async () => {
+  await pool.query(`ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS quota_deductions JSONB`);
+});
+
 // ขยายขนาด status column (รองรับสถานะ pending_level2 ฯลฯ)
 const ensureStatusWide = runOnce(async () => {
   await pool.query(`ALTER TABLE leave_requests ALTER COLUMN status TYPE VARCHAR(50)`);
@@ -96,7 +101,7 @@ const requireLeaveTypePermission = requirePermission(PERM_LEAVE_TYPES, { ensure:
 // เตรียม schema ตั้งแต่สตาร์ท (คำขอแรกจึงไม่ต้องรอ) — ล้มเหลวได้ เพราะแต่ละ handler จะเรียก ensure ซ้ำเมื่อใช้งานจริง
 Promise.all([
   ensureUsedDaysNumeric(), ensureTotalDaysPrecision(), ensureQuotaDisplayColumns(), ensureHolidaysTable(),
-  ensureCancelColumns(), ensureStatusWide(), ensureApprovalColumns(), ensureLeaveManagePermissions()
+  ensureCancelColumns(), ensureStatusWide(), ensureApprovalColumns(), ensureLeaveManagePermissions(), ensureQuotaDeductionColumn()
 ]).catch((error) => console.error('[leave] schema setup deferred:', error.message));
 
 // Get approvers by level and send email notification
@@ -364,9 +369,7 @@ async function getLeaveQuotaFromDB(userId, leaveType) {
 }
 
 // Calculate remaining leave days for user (updated to use database)
-async function calculateRemainingLeave(userId, leaveType) {
-  const currentYear = new Date().getFullYear();
-
+async function calculateRemainingLeave(userId, leaveType, currentYear = new Date().getFullYear()) {
   // Get quota and used_days from database
   const quotaResult = await pool.query(`
     SELECT annual_quota, used_days
@@ -411,6 +414,65 @@ async function calculateRemainingLeave(userId, leaveType) {
     remainingHours: r4(Math.max(0, remainingDays) * hoursPerDay)
   };
 }
+
+// โควตาที่เคยตัดของใบลา — ใบที่อนุมัติก่อนมี quota_deductions ถูกตัดตามปีที่กดอนุมัติ ซึ่งใกล้เคียงปีที่ยื่นมากที่สุด
+function deductionsOf(leave) {
+  const stored = leave.quota_deductions;
+  if (stored && Object.keys(stored).length > 0) return stored;
+  return { [new Date(leave.created_at).getFullYear()]: parseFloat(leave.total_days) || 0 };
+}
+
+const sumDeductions = (deductions) => Math.round(Object.values(deductions).reduce((sum, d) => sum + Number(d), 0) * 10000) / 10000;
+
+// ยกเลิกใบลาและคืนโควตาในคำสั่งเดียว: คำขอซ้อนกันทำสำเร็จได้คำขอเดียว และไม่มีกรณีคืนโควตาแล้วสถานะไม่เปลี่ยน
+// คืน true เมื่อใบยังอยู่ในสถานะ fromStatus และถูกยกเลิกโดยคำขอนี้
+async function cancelLeaveAndRefund({ id, fromStatus, cancelReason, userId, leaveType, refund }) {
+  const result = await pool.query(`
+    WITH claimed AS (
+      UPDATE leave_requests
+      SET status = 'cancelled', cancel_reason = COALESCE($2::text, cancel_reason), updated_at = NOW()
+      WHERE id = $1 AND status = $3
+      RETURNING id
+    ), refunded AS (
+      UPDATE user_leave_quotas q
+      SET used_days = GREATEST(COALESCE(q.used_days, 0) - d.days, 0)
+      FROM (SELECT key::int AS year, value::numeric AS days FROM jsonb_each_text($4::jsonb)) d, claimed c
+      WHERE q.user_id = $5 AND q.leave_type = $6 AND q.year = d.year
+      RETURNING q.id
+    )
+    SELECT (SELECT COUNT(*) FROM claimed)::int AS claimed, (SELECT COUNT(*) FROM refunded)::int AS refunded
+  `, [id, cancelReason ?? null, fromStatus, JSON.stringify(refund), userId, leaveType]);
+  return result.rows[0].claimed > 0;
+}
+
+// ใครเห็นรายละเอียดใบลาของคนอื่นได้ (เหตุผล, ไฟล์แนบ, ผู้รับงานแทน): ผู้จัดการการลาทั้งหมด หรือผู้อนุมัติเฉพาะแผนก/ตำแหน่งที่ดูแล
+async function getLeaveDetailAccess(user) {
+  if (await hasPermissionSafe(user, [PERM_LEAVE_APPROVE, PAGE_LEAVE_MANAGEMENT])) return { all: true, scopes: [] };
+  try {
+    const result = await pool.query(
+      'SELECT department_ids, position_ids FROM leave_approval_settings WHERE user_id = $1 AND can_approve = true',
+      [user?.id]
+    );
+    const lower = (list) => (list || []).map(v => String(v).toLowerCase());
+    return { all: false, scopes: result.rows.map(r => ({ depts: lower(r.department_ids), positions: lower(r.position_ids) })) };
+  } catch {
+    return { all: false, scopes: [] };
+  }
+}
+
+function canSeeLeaveDetail(leave, user, access) {
+  if (access.all || String(leave.user_id) === String(user?.id)) return true;
+  const dept = String(leave.department || '').toLowerCase();
+  const position = String(leave.employee_position || '').toLowerCase();
+  return access.scopes.some(s =>
+    (s.depts.length === 0 || s.depts.includes(dept)) && (s.positions.length === 0 || s.positions.includes(position))
+  );
+}
+
+const HIDDEN_LEAVE_DETAIL = {
+  reason: null, attachments: [], has_delegation: false, delegate_name: null, delegate_position: null,
+  delegate_department: null, delegate_contact: null, work_details: null, reject_reason: null, cancel_reason: null
+};
 
 async function createLeaveMessage(type, data) {
   const currentTime = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
@@ -726,33 +788,43 @@ router.post('/init-quotas', requirePermission(PAGE_LEAVE_MANAGEMENT), async (req
 router.put('/quota/:userId/:leaveType', requirePermission(PAGE_LEAVE_MANAGEMENT), async (req, res) => {
   try {
     const { userId, leaveType } = req.params;
-    const { quota, remaining, addQuota } = req.body;
+    const { quota, remaining, addQuota, expected_used: expectedUsed } = req.body;
     const currentYear = new Date().getFullYear();
 
     await ensureUsedDaysNumeric();
+
+    const currentData = await pool.query(`
+      SELECT annual_quota, COALESCE(used_days, 0) as used_days
+      FROM user_leave_quotas
+      WHERE user_id = $1 AND leave_type = $2 AND year = $3
+    `, [userId, leaveType, currentYear]);
+    const current = currentData.rows[0];
+    const currentUsed = current ? parseFloat(current.used_days) : 0;
+
+    // หน้าจอเปิดค้างแล้วมีการอนุมัติ/ยกเลิกใบลาคั่น: ห้ามบันทึกทับ — เดิมการตัดโควตาของใบที่เพิ่งอนุมัติหายไป
+    if (expectedUsed !== undefined && expectedUsed !== null && current && Math.abs(Number(expectedUsed) - currentUsed) >= 0.0001) {
+      return res.status(409).json({
+        error: 'วันลาที่ใช้ของพนักงานคนนี้เปลี่ยนไปแล้ว ระบบโหลดข้อมูลใหม่ให้ กรุณาตรวจสอบแล้วแก้อีกครั้ง',
+        current_used: currentUsed
+      });
+    }
 
     let finalQuota, finalUsedDays;
 
     if (addQuota !== undefined && addQuota > 0) {
       // กรณีเพิ่มวันลา: เพิ่ม quota, used_days คงเดิม (remaining จะเพิ่มขึ้นตาม)
-      const currentData = await pool.query(`
-        SELECT annual_quota, COALESCE(used_days, 0) as used_days
-        FROM user_leave_quotas
-        WHERE user_id = $1 AND leave_type = $2 AND year = $3
-      `, [userId, leaveType, currentYear]);
-
-      if (currentData.rows.length > 0) {
-        const current = currentData.rows[0];
-        finalQuota = parseFloat(current.annual_quota) + parseFloat(addQuota);
-        finalUsedDays = parseFloat(current.used_days); // used_days คงเดิม
-      } else {
-        finalQuota = parseFloat(addQuota);
-        finalUsedDays = 0;
-      }
+      finalQuota = (current ? parseFloat(current.annual_quota) : 0) + parseFloat(addQuota);
+      finalUsedDays = currentUsed;
     } else {
-      // กรณีแก้ไขปกติ: คำนวณ used_days จาก quota - remaining
       finalQuota = parseFloat(quota);
-      finalUsedDays = Math.max(0, parseFloat(quota) - parseFloat(remaining));
+      // ส่ง remaining มาเฉพาะเมื่อ HR ตั้งใจแก้คงเหลือ — แก้แค่โควตาทั้งหมดต้องไม่กระทบวันที่ใช้ไป
+      // (เดิมคำนวณ used = quota - remaining เสมอ แก้โควตาอย่างเดียววันใช้จึงเพิ่มเอง และคนที่ใช้เกินโควตาวันใช้จึงหาย)
+      finalUsedDays = remaining === undefined || remaining === null
+        ? currentUsed
+        : Math.max(0, finalQuota - parseFloat(remaining));
+      if (!Number.isFinite(finalQuota) || finalQuota < 0 || !Number.isFinite(finalUsedDays)) {
+        return res.status(400).json({ error: 'จำนวนโควต้าไม่ถูกต้อง' });
+      }
     }
 
     const before = await pool.query(`
@@ -762,10 +834,11 @@ router.put('/quota/:userId/:leaveType', requirePermission(PAGE_LEAVE_MANAGEMENT)
 
     await pool.query(`
       INSERT INTO user_leave_quotas (user_id, leave_type, annual_quota, used_days, year)
-      VALUES ($1, $2, $3, $4, $5)
+      VALUES ($1, $2, $3::numeric, $4::numeric, $5)
       ON CONFLICT (user_id, leave_type, year)
-      DO UPDATE SET annual_quota = $3, used_days = $4
-    `, [userId, leaveType, finalQuota, finalUsedDays, currentYear]);
+      DO UPDATE SET annual_quota = $3::numeric,
+        used_days = CASE WHEN $6::boolean THEN $4::numeric ELSE user_leave_quotas.used_days END
+    `, [userId, leaveType, finalQuota, finalUsedDays, currentYear, remaining !== undefined && remaining !== null && !(addQuota > 0)]);
 
     // เดิมไม่มี log — แก้วันคงเหลือด้วยมือแล้วตรวจย้อนหลังไม่ได้ว่าใครแก้อะไรเมื่อไร
     const owner = await pool.query('SELECT firstname, lastname FROM users WHERE id = $1', [userId]);
@@ -831,8 +904,8 @@ router.get('/leave-types', async (req, res) => {
         MAX(color) as color, 
         MAX(advance_days) as advance_days, 
         MAX(display_name) as display_name,
-        MAX(annual_quota) as default_quota
-      FROM user_leave_quotas 
+        mode() WITHIN GROUP (ORDER BY annual_quota) as default_quota
+      FROM user_leave_quotas
       WHERE year = $1
       GROUP BY leave_type
       ORDER BY leave_type
@@ -923,35 +996,53 @@ router.post('/leave-types', requireLeaveTypePermission, async (req, res) => {
 router.put('/leave-types/:leaveType', requireLeaveTypePermission, async (req, res) => {
   try {
     const leaveType = decodeURIComponent(req.params.leaveType);
-    const { display_name, color, default_quota, advance_days, addQuota } = req.body;
+    const { display_name, color, default_quota, advance_days, addQuota, overwrite_quota: overwriteQuota } = req.body;
     const currentYear = new Date().getFullYear();
 
     // Update all records for this leave type
     await pool.query(`
-      UPDATE user_leave_quotas 
+      UPDATE user_leave_quotas
       SET display_name = COALESCE($1, display_name),
           color = COALESCE($2, color),
           advance_days = COALESCE($3, advance_days)
       WHERE leave_type = $4 AND year = $5
     `, [display_name, color, advance_days, leaveType, currentYear]);
 
-    // Update default quota if provided
-    if (default_quota !== undefined) {
+    // ทับโควตาทุกคนเฉพาะเมื่อ HR เลือกเองชัดเจน — เดิมหน้าเว็บส่ง default_quota ทุกครั้ง
+    // แก้แค่สีก็ทำให้โควตาทุกคนกลายเป็นค่าสูงสุด และไม่มี log
+    let overwritten = null;
+    if (overwriteQuota === true && default_quota !== undefined) {
+      const quota = parseFloat(default_quota);
+      if (!Number.isFinite(quota) || quota < 0) {
+        return res.status(400).json({ error: 'จำนวนโควต้าไม่ถูกต้อง' });
+      }
+      const before = await pool.query(`
+        SELECT user_id, annual_quota::float AS annual_quota FROM user_leave_quotas
+        WHERE leave_type = $1 AND year = $2 AND annual_quota <> $3
+      `, [leaveType, currentYear, quota]);
       await pool.query(`
-        UPDATE user_leave_quotas 
+        UPDATE user_leave_quotas
         SET annual_quota = $1
         WHERE leave_type = $2 AND year = $3
-      `, [default_quota, leaveType, currentYear]);
+      `, [quota, leaveType, currentYear]);
+      overwritten = { quota, changed: before.rows };
     }
 
     // Add quota to all users if addQuota is provided
     if (addQuota && addQuota > 0) {
       await pool.query(`
-        UPDATE user_leave_quotas 
+        UPDATE user_leave_quotas
         SET annual_quota = annual_quota + $1
         WHERE leave_type = $2 AND year = $3
       `, [addQuota, leaveType, currentYear]);
     }
+
+    await logAudit(req, {
+      action: 'UPDATE',
+      tableName: 'settings',
+      recordName: `แก้ประเภทการลา: ${leaveType} (${currentYear})`,
+      newData: { display_name, color, advance_days, add_quota: addQuota || 0, overwritten }
+    });
 
     res.json({ message: 'อัปเดตประเภทการลาสำเร็จ' });
   } catch (error) {
@@ -966,11 +1057,23 @@ router.delete('/leave-types/:leaveType', requireLeaveTypePermission, async (req,
     const leaveType = decodeURIComponent(req.params.leaveType);
     const currentYear = new Date().getFullYear();
 
+    // ลบแล้วสร้างชื่อเดิมใหม่ วันที่ใช้ไปของทุกคนจะกลับเป็น 0 — จึงไม่ให้ลบประเภทที่มีการใช้งานอยู่
+    const inUse = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM user_leave_quotas WHERE leave_type = $1 AND year = $2 AND COALESCE(used_days, 0) > 0)::int AS used_rows,
+        (SELECT COUNT(*) FROM leave_requests WHERE leave_type = $1 AND status IN ('pending', 'pending_level2', 'approved', 'cancel') AND EXTRACT(YEAR FROM start_datetime) = $2)::int AS active_leaves
+    `, [leaveType, currentYear]);
+    if (inUse.rows[0].used_rows > 0 || inUse.rows[0].active_leaves > 0) {
+      return res.status(409).json({
+        error: `ลบไม่ได้ เพราะประเภทการลานี้มีการใช้งานในปีนี้ (พนักงานที่มีวันลาใช้ไปแล้ว ${inUse.rows[0].used_rows} คน, ใบลา ${inUse.rows[0].active_leaves} ใบ)`
+      });
+    }
+
     // Delete all quota records for this leave type
     const result = await pool.query(`
-      DELETE FROM user_leave_quotas 
+      DELETE FROM user_leave_quotas
       WHERE leave_type = $1 AND year = $2
-      RETURNING *
+      RETURNING user_id, annual_quota, used_days
     `, [leaveType, currentYear]);
 
     // Log audit
@@ -978,7 +1081,7 @@ router.delete('/leave-types/:leaveType', requireLeaveTypePermission, async (req,
       action: 'DELETE',
       tableName: 'settings',
       recordName: `ประเภทการลา: ${leaveType}`,
-      oldData: { leave_type: leaveType, deleted_records: result.rows.length }
+      oldData: { leave_type: leaveType, deleted_records: result.rows.length, rows: result.rows }
     });
 
     res.json({
@@ -1080,7 +1183,11 @@ router.get('/', async (req, res) => {
       LEFT JOIN users u ON l.user_id = u.id
       ORDER BY l.created_at DESC
     `);
-    res.json(result.rows);
+    // พนักงานทั่วไปเห็นได้แค่ใครลาวันไหน เพื่อวางแผนงาน — เหตุผล, ไฟล์แนบ และผู้รับงานแทนเป็นข้อมูลส่วนบุคคล (เช่น อาการป่วย)
+    const access = await getLeaveDetailAccess(req.user);
+    res.json(result.rows.map(leave => (
+      canSeeLeaveDetail(leave, req.user, access) ? leave : { ...leave, ...HIDDEN_LEAVE_DETAIL, details_hidden: true }
+    )));
   } catch (error) {
     console.error('Error fetching all leave requests:', error);
     res.status(500).json({ error: 'ไม่สามารถโหลดรายการคำขอลาได้' });
@@ -1219,6 +1326,7 @@ router.put('/:id/status', async (req, res) => {
     await ensureUsedDaysNumeric();
     // Ensure columns exist first (รันครั้งเดียวต่อโปรเซส)
     await ensureApprovalColumns();
+    await ensureQuotaDeductionColumn();
 
     // Get leave request details
     const leaveRequest = await pool.query(`
@@ -1238,8 +1346,13 @@ router.put('/:id/status', async (req, res) => {
       return res.status(400).json({ error: 'สถานะไม่ถูกต้อง (อนุญาตเฉพาะ approved หรือ rejected)' });
     }
 
+    // อนุมัติ/ปฏิเสธได้เฉพาะใบที่ยังรออนุมัติ — เดิมกดไม่อนุมัติใบที่อนุมัติไปแล้วจากหน้าจอเก่า ระบบคืนโควตาทั้งที่ใบยังอนุมัติอยู่
+    if (!['pending', 'pending_level2'].includes(currentStatus)) {
+      return res.status(409).json({ error: 'คำขอนี้ถูกดำเนินการไปแล้ว กรุณารีเฟรชหน้า' });
+    }
+
     // ระดับการอนุมัติ/ปฏิเสธ อิงจากสถานะปัจจุบันของคำขอ (ใช้ร่วมกันทั้ง approve และ reject)
-    const actionLevel = currentStatus === 'pending' ? 1 : (currentStatus === 'pending_level2' ? 2 : 0);
+    const actionLevel = currentStatus === 'pending' ? 1 : 2;
 
     // ตรวจสิทธิ์ทุกครั้งที่มีการอนุมัติหรือปฏิเสธ โดยใช้ตัวตนจาก token เท่านั้น
     // (ห้าม bypass ได้ด้วยการไม่ส่ง approved_by_id มา เหมือนโค้ดเดิม)
@@ -1256,6 +1369,7 @@ router.put('/:id/status', async (req, res) => {
 
     let newStatus = status;
     let newApprovalLevel = current_level || 0;
+    let deductions = null;
 
     // 2-Step Approval Logic - ตรวจสอบจาก currentStatus ใน DB
     if (status === 'approved') {
@@ -1265,22 +1379,20 @@ router.put('/:id/status', async (req, res) => {
         newApprovalLevel = 1;
       } else if (currentStatus === 'pending_level2') {
         // Level 2 (HR) approved -> fully approved
-        // เช็คโควต้าก่อน approve
-        const days = parseFloat(total_days) || 0;
-        
-        try {
-          const quotaCheck = await calculateRemainingLeave(user_id, leave_type);
-          
+        // ตัดโควตาตามปีของวันลา ใบคร่อมปีตัดแต่ละปีตามวันจริง — เดิมตัดปีที่กดอนุมัติทั้งใบ ใบลาปีหน้าจึงไปตัดโควตาปีนี้
+        deductions = await getLeaveDeductionsByYear(id);
+        const thisYear = new Date().getFullYear();
+        for (const [yearText, days] of Object.entries(deductions)) {
+          const year = Number(yearText);
+          if (year > thisYear) await ensureFutureQuotaRow(user_id, leave_type, year);
+          const quotaCheck = await calculateRemainingLeave(user_id, leave_type, year);
           if (quotaCheck.remainingDays < days) {
             return res.status(400).json({
-              error: `ไม่สามารถอนุมัติได้ โควต้าคงเหลือ ${quotaCheck.remainingDays} วัน แต่ขอลา ${days} วัน`
+              error: `ไม่สามารถอนุมัติได้ โควต้าปี ${year + 543} คงเหลือ ${quotaCheck.remainingDays} วัน แต่ใบนี้ต้องใช้ ${days} วัน`
             });
           }
-        } catch (quotaError) {
-          console.error('Quota check error:', quotaError);
-          // ถ้าเช็คโควต้าไม่ได้ ให้ approve ต่อไป
         }
-        
+
         newStatus = 'approved';
         newApprovalLevel = 2;
       }
@@ -1298,14 +1410,24 @@ router.put('/:id/status', async (req, res) => {
       `;
       updateParams = [newStatus, approverName, approverId, newApprovalLevel, id];
     } else if (newApprovalLevel === 2 && newStatus === 'approved') {
-      // Level 2 approved — guard สถานะกันตัดโควตาซ้ำ
+      // Level 2 approved — เปลี่ยนสถานะและตัดโควตาในคำสั่งเดียว: อนุมัติซ้อนกันตัดได้ครั้งเดียว และไม่มีใบที่อนุมัติแล้วแต่ไม่ถูกตัด
       updateQuery = `
-        UPDATE leave_requests
-        SET status = $1, approved_by_level2 = $2, approved_by_level2_id = $3, approved_by = $4, approval_level = $5, updated_at = NOW()
-        WHERE id = $6 AND status = 'pending_level2'
-        RETURNING *
+        WITH claimed AS (
+          UPDATE leave_requests
+          SET status = $1, approved_by_level2 = $2, approved_by_level2_id = $3, approved_by = $4, approval_level = $5,
+              quota_deductions = $7::jsonb, updated_at = NOW()
+          WHERE id = $6 AND status = 'pending_level2'
+          RETURNING id
+        ), deducted AS (
+          UPDATE user_leave_quotas q
+          SET used_days = COALESCE(q.used_days, 0) + d.days
+          FROM (SELECT key::int AS year, value::numeric AS days FROM jsonb_each_text($7::jsonb)) d, claimed c
+          WHERE q.user_id = $8 AND q.leave_type = $9 AND q.year = d.year
+          RETURNING q.id
+        )
+        SELECT (SELECT COUNT(*) FROM claimed)::int AS claimed
       `;
-      updateParams = [newStatus, approverName, approverId, approverName, newApprovalLevel, id];
+      updateParams = [newStatus, approverName, approverId, approverName, newApprovalLevel, id, JSON.stringify(deductions), user_id, leave_type];
     } else {
       // Rejected — guard ให้สถานะยังอยู่ระดับที่อนุญาตปฏิเสธ
       const rejectedLevel = actionLevel;
@@ -1321,58 +1443,10 @@ router.put('/:id/status', async (req, res) => {
 
     const result = await pool.query(updateQuery, updateParams);
 
-    if (result.rows.length === 0 && currentStatus !== 'approved') {
-      // ไม่มีแถวอัปเดต = ใบลาถูกดำเนินการไปแล้วจาก request อื่น (race) — ไม่ตัดโควตาซ้ำ
+    const applied = newStatus === 'approved' ? result.rows[0]?.claimed > 0 : result.rows.length > 0;
+    if (!applied) {
+      // ใบลาถูกดำเนินการไปแล้วจาก request อื่น (race) — ไม่ตัดโควตาซ้ำ
       return res.status(409).json({ error: 'คำขอนี้ถูกดำเนินการไปแล้ว (อนุมัติ/ปฏิเสธไปก่อนหน้า)' });
-    }
-
-    // If fully approved, update quota
-    if (newStatus === 'approved' && currentStatus !== 'approved' && result.rows.length > 0) {
-      // ตัดโควตา "ปีปัจจุบัน" (ปีที่อนุมัติ) — ให้ตรงกับการเช็คโควตาก่อนอนุมัติ (calculateRemainingLeave), การแสดงผล
-      // และการคืนโควตาตอนยกเลิก/ลบ ซึ่งใช้ปีปัจจุบันทั้งหมด
-      // (เดิมโค้ดตรงนี้อ้าง leaveRequest.start_datetime แต่ leaveRequest คือผล query ไม่ใช่แถว → เป็น undefined เสมอ
-      //  จึงได้ปีปัจจุบันอยู่แล้ว; ถ้าจะเปลี่ยนเป็น "ปีของวันที่เริ่มลา" ต้องแก้ทุกจุดนั้นพร้อมกัน รวมถึงการรีเซ็ตโควตา 1 ม.ค.)
-      const quotaYear = new Date().getFullYear();
-      const days = parseFloat(total_days) || 0;
-
-
-      const quotaUpdateResult = await pool.query(`
-        UPDATE user_leave_quotas
-        SET used_days = COALESCE(used_days, 0) + $1
-        WHERE user_id = $2 AND leave_type = $3 AND year = $4
-        RETURNING *
-      `, [days, user_id, leave_type, quotaYear]);
-
-
-      if (quotaUpdateResult.rows.length === 0) {
-        console.error('[QUOTA UPDATE] ERROR: No quota record found for user:', user_id, 'leave_type:', leave_type, 'year:', quotaYear);
-        console.error('[QUOTA UPDATE] Attempting to create quota record...');
-
-        try {
-          // คอลัมน์จริงคือ annual_quota (ไม่มี total_days) — โควตาตั้งต้นตามประเภทการลา (เดิมใส่ 10 วันตายตัว)
-          const defaultQuota = await getDefaultQuotaForType(leave_type, quotaYear);
-          await pool.query(`
-            INSERT INTO user_leave_quotas (user_id, leave_type, year, annual_quota, used_days)
-            VALUES ($1, $2, $3, $5, $4)
-            ON CONFLICT (user_id, leave_type, year)
-            DO UPDATE SET used_days = user_leave_quotas.used_days + $4
-          `, [user_id, leave_type, quotaYear, days, defaultQuota]);
-          
-        } catch (insertError) {
-          console.error('[QUOTA UPDATE] Failed to create quota record:', insertError);
-        }
-      }
-    }
-
-    // If rejecting previously approved leave
-    if (status === 'rejected' && currentStatus === 'approved') {
-      const days = parseFloat(total_days) || 0;
-
-      await pool.query(`
-        UPDATE user_leave_quotas
-        SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
-        WHERE user_id = $2 AND leave_type = $3 AND year = $4
-      `, [days, user_id, leave_type, new Date().getFullYear()]);
     }
 
     // Get updated data
@@ -1433,7 +1507,7 @@ router.put('/:id/status', async (req, res) => {
       recordId: parseInt(id),
       recordName: `${updatedData.employee_name} - ${getLeaveTypeLabel(updatedData.leave_type)}`,
       oldData: { status: currentStatus },
-      newData: { status: newStatus, approved_by: approverName }
+      newData: { status: newStatus, approved_by: approverName, ...(deductions ? { quota_deductions: deductions } : {}) }
     });
 
     res.json(updatedData);
@@ -1635,8 +1709,9 @@ router.put('/:id/cancel-status', async (req, res) => {
     const isPrivileged = await hasPermissionSafe(req.user, PERM_LEAVE_APPROVE);
 
     await ensureUsedDaysNumeric();
+    await ensureQuotaDeductionColumn();
     const checkResult = await pool.query(
-      'SELECT id, user_id, status, leave_type, total_days, start_datetime, end_datetime, reason, attachments, approved_by, approved_by_level1, approved_by_level2, approved_by_level2_id, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, total_days, quota_deductions, created_at, start_datetime, end_datetime, reason, attachments, approved_by, approved_by_level1, approved_by_level2, approved_by_level2_id, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -1667,27 +1742,22 @@ router.put('/:id/cancel-status', async (req, res) => {
       // คืนโควต้า — เฉพาะใบที่เคยอนุมัติครบแล้ว (มี approved_by_level2 = เคยถูกตัดโควตาตอนอนุมัติชั้น 2)
       // ใบที่ขอยกเลิกตอนยัง pending_level2 ยังไม่เคยตัดโควตา จึงไม่ต้องคืน
       const days = parseFloat(leaveRequest.total_days) || 0;
-
-      if (days > 0 && leaveRequest.approved_by_level2) {
-        await pool.query(`
-          UPDATE user_leave_quotas
-          SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
-          WHERE user_id = $2 AND leave_type = $3 AND year = $4
-        `, [days, leaveRequest.user_id, leaveRequest.leave_type, new Date().getFullYear()]);
-      }
+      const refund = days > 0 && leaveRequest.approved_by_level2 ? deductionsOf(leaveRequest) : {};
 
       // เก็บใบไว้เป็นประวัติ (สถานะ cancelled) — เดิมลบทิ้งพร้อมไฟล์แนบ ใบลาจึง "หายไป" จากระบบโดยไม่มีร่องรอย
-      await pool.query(
-        `UPDATE leave_requests SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = 'cancel'`,
-        [id]
-      );
+      const cancelled = await cancelLeaveAndRefund({
+        id, fromStatus: 'cancel', cancelReason: null, userId: leaveRequest.user_id, leaveType: leaveRequest.leave_type, refund
+      });
+      if (!cancelled) {
+        return res.status(409).json({ error: 'คำขอนี้ถูกดำเนินการไปแล้ว กรุณารีเฟรชหน้า' });
+      }
       await logAudit(req, {
         action: 'UPDATE',
         tableName: 'leave_requests',
         recordId: parseInt(id),
         recordName: `user ${leaveRequest.user_id} - ${getLeaveTypeLabel(leaveRequest.leave_type)} (อนุมัติการยกเลิก)`,
         oldData: { ...leaveRequest },
-        newData: { status: 'cancelled', quotaRefundedDays: days > 0 && leaveRequest.approved_by_level2 ? days : 0 }
+        newData: { status: 'cancelled', quotaRefundedDays: sumDeductions(refund), quotaRefundedByYear: refund }
       });
 
       res.json({ message: 'Leave cancelled successfully', status: 'cancelled' });
@@ -1697,10 +1767,14 @@ router.put('/:id/cancel-status', async (req, res) => {
       // ถ้ามีแค่ approved_by_level1 แสดงว่าอนุมัติแค่ step 1 → pending_level2
       const originalStatus = leaveRequest.approved_by_level2 ? 'approved' : 'pending_level2';
       
-      await pool.query(
-        `UPDATE leave_requests SET status = $1 WHERE id = $2`,
+      // ล้างเวลาที่ขอยกเลิกด้วย — เดิมค้างไว้ ทำให้พนักงานขอยกเลิกใบนี้อีกครั้งไม่ได้
+      const reverted = await pool.query(
+        `UPDATE leave_requests SET status = $1, cancellation_requested_at = NULL WHERE id = $2 AND status = 'cancel' RETURNING id`,
         [originalStatus, id]
       );
+      if (reverted.rows.length === 0) {
+        return res.status(409).json({ error: 'คำขอนี้ถูกดำเนินการไปแล้ว กรุณารีเฟรชหน้า' });
+      }
       await logAudit(req, {
         action: 'UPDATE',
         tableName: 'leave_requests',
@@ -1724,10 +1798,12 @@ router.delete('/:id/admin-reset', async (req, res) => {
 
   try {
     await ensureUsedDaysNumeric();
+    await ensureQuotaDeductionColumn();
+    await ensureCancelColumns();
     const approverId = req.user.id;
 
     const leaveResult = await pool.query(
-      'SELECT id, user_id, status, leave_type, total_days, start_datetime, end_datetime, reason, attachments, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
+      'SELECT id, user_id, status, leave_type, total_days, quota_deductions, created_at, start_datetime, end_datetime, reason, attachments, approved_by, approved_by_level1, approved_by_level2, cancellation_requested_at, cancel_reason FROM leave_requests WHERE id = $1',
       [id]
     );
 
@@ -1749,33 +1825,29 @@ router.delete('/:id/admin-reset', async (req, res) => {
       return res.status(403).json({ error: 'คุณไม่มีสิทธิ์จัดการคำขอนี้' });
     }
 
-    const currentYear = new Date().getFullYear();
     const days = parseFloat(leaveRequest.total_days) || 0;
 
     // คืนโควต้าเฉพาะใบที่เคยถูกตัดโควต้าแล้วจริง = อนุมัติครบ 2 ชั้น (status approved)
     // หรือขอยกเลิกจากใบที่อนุมัติครบแล้ว (status cancel + มี approved_by_level2)
     // ใบที่ยัง pending/pending_level2 ยังไม่เคยตัดโควต้า — เดิมคืนให้ด้วยทำให้ used_days ของใบอื่นลดผิด
-    // (และเดิม query ไม่ได้ดึง total_days มา ทำให้ days เป็น 0 ไม่เคยคืนจริง)
     const wasDeducted = leaveRequest.status === 'approved' ||
       (leaveRequest.status === 'cancel' && !!leaveRequest.approved_by_level2);
-    let refundedDays = 0;
-    if (days > 0 && wasDeducted) {
-      await pool.query(`
-        UPDATE user_leave_quotas
-        SET used_days = GREATEST(COALESCE(used_days, 0) - $1, 0)
-        WHERE user_id = $2 AND leave_type = $3 AND year = $4
-      `, [days, leaveRequest.user_id, leaveRequest.leave_type, currentYear]);
-      refundedDays = days;
-    }
+    const refund = days > 0 && wasDeducted ? deductionsOf(leaveRequest) : {};
+    const refundedDays = sumDeductions(refund);
 
     // ไม่ลบใบทิ้งแล้ว: เปลี่ยนเป็นสถานะ "ยกเลิก" (เก็บประวัติ + ไฟล์แนบไว้) — เดิม DELETE + ลบไฟล์
     // 16 ต.ค. 2569 มีการกดปุ่มนี้ไล่ลงมา 20 ใบในตาราง ใบลาจึงหายไปจากประวัติ ต้องกู้จาก audit log
-    await ensureCancelColumns();
-    await pool.query(`
-      UPDATE leave_requests
-      SET status = 'cancelled', cancel_reason = COALESCE($2, cancel_reason), updated_at = NOW()
-      WHERE id = $1
-    `, [id, resetReason ? `HR ยกเลิก/คืนโควต้า: ${resetReason}` : 'HR ยกเลิก/คืนโควต้า']);
+    const cancelled = await cancelLeaveAndRefund({
+      id,
+      fromStatus: leaveRequest.status,
+      cancelReason: resetReason ? `HR ยกเลิก/คืนโควต้า: ${resetReason}` : 'HR ยกเลิก/คืนโควต้า',
+      userId: leaveRequest.user_id,
+      leaveType: leaveRequest.leave_type,
+      refund
+    });
+    if (!cancelled) {
+      return res.status(409).json({ error: 'คำขอนี้ถูกดำเนินการไปแล้ว กรุณารีเฟรชหน้า' });
+    }
 
     // Log audit
     await logAudit(req, {
@@ -1786,7 +1858,7 @@ router.delete('/:id/admin-reset', async (req, res) => {
       oldData: {
         ...leaveRequest
       },
-      newData: { status: 'cancelled', reason: resetReason || null, quotaRefundedDays: refundedDays }
+      newData: { status: 'cancelled', reason: resetReason || null, quotaRefundedDays: refundedDays, quotaRefundedByYear: refund }
     });
 
     res.json({ message: refundedDays > 0 ? 'ยกเลิกใบลาและคืนโควต้าเรียบร้อยแล้ว' : 'ยกเลิกใบลาเรียบร้อยแล้ว (ใบนี้ยังไม่เคยถูกตัดโควต้า จึงไม่มีโควต้าที่ต้องคืน)', status: 'cancelled', quotaRefundedDays: refundedDays });

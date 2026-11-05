@@ -5,6 +5,7 @@ import bcrypt from 'bcrypt';
 import { verifyToken, requirePermission, isFullAccessRole } from '../middleware/auth.js';
 import { PAGE_USERS } from '../config/permissionKeys.js';
 import { logAudit } from '../utils/auditHelper.js';
+import { hasPermissionSafe } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -29,7 +30,11 @@ router.get('/', verifyToken, async (req, res) => {
       'SELECT id, username, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname, created_at FROM users ORDER BY firstname, lastname'
     );
     
-    res.json(result.rows);
+    // รหัสพนักงาน: เห็นเฉพาะของตัวเอง หรือผู้มีสิทธิ์จัดการผู้ใช้
+    const canSeeEmployeeIds = await hasPermissionSafe(req.user, PAGE_USERS);
+    res.json(canSeeEmployeeIds ? result.rows : result.rows.map(u => (
+      String(u.id) === String(req.user?.id) ? u : { ...u, employee_id: null }
+    )));
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Internal server error' });
