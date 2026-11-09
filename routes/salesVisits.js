@@ -254,7 +254,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// สถานะการลงกิจกรรมตอนนี้ (กติกา 10:00 / ห้ามย้อนหลัง) — ต้องอยู่ก่อน GET /:id
+// สถานะการลงกิจกรรมตอนนี้ (ห้ามย้อนหลัง — กิจกรรม Sale ไม่มีกฎ 10:00) — ต้องอยู่ก่อน GET /:id
 router.get('/entry-window', async (req, res) => {
   try {
     res.json(await getEntryWindow('sales_visit', req.user));
@@ -314,7 +314,7 @@ router.post('/', async (req, res) => {
     const invalid = validateVisit(req.body);
     if (invalid) return res.status(400).json({ error: invalid });
 
-    // ห้ามลงย้อนหลัง + รายการแรกของวันต้องลงก่อน 10:00 (ดู utils/entryWindow.js)
+    // ห้ามลงย้อนหลัง — ลงหลัง 10:00 ได้ (ดู utils/entryWindow.js)
     const dateError = await checkEntryDate('sales_visit', req.user, visit_date);
     if (dateError) return res.status(400).json({ error: dateError, code: 'ENTRY_WINDOW' });
 

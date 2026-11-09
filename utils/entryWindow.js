@@ -3,8 +3,9 @@ import { isFullAccessRole } from './permissions.js';
 
 // ===== กติกาเวลาลงงาน (ลงงานรายวัน / กิจกรรม Sale แยกกัน) =====
 // 1) ห้ามลงงานย้อนหลัง — วันที่ของรายการต้องเป็นวันนี้หรืออนาคต (เวลาไทย)
-// 2) รายการแรกของวันต้องลงก่อน 10:00 น. — ถ้ามีรายการของวันนี้ที่สร้างก่อน 10:00 แล้ว (รวมที่ลงล่วงหน้าไว้) ลงต่อได้ทั้งวัน
+// 2) เฉพาะลงงานรายวัน: รายการแรกของวันต้องลงก่อน 10:00 น. — ถ้ามีรายการของวันนี้ที่สร้างก่อน 10:00 แล้ว (รวมที่ลงล่วงหน้าไว้) ลงต่อได้ทั้งวัน
 // 3) ถ้าไม่มี: 10:00–18:00 ปิดลงงานทั้งหมด, หลัง 18:00 ลงได้เฉพาะวันถัดไปเป็นต้นไป (วันนี้ลงไม่ได้แล้ว)
+//    กิจกรรม Sale ไม่มีข้อ 2–3 (ไปพบลูกค้าโดยไม่ได้นัดไว้ ลงทีหลังในวันเดียวกันได้) — ไม่มี firstEntrySql = ไม่มีกฎ 10:00
 // 4) admin / superadmin ไม่ติดกฎนี้ (ไว้แก้ไขข้อมูล)
 // 5) แก้ไขรายการเดิมโดยไม่เปลี่ยนวันที่ทำได้เสมอ (รวมรายการวันที่ผ่านมาแล้ว) — ถ้าเปลี่ยนวันที่ ใช้กติกาเดียวกับการลงใหม่
 export const ENTRY_CUTOFF_HOUR = 10;
@@ -18,9 +19,7 @@ const SOURCES = {
       WHERE user_id = $1 AND work_date = $2::date AND created_at < $2::date + make_interval(hours => $3) LIMIT 1`
   },
   sales_visit: {
-    label: 'ลงกิจกรรมเข้าพบลูกค้า',
-    firstEntrySql: `SELECT 1 FROM sales_visits
-      WHERE created_by = $1 AND visit_date::date = $2::date AND created_at < $2::date + make_interval(hours => $3) LIMIT 1`
+    label: 'ลงกิจกรรมเข้าพบลูกค้า'
   }
 };
 
@@ -61,6 +60,7 @@ export async function getEntryWindow(source, user, ownerId = user?.id) {
   const { date: today, minutes } = bangkokNow();
   const base = { today, cutoff: `${pad(ENTRY_CUTOFF_HOUR)}:00`, reopen: `${pad(ENTRY_REOPEN_HOUR)}:00` };
   if (isFullAccessRole(user?.role)) return { ...base, exempt: true, phase: 'open', minDate: null, message: null };
+  if (!SOURCES[source].firstEntrySql) return { today, cutoff: null, reopen: null, exempt: false, phase: 'open', minDate: today, message: null };
 
   if (minutes < ENTRY_CUTOFF_HOUR * 60) return { ...base, exempt: false, phase: 'open', minDate: today, message: null };
 

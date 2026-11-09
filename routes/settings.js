@@ -525,7 +525,7 @@ router.get('/departments', verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT department as name FROM users
-       WHERE department IS NOT NULL AND department != ''
+       WHERE department IS NOT NULL AND department != '' AND deleted_at IS NULL
        ORDER BY department`
     );
     res.json(result.rows);
@@ -540,7 +540,7 @@ router.get('/positions', verifyToken, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT position as name FROM users
-       WHERE position IS NOT NULL AND position != ''
+       WHERE position IS NOT NULL AND position != '' AND deleted_at IS NULL
        ORDER BY position`
     );
     res.json(result.rows);

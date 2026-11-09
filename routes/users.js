@@ -6,14 +6,27 @@ import { verifyToken, requirePermission, isFullAccessRole } from '../middleware/
 import { PAGE_USERS } from '../config/permissionKeys.js';
 import { logAudit } from '../utils/auditHelper.js';
 import { hasPermissionSafe } from '../utils/permissions.js';
+import { runOnce } from '../utils/runOnce.js';
 
 const router = express.Router();
+
+// บัญชีที่ลบแล้ว: ซ่อนจากรายชื่อและ login ไม่ได้ แต่แถวยังอยู่ เพื่อให้ใบลา งานรายวัน และการจองรถคงอยู่พร้อมชื่อเดิม
+// deleted_identity เก็บ username/employee_id/email เดิมไว้กู้คืน — คอลัมน์เหล่านี้ถูกล้างเพื่อให้สร้างบัญชีใหม่ซ้ำได้ และหยุดอีเมลทุกชนิด
+const ensureDeletedColumns = runOnce(async () => {
+  await pool.query(`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS deleted_identity JSONB
+  `);
+});
+ensureDeletedColumns().catch((error) => console.error('[users] schema setup deferred:', error.message));
 
 // Get distinct roles from users
 router.get('/roles', verifyToken, async (req, res) => {
   try {
+    await ensureDeletedColumns();
     const result = await pool.query(
-      'SELECT DISTINCT role FROM users WHERE role IS NOT NULL ORDER BY role'
+      'SELECT DISTINCT role FROM users WHERE role IS NOT NULL AND deleted_at IS NULL ORDER BY role'
     );
     const roles = result.rows.map(row => row.role);
     res.json({ roles });
@@ -26,8 +39,9 @@ router.get('/roles', verifyToken, async (req, res) => {
 // Get all users
 router.get('/', verifyToken, async (req, res) => {
   try {
+    await ensureDeletedColumns();
     const result = await pool.query(
-      'SELECT id, username, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname, created_at FROM users ORDER BY firstname, lastname'
+      'SELECT id, username, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname, created_at FROM users WHERE deleted_at IS NULL ORDER BY firstname, lastname'
     );
     
     // รหัสพนักงาน: เห็นเฉพาะของตัวเอง หรือผู้มีสิทธิ์จัดการผู้ใช้
@@ -103,8 +117,12 @@ router.put('/:id', requirePermission(PAGE_USERS), async (req, res) => {
     const { username, password, firstname, lastname, role, email, phone, employee_id, position, department, is_active, nickname } = req.body;
 
     // Get old data for audit
-    const oldResult = await pool.query('SELECT username, firstname, lastname, role, email, position, department, is_active, nickname FROM users WHERE id = $1', [id]);
+    await ensureDeletedColumns();
+    const oldResult = await pool.query('SELECT username, firstname, lastname, role, email, position, department, is_active, nickname FROM users WHERE id = $1 AND deleted_at IS NULL', [id]);
     const oldData = oldResult.rows[0];
+    if (!oldData) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
     // กัน privilege escalation: มีแค่ superadmin เท่านั้นที่แตะบัญชี/สิทธิ์ superadmin ได้
     const targetIsSuper = oldData?.role === 'superadmin' || role === 'superadmin';
@@ -237,9 +255,16 @@ router.delete('/:id', requirePermission(PAGE_USERS), async (req, res) => {
       return res.status(403).json({ error: 'ไม่สามารถลบบัญชีของตัวเองได้' });
     }
 
+    await ensureDeletedColumns();
     // Get user data before delete for audit
-    const oldResult = await pool.query('SELECT username, firstname, lastname, role FROM users WHERE id = $1', [id]);
+    const oldResult = await pool.query(
+      'SELECT username, firstname, lastname, role, email, phone, employee_id, position, department, is_active FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [id]
+    );
     const oldData = oldResult.rows[0];
+    if (!oldData) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
     if (isElevatedRole(oldData?.role) && !isFullAccessRole(req.user.role)) {
       return res.status(403).json({ error: 'เฉพาะ admin/superadmin เท่านั้นที่ลบบัญชีผู้ดูแลได้' });
@@ -251,37 +276,52 @@ router.delete('/:id', requirePermission(PAGE_USERS), async (req, res) => {
       if (req.user.role !== 'superadmin') {
         return res.status(403).json({ error: 'เฉพาะ superadmin เท่านั้นที่ลบบัญชี superadmin ได้' });
       }
-      const countResult = await pool.query("SELECT COUNT(*)::int AS n FROM users WHERE role = 'superadmin'");
+      const countResult = await pool.query("SELECT COUNT(*)::int AS n FROM users WHERE role = 'superadmin' AND deleted_at IS NULL");
       if (countResult.rows[0].n <= 1) {
         return res.status(400).json({ error: 'ไม่สามารถลบ superadmin คนสุดท้ายได้' });
       }
     }
 
-    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
-    
+    // ไม่ลบแถวจริง: ใบลา งานรายวัน และการจองรถตั้ง ON DELETE CASCADE ลบแถวแล้วประวัติจะหายถาวร
+    const result = await pool.query(`
+      UPDATE users
+      SET deleted_at = NOW(),
+          deleted_identity = jsonb_build_object('username', username, 'employee_id', employee_id, 'email', email, 'is_active', is_active),
+          username = 'deleted_' || id,
+          employee_id = NULL,
+          email = NULL,
+          is_active = false,
+          token_version = COALESCE(token_version, 0) + 1
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING id
+    `, [id]);
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    // Log audit
-    if (oldData) {
-      await logAudit(req, {
-        action: 'DELETE',
-        tableName: 'users',
-        recordId: parseInt(id),
-        recordName: `${oldData.firstname} ${oldData.lastname}`,
-        oldData
-      });
+
+    // เอาออกจากผู้อนุมัติ ไม่ให้ค้างในตั้งค่าการอนุมัติ — ใบลาที่รอคนนี้อนุมัติจึงไปอยู่กับผู้อนุมัติคนอื่นของแผนกนั้น
+    let removedApprovals = [];
+    try {
+      const approvals = await pool.query('DELETE FROM leave_approval_settings WHERE user_id = $1 RETURNING *', [id]);
+      removedApprovals = approvals.rows;
+    } catch (error) {
+      console.error('Error removing leave approval settings:', error.message);
     }
-    
+
+    // Log audit
+    await logAudit(req, {
+      action: 'DELETE',
+      tableName: 'users',
+      recordId: parseInt(id),
+      recordName: `${oldData.firstname} ${oldData.lastname}`,
+      oldData: { ...oldData, approval_settings: removedApprovals }
+    });
+
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error('Error deleting user:', error);
-    if (error.code === '23503') {
-      res.status(400).json({ error: 'Cannot delete user: user has related data' });
-    } else {
-      res.status(500).json({ error: 'Failed to delete user' });
-    }
+    res.status(500).json({ error: 'ไม่สามารถลบผู้ใช้ได้' });
   }
 });
 
