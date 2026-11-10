@@ -10,14 +10,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # AZURE_CLIENT_SECRET เก็บใน GitHub Secrets: sed แทนค่าทั้งบรรทัดใน docker-compose.yml ตอน deploy
+      # AZURE_CLIENT_SECRET อยู่ในไฟล์ .env บน server เท่านั้น (ไม่อยู่ใน git / GitHub) — docker compose อ่านเองตอน up
+      # git checkout -- .env: คืน .env ที่ git เคย track ให้ตรงก่อน pull ครั้งที่เลิก track (กัน pull ล้มถ้ามีคนแก้ไว้บน server)
+      #   หลังจากนั้น .env ไม่อยู่ใน git แล้ว คำสั่งนี้จึงไม่แตะไฟล์ .env ที่เก็บ secret
       - name: Deploy
         run: |
           echo "${{ secrets.ROOT_PASSWORD }}" | su -c "
             docker network create cem_network 2>/dev/null || true &&
             cd /var/www/html/backend_cem &&
             git checkout docker-compose.yml &&
+            (git checkout -- .env 2>/dev/null || true) &&
             git pull origin develop &&
-            sed -i 's|AZURE_CLIENT_SECRET=.*|AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}|' docker-compose.yml &&
             docker compose up -d --build --remove-orphans
           " root
