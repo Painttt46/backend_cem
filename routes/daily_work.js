@@ -33,11 +33,52 @@ const calcTotalHours = (startTime, endTime) => {
 
 // เช็คสิทธิ์แก้ไข/ลบ daily work record: เจ้าของ record หรือ role ที่มีสิทธิ์บริหารเท่านั้น
 async function canManageDailyWork(req, id) {
-  const result = await pool.query(`SELECT user_id, TO_CHAR(work_date, 'YYYY-MM-DD') AS work_date FROM daily_work_records WHERE id = $1`, [id]);
+  const result = await pool.query(`SELECT user_id, task_id, step_id, step_ids, TO_CHAR(work_date, 'YYYY-MM-DD') AS work_date FROM daily_work_records WHERE id = $1`, [id]);
   if (!result.rows.length) return { found: false, allowed: false };
   const isPrivileged = await hasPermissionSafe(req.user, PERM_DAILY_MANAGE_ALL);
   const isOwner = String(result.rows[0].user_id) === String(req.user?.id);
   return { found: true, allowed: isPrivileged || isOwner, record: result.rows[0] };
+}
+
+// ===== ผู้ลงงานใน step = ผู้รับผิดชอบ step นั้น: เพิ่มเมื่อลงงาน, เอาออกเมื่อไม่เหลืองานของเขาใน step แล้ว =====
+// step_ids เก่าบางแถวเก็บเป็นข้อความ ('12') — แปลงเป็นเลขและตัดค่าซ้ำก่อนเทียบ
+const toStepIdList = (ids) => [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(n => Number.isInteger(n) && n > 0))];
+
+async function addUserToSteps(userId, stepIds) {
+  if (!userId || !stepIds.length) return;
+  const userResult = await pool.query('SELECT id, firstname, lastname FROM users WHERE id = $1', [userId]);
+  if (userResult.rows.length === 0) return;
+  const user = userResult.rows[0];
+  const userData = { id: user.id, name: `${user.firstname} ${user.lastname}` };
+  for (const stepId of stepIds) {
+    const stepResult = await pool.query('SELECT assigned_users FROM task_steps WHERE id = $1', [stepId]);
+    if (stepResult.rows.length > 0) {
+      const assignedUsers = stepResult.rows[0].assigned_users || [];
+      if (!assignedUsers.some(u => u.id === user.id)) {
+        assignedUsers.push(userData);
+        await pool.query('UPDATE task_steps SET assigned_users = $1::jsonb WHERE id = $2', [JSON.stringify(assignedUsers), stepId]);
+      }
+    }
+  }
+}
+
+// excludeRecordId: รายการที่กำลังลบ — ไม่นับเป็น "งานอื่นของเขาใน step นี้"
+async function removeUserFromStepsWithoutWork(userId, stepIds, excludeRecordId) {
+  for (const stepId of stepIds) {
+    const otherWork = await pool.query(
+      `SELECT id FROM daily_work_records
+       WHERE id != $1 AND user_id = $2
+       AND (step_id = $3 OR step_ids @> to_jsonb($3::int) OR step_ids @> to_jsonb(($3::int)::text))`,
+      [excludeRecordId, userId, stepId]
+    );
+    if (otherWork.rows.length === 0) {
+      const stepResult = await pool.query('SELECT assigned_users FROM task_steps WHERE id = $1', [stepId]);
+      if (stepResult.rows.length > 0) {
+        const assignedUsers = (stepResult.rows[0].assigned_users || []).filter(u => u.id !== userId);
+        await pool.query('UPDATE task_steps SET assigned_users = $1::jsonb WHERE id = $2', [JSON.stringify(assignedUsers), stepId]);
+      }
+    }
+  }
 }
 
 // ===== Microsoft Graph: สร้างนัดใน Outlook Calendar (+ Teams meeting) =====
@@ -49,13 +90,15 @@ const GRAPH_TIMEOUT_MS = 20000;
 let graphTokenCache = { token: null, expiresAt: 0 };
 
 // ข้อความ error ของ Azure AD / Graph → เหตุผลที่ผู้ดูแลแก้ต่อได้
-function explainGraphError(status, body) {
+function explainGraphError(status, body, mailbox = '') {
   const text = typeof body === 'string' ? body : JSON.stringify(body || {});
   if (/AADSTS7000222/.test(text)) return 'Client secret ของแอป Azure หมดอายุแล้ว — ต้องสร้าง secret ใหม่ใน Azure Portal แล้วใส่ AZURE_CLIENT_SECRET';
   if (/AADSTS7000215/.test(text)) return 'AZURE_CLIENT_SECRET ไม่ตรงกับ secret ที่ใช้งานได้ของแอปนี้ (secret ถูกลบ/สร้างใหม่แล้ว, คัดลอกมาไม่ครบ, เป็นของแอปอื่น หรือใช้ Secret ID แทนค่า Value)';
   if (/AADSTS700016/.test(text)) return 'ไม่พบแอปตาม AZURE_CLIENT_ID ใน tenant นี้';
   if (/AADSTS90002|AADSTS900023/.test(text)) return 'AZURE_TENANT_ID ไม่ถูกต้อง';
-  if (/ErrorItemNotFound|MailboxNotEnabledForRESTAPI|ResourceNotFound|UserNotFound/i.test(text)) return 'ไม่พบกล่องจดหมาย Microsoft 365 ของอีเมลผู้ใช้นี้ (อีเมลในระบบต้องเป็นบัญชี Microsoft 365 ของบริษัท)';
+  if (/ErrorInvalidUser|ErrorItemNotFound|MailboxNotEnabledForRESTAPI|ResourceNotFound|UserNotFound/i.test(text)) {
+    return `ไม่พบกล่องจดหมาย Microsoft 365 ของอีเมล${mailbox ? ` ${mailbox}` : 'ผู้ใช้นี้'} — ตรวจอีเมลในหน้าจัดการผู้ใช้ให้ตรงกับอีเมลบริษัท (Outlook) หรือบัญชียังไม่มี license Exchange`;
+  }
   if (status === 403 || /ErrorAccessDenied|Authorization_RequestDenied/i.test(text)) return 'แอป Azure ไม่มีสิทธิ์ Calendars.ReadWrite (Application) หรือยังไม่ได้ Grant admin consent / ถูกจำกัดด้วย Application Access Policy';
   if (status === 401) return 'token ไม่ถูกต้อง/หมดอายุ';
   if (status === 400) return `ข้อมูลนัดไม่ถูกต้อง (${(text.match(/"message":"([^"]+)"/) || [])[1] || 'Bad Request'})`;
@@ -154,7 +197,7 @@ async function sendCalendarEvent(data) {
     if (!response.ok) {
       if (response.status === 401) graphTokenCache = { token: null, expiresAt: 0 };
       console.error('[CALENDAR] Graph สร้างนัดไม่สำเร็จ:', response.status, responseText.slice(0, 500));
-      return { ok: false, error: explainGraphError(response.status, responseText) };
+      return { ok: false, error: explainGraphError(response.status, responseText, userEmail) };
     }
     let created = {};
     try { created = JSON.parse(responseText); } catch { /* ignore */ }
@@ -772,26 +815,7 @@ router.post('/', async (req, res) => {
     ]);
 
     // Auto-add user to assigned_users if not already assigned
-    if (ownerId && finalStepIds.length > 0) {
-      const userResult = await pool.query('SELECT id, firstname, lastname FROM users WHERE id = $1', [ownerId]);
-      if (userResult.rows.length > 0) {
-        const user = userResult.rows[0];
-        const userData = { id: user.id, name: `${user.firstname} ${user.lastname}` };
-        
-        for (const stepId of finalStepIds.filter(id => id !== null)) {
-          const stepResult = await pool.query('SELECT assigned_users FROM task_steps WHERE id = $1', [stepId]);
-          if (stepResult.rows.length > 0) {
-            let assignedUsers = stepResult.rows[0].assigned_users || [];
-            const isAssigned = assignedUsers.some(u => u.id === user.id);
-            if (!isAssigned) {
-              assignedUsers.push(userData);
-              await pool.query('UPDATE task_steps SET assigned_users = $1::jsonb WHERE id = $2', 
-                [JSON.stringify(assignedUsers), stepId]);
-            }
-          }
-        }
-      }
-    }
+    await addUserToSteps(ownerId, finalStepIds.filter(id => id !== null));
 
     // Create calendar event if requested (ติ๊ก Teams Meeting อย่างเดียวก็ถือว่าต้องการนัด — Teams Meeting ต้องอยู่ในนัดเสมอ)
     let calendarResult = null;
@@ -874,22 +898,56 @@ router.put('/:id', async (req, res) => {
     const total_hours = calcTotalHours(start_time, end_time);
 
     // step_ids: ถ้าหน้าเว็บส่งมาให้อัปเดตด้วย (เดิมอัปเดตแค่ step_id ทำให้รายการหลายขั้นตอนไม่ตรงกันหลังแก้ไข)
-    // ไม่ส่งมา = คงค่าเดิม
+    // ไม่ส่งมา = คงค่าเดิม / ส่ง [] = ไม่ผูกกับ step ใดเลย (step_id ต้องว่างด้วย ไม่งั้นยังถูกนับว่าลงงานใน step เดิม)
     const hasStepIds = Array.isArray(step_ids);
-    const finalStepIds = hasStepIds ? step_ids.filter(sid => sid !== null && sid !== undefined && sid !== '') : null;
-    const finalStepId = hasStepIds && finalStepIds.length > 0 ? finalStepIds[0] : step_id;
+    const finalStepIds = hasStepIds ? toStepIdList(step_ids) : null;
+    const finalStepId = hasStepIds ? (finalStepIds[0] ?? null) : step_id;
+    const oldStepIds = toStepIdList([...(Array.isArray(record.step_ids) ? record.step_ids : []), record.step_id]);
+    const taskChanged = String(task_id ?? '') !== String(record.task_id ?? '');
+
+    // step ที่เลือกต้องอยู่ในโครงการของรายการ — เปลี่ยนโครงการ: ตรวจทุก step / โครงการเดิม: ตรวจเฉพาะ step ที่เพิ่มใหม่
+    // (step เดิมที่ถูกลบออกจาก workflow ไปแล้วยังติดอยู่ได้ แก้รายละเอียดอื่นต่อได้)
+    if (hasStepIds && finalStepIds.length > 0) {
+      const toCheck = taskChanged ? finalStepIds : finalStepIds.filter(sid => !oldStepIds.includes(sid));
+      if (toCheck.length > 0) {
+        const valid = await pool.query('SELECT id FROM task_steps WHERE task_id = $1 AND id = ANY($2::int[])', [task_id, toCheck]);
+        if (valid.rows.length !== toCheck.length) {
+          return res.status(400).json({ error: 'ขั้นตอนที่เลือกไม่ได้อยู่ในโครงการนี้ — กรุณาเลือกขั้นตอนใหม่' });
+        }
+      }
+    }
+
+    // เปลี่ยนโครงการ: อัปเดตชื่อ/SO/สัญญา/Sale ที่เก็บไว้ในรายการด้วย (สรุปงานใน Teams อ่านจากค่านี้)
+    let taskInfo = { task_name: null, so_number: null, contract_number: null, sale_owner: null };
+    if (taskChanged && task_id) {
+      const taskResult = await pool.query('SELECT task_name, so_number, contract_number, sale_owner FROM tasks WHERE id = $1', [task_id]);
+      if (taskResult.rows.length === 0) return res.status(400).json({ error: 'ไม่พบโครงการที่เลือก' });
+      taskInfo = taskResult.rows[0];
+    }
 
     const result = await pool.query(`
       UPDATE daily_work_records
       SET task_id = $1, step_id = $2, work_date = $3, start_time = $4, end_time = $5, total_hours = $6,
           work_status = $7, location = $8, work_description = $9,
-          files = $10::jsonb, step_ids = COALESCE($12::jsonb, step_ids), updated_at = CURRENT_TIMESTAMP
+          files = $10::jsonb, step_ids = COALESCE($12::jsonb, step_ids),
+          task_name = CASE WHEN $13::boolean THEN $14 ELSE task_name END,
+          so_number = CASE WHEN $13::boolean THEN $15 ELSE so_number END,
+          contract_number = CASE WHEN $13::boolean THEN $16 ELSE contract_number END,
+          sale_owner = CASE WHEN $13::boolean THEN $17 ELSE sale_owner END,
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = $11
       RETURNING *
-    `, [task_id, finalStepId, work_date, start_time, end_time, total_hours, work_status, location, work_description, JSON.stringify(files || []), id, hasStepIds ? JSON.stringify(finalStepIds) : null]);
+    `, [task_id, finalStepId, work_date, start_time, end_time, total_hours, work_status, location, work_description, JSON.stringify(files || []), id, hasStepIds ? JSON.stringify(finalStepIds) : null,
+      taskChanged, taskInfo.task_name, taskInfo.so_number, taskInfo.contract_number, taskInfo.sale_owner]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Daily work record not found' });
+    }
+
+    // ผู้รับผิดชอบ step: เหมือนลงงานใหม่ใน step ที่เพิ่ม และเหมือนลบงานออกจาก step ที่เอาออก
+    if (hasStepIds) {
+      await addUserToSteps(record.user_id, finalStepIds.filter(sid => !oldStepIds.includes(sid)));
+      await removeUserFromStepsWithoutWork(record.user_id, oldStepIds.filter(sid => !finalStepIds.includes(sid)), Number(id));
     }
 
     // Send Teams notification only if work_date is today
@@ -908,7 +966,7 @@ router.put('/:id', async (req, res) => {
       tableName: 'daily_work_records',
       recordId: parseInt(id),
       recordName: `งาน - ${work_date}`,
-      newData: { work_date, start_time, end_time, work_status, location }
+      newData: { work_date, start_time, end_time, work_status, location, task_id, step_ids: hasStepIds ? finalStepIds : undefined }
     });
 
     res.json(result.rows[0]);
@@ -943,26 +1001,7 @@ router.delete('/:id', async (req, res) => {
       }
       
       // ลบ user ออกจาก assigned_users ถ้าไม่มีงานอื่นใน step นั้น
-      for (const stepId of stepIds) {
-        // เช็คว่ามีงานอื่นของ user ใน step นี้หรือไม่
-        const otherWork = await pool.query(
-          `SELECT id FROM daily_work_records 
-           WHERE id != $1 AND user_id = $2 
-           AND (step_id = $3 OR step_ids @> to_jsonb($3::int) OR step_ids @> to_jsonb(($3::int)::text))`,
-          [id, userId, stepId]
-        );
-        
-        // ถ้าไม่มีงานอื่น ให้ลบ user ออกจาก assigned_users
-        if (otherWork.rows.length === 0) {
-          const stepResult = await pool.query('SELECT assigned_users FROM task_steps WHERE id = $1', [stepId]);
-          if (stepResult.rows.length > 0) {
-            let assignedUsers = stepResult.rows[0].assigned_users || [];
-            assignedUsers = assignedUsers.filter(u => u.id !== userId);
-            await pool.query('UPDATE task_steps SET assigned_users = $1::jsonb WHERE id = $2',
-              [JSON.stringify(assignedUsers), stepId]);
-          }
-        }
-      }
+      await removeUserFromStepsWithoutWork(userId, stepIds, id);
     }
     
     await pool.query('DELETE FROM daily_work_records WHERE id = $1', [id]);
