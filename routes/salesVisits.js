@@ -114,15 +114,29 @@ function fkErrorResponse(res, e) {
 // ========== CUSTOMERS ==========
 
 // GET all customers
+// last_visit_at / next_visit_at / visit_count: เข้าพบล่าสุด, นัดถัดไป, จำนวนครั้งที่เข้าพบแล้ว (ทุกช่วงเวลา ไม่นับที่ยกเลิก)
+// นับเฉพาะนัดที่ผู้ใช้มีสิทธิ์เห็น — แบบเดียวกับรายการกิจกรรม (ใช้หาลูกค้าที่ไม่ได้ไปพบนาน ในแท็บภาพรวม)
 router.get('/customers', async (req, res) => {
   try {
+    const viewAll = await canViewAllVisits(req.user);
     const result = await pool.query(`
-      SELECT c.*, u.firstname || ' ' || u.lastname as created_by_name
+      SELECT c.*, u.firstname || ' ' || u.lastname as created_by_name,
+        v.last_visit_at, v.next_visit_at, COALESCE(v.visit_count, 0)::int AS visit_count
       FROM customers c
       LEFT JOIN users u ON c.created_by = u.id
+      LEFT JOIN (
+        SELECT sv.customer_id,
+          MAX(sv.visit_date) FILTER (WHERE sv.visit_date <= LOCALTIMESTAMP) AS last_visit_at,
+          MIN(sv.visit_date) FILTER (WHERE sv.visit_date > LOCALTIMESTAMP) AS next_visit_at,
+          COUNT(*) FILTER (WHERE sv.visit_date <= LOCALTIMESTAMP) AS visit_count
+        FROM sales_visits sv
+        WHERE sv.customer_id IS NOT NULL AND COALESCE(sv.status, '') <> 'cancelled'
+          ${viewAll ? '' : `AND ${VISIBLE_TO_USER_SQL('$1')}`}
+        GROUP BY sv.customer_id
+      ) v ON v.customer_id = c.id
       WHERE c.is_active = true
       ORDER BY c.company_name ASC
-    `);
+    `, viewAll ? [] : [req.user?.id]);
     res.json(result.rows);
   } catch (e) {
     console.error('Error fetching customers:', e);
