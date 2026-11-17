@@ -69,27 +69,8 @@ async function findBooking(id) {
   return result.rows.length > 0;
 }
 
-// Get latest fuel level and easy pass from last returned booking
-router.get('/latest-fuel', async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT fuel_level_return, easy_pass_return, return_location
-      FROM car_bookings 
-      WHERE status = 'returned' AND fuel_level_return IS NOT NULL
-      ORDER BY updated_at DESC 
-      LIMIT 1
-    `);
-    // ใช้ ?? ไม่ใช่ || — น้ำมัน 0% / EasyPass ฿0 เป็นค่าจริง (เดิม 0 กลายเป็น 50/500)
-    res.json({
-      fuel_level: result.rows[0]?.fuel_level_return ?? 50,
-      easy_pass_balance: result.rows[0]?.easy_pass_return ?? 500,
-      return_location: result.rows[0]?.return_location || null
-    });
-  } catch (error) {
-    console.error('Error fetching latest fuel level:', error);
-    res.status(500).json({ error: 'ไม่สามารถโหลดข้อมูลได้' });
-  }
-});
+// ระดับน้ำมัน / Easy Pass เลิกใช้แล้ว (2026-11): คนส่วนใหญ่ไม่ได้แจ้งคืนรถเอง ค่าที่โชว์จึงค้างเก่า
+// คอลัมน์ fuel_level_* / easy_pass_* ยังเก็บไว้ (ข้อมูลเดิม) — "คืนล่าสุด" หน้าปฏิทินคำนวณจากรายการจองโดยตรง
 
 
 // Get all car booking records (lightweight - just fetch data)
