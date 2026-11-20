@@ -1,4 +1,5 @@
 import express from 'express';
+import cron from 'node-cron';
 import { postToTeams } from '../utils/teamsWebhook.js';
 import { hasPermissionSafe } from '../utils/permissions.js';
 import { PERM_DAILY_MANAGE_ALL } from '../config/permissionKeys.js';
@@ -519,146 +520,71 @@ function createDailyWorkMessage(type, data) {
   }
 }
 
-// Auto check missing work every minute (runs independently)
-let checkInterval;
-
-let lastNotificationDate = null;
-let allCompleteNotified = false;
+// ===== แจ้งเตือน Teams: Engineer ที่ยังไม่ได้ลงงานวันนี้ =====
+// จันทร์–ศุกร์: ครั้งแรก 10:30 น. แล้วซ้ำทุก 30 นาทีถึง 17:30 ตราบที่ยังมีคนขาด (ครบแล้วแจ้ง "ครบ" วันละครั้ง)
+// เดิม: เริ่ม 10:00 ทุก 20 นาที ทุกวันรวมเสาร์-อาทิตย์/วันหยุด (ทุกคนขึ้นว่าขาด) และนับเฉพาะใบลาที่อนุมัติแล้ว
+// คนที่มีใบลาคร่อมวันนี้ไม่นับ: อนุมัติแล้ว, รออนุมัติ, หรือขอยกเลิกแต่ยังไม่อนุมัติ (ใบที่ถูกปฏิเสธ/ยกเลิกแล้วยังนับว่าขาด)
+const LEAVE_STATUSES_AWAY = ['approved', 'pending', 'pending_level2', 'cancel'];
 let allCompleteNotifiedDate = null;
 
-function startAutoCheck() {
-  // Clear existing interval
-  if (checkInterval) {
-    clearInterval(checkInterval);
+const bangkokToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+
+async function isHoliday(day) {
+  try {
+    const result = await pool.query('SELECT 1 FROM holidays WHERE holiday_date = $1::date LIMIT 1', [day]);
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error('[Missing work] ตรวจวันหยุดไม่ได้:', error.message);
+    return false;
   }
-
-  // Check every minute after 9:30 AM
-  checkInterval = setInterval(async () => {
-    // Use Thailand timezone for time check
-    const now = new Date();
-    const bangkokTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
-    const currentHour = bangkokTime.getHours();
-    const currentMinute = bangkokTime.getMinutes();
-
-    // Only check between 10:00 AM - 18:00 PM Thailand time
-    if (currentHour >= 10 && currentHour < 18) {
-      try {
-        await checkAndNotifyMissingWork();
-      } catch (error) {
-        console.error('Auto check error:', error);
-      }
-    }
-  }, 20 * 60 * 1000); // Every 20 minutes
 }
 
-async function checkAndNotifyMissingWork() {
-  // Use Thailand timezone
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+async function findMissingEngineers(day) {
+  const [active, submitted, onLeave] = await Promise.all([
+    pool.query(`
+      SELECT id, firstname || ' ' || lastname as name, position, COALESCE(department, 'ไม่ระบุ') as department
+      FROM users
+      WHERE (is_active IS NULL OR is_active = true) AND role = 'engineer'
+    `),
+    pool.query('SELECT DISTINCT user_id FROM daily_work_records WHERE work_date = $1::date', [day]),
+    pool.query(`
+      SELECT DISTINCT user_id FROM leave_requests
+      WHERE status = ANY($2::text[]) AND start_datetime::date <= $1::date AND end_datetime::date >= $1::date
+    `, [day, LEAVE_STATUSES_AWAY])
+  ]);
+  const done = new Set([...submitted.rows, ...onLeave.rows].map(r => r.user_id));
+  return { activeUsers: active.rows, missingUsers: active.rows.filter(u => !done.has(u.id)) };
+}
 
-  // Reset notification flag if it's a new day
-  if (lastNotificationDate !== today) {
-    lastNotificationDate = today;
-    allCompleteNotified = false;
-    allCompleteNotifiedDate = null;
-  }
+// คืนผลไว้ให้ปุ่มสั่งตรวจเอง (POST /check-missing) ตอบกลับได้
+async function notifyMissingWork() {
+  const today = bangkokToday();
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+  if (dow === 0 || dow === 6) return { skipped: 'weekend', message: 'วันนี้เป็นวันหยุดสุดสัปดาห์ ไม่ได้ส่งแจ้งเตือน' };
+  if (await isHoliday(today)) return { skipped: 'holiday', message: 'วันนี้เป็นวันหยุด ไม่ได้ส่งแจ้งเตือน' };
 
-  // Get all active engineers only
-  const activeUsersResult = await pool.query(`
-    SELECT id, firstname || ' ' || lastname as name, position, 
-           COALESCE(department, 'ไม่ระบุ') as department 
-    FROM users 
-    WHERE (is_active IS NULL OR is_active = true) AND role = 'engineer'
-  `);
-
-  // Get users who have submitted work today
-  const submittedUsersResult = await pool.query(`
-    SELECT DISTINCT user_id 
-    FROM daily_work_records 
-    WHERE work_date = $1
-  `, [today]);
-
-  // Get users who have approved leave today
-  const approvedLeaveResult = await pool.query(`
-    SELECT DISTINCT user_id
-    FROM leave_requests 
-    WHERE status = 'approved' 
-    AND start_datetime::date <= $1 
-    AND end_datetime::date >= $1
-  `, [today]);
-
-  const submittedUserIds = submittedUsersResult.rows.map(row => row.user_id);
-  const approvedLeaveUserIds = approvedLeaveResult.rows.map(row => row.user_id);
-  const activeUsers = activeUsersResult.rows;
-
-  // Debug logging
-
-  // Find missing users
-  const missingUsers = activeUsers.filter(user =>
-    !submittedUserIds.includes(user.id) && !approvedLeaveUserIds.includes(user.id)
-  );
-
-
+  const { activeUsers, missingUsers } = await findMissingEngineers(today);
   if (missingUsers.length > 0) {
     await sendTeamsNotification('missing_work', { missingUsers });
-  } else if (activeUsers.length > 0 && allCompleteNotifiedDate !== today) {
-    await sendTeamsNotification('all_complete', { totalUsers: activeUsers.length });
-    allCompleteNotified = true;
-    allCompleteNotifiedDate = today;
-  } else {
+    return { sent: 'missing_work', message: 'Missing work notification sent', missingCount: missingUsers.length };
   }
+  if (activeUsers.length > 0 && allCompleteNotifiedDate !== today) {
+    await sendTeamsNotification('all_complete', { totalUsers: activeUsers.length });
+    allCompleteNotifiedDate = today;
+    return { sent: 'all_complete', message: 'All complete notification sent', totalUsers: activeUsers.length };
+  }
+  return { sent: null, message: 'All complete notification already sent today', totalUsers: activeUsers.length };
 }
 
-//Start auto check when server starts
-startAutoCheck();
+const runMissingWorkCheck = () => notifyMissingWork()
+  .then(result => console.log('[Scheduler] Missing work check:', result.sent || result.skipped || 'nothing to send'))
+  .catch(error => console.error('Auto check error:', error));
+cron.schedule('30 10 * * 1-5', runMissingWorkCheck, { timezone: 'Asia/Bangkok' });        // ครั้งแรก 10:30
+cron.schedule('0,30 11-17 * * 1-5', runMissingWorkCheck, { timezone: 'Asia/Bangkok' });  // 11:00, 11:30, ... 17:30
+
 router.post('/check-missing', async (req, res) => {
   try {
-    // Use Thailand timezone
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
-
-    // Get all active engineers only
-    const activeUsersResult = await pool.query(`
-      SELECT id, firstname || ' ' || lastname as name, position, 
-             COALESCE(department, 'ไม่ระบุ') as department 
-      FROM users 
-      WHERE (is_active IS NULL OR is_active = true) AND role = 'engineer'
-    `);
-
-    // Get users who have submitted work today
-    const submittedUsersResult = await pool.query(`
-      SELECT DISTINCT user_id 
-      FROM daily_work_records 
-      WHERE work_date::date = $1::date
-    `, [today]);
-
-    // Get users who have approved leave today
-    const approvedLeaveResult = await pool.query(`
-      SELECT DISTINCT user_id
-      FROM leave_requests 
-      WHERE status = 'approved' 
-      AND start_datetime::date <= $1 
-      AND end_datetime::date >= $1
-    `, [today]);
-
-    const submittedUserIds = submittedUsersResult.rows.map(row => row.user_id);
-    const approvedLeaveUserIds = approvedLeaveResult.rows.map(row => row.user_id);
-    const activeUsers = activeUsersResult.rows;
-
-    // Find missing users (exclude those with approved leave)
-    const missingUsers = activeUsers.filter(user =>
-      !submittedUserIds.includes(user.id) && !approvedLeaveUserIds.includes(user.id)
-    );
-
-
-    if (missingUsers.length > 0) {
-      await sendTeamsNotification('missing_work', { missingUsers });
-      res.json({ message: 'Missing work notification sent', missingCount: missingUsers.length });
-    } else if (allCompleteNotifiedDate !== today) {
-      await sendTeamsNotification('all_complete', { totalUsers: activeUsers.length });
-      allCompleteNotifiedDate = today;
-      res.json({ message: 'All complete notification sent', totalUsers: activeUsers.length });
-    } else {
-      res.json({ message: 'All complete notification already sent today', totalUsers: activeUsers.length });
-    }
+    res.json(await notifyMissingWork());
   } catch (error) {
     console.error('Error checking missing work:', error);
     res.status(500).json({ error: 'ไม่สามารถตรวจสอบงานที่ยังไม่ได้บันทึกได้' });
